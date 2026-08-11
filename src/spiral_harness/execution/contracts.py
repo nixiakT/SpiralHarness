@@ -9,11 +9,22 @@ from typing import Annotated, ClassVar, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from spiral_harness.core.canonical import canonical_sha256, sha256_bytes
-from spiral_harness.core.models import ArtifactRef, ImmutableModel, NonEmptyStr, Sha256
+from spiral_harness.core.models import (
+    HARNESS_MANIFEST_MEDIA_TYPE,
+    ArtifactRef,
+    ImmutableModel,
+    NonEmptyStr,
+    Sha256,
+)
+from spiral_harness.skills.loading import SkillDisclosure
+from spiral_harness.skills.package import (
+    SKILL_CONTEXT_END_DELIMITER,
+    SKILL_CONTEXT_START_DELIMITER,
+)
 
-ATTEMPT_RESERVATION_MEDIA_TYPE = "application/vnd.spiral-harness.attempt-reservation.v1+json"
-ATTEMPT_OUTCOME_MEDIA_TYPE = "application/vnd.spiral-harness.attempt-outcome.v1+json"
-MODEL_EXECUTION_MEDIA_TYPE = "application/vnd.spiral-harness.model-execution.v1+json"
+ATTEMPT_RESERVATION_MEDIA_TYPE = "application/vnd.spiral-harness.attempt-reservation.v2+json"
+ATTEMPT_OUTCOME_MEDIA_TYPE = "application/vnd.spiral-harness.attempt-outcome.v2+json"
+MODEL_EXECUTION_MEDIA_TYPE = "application/vnd.spiral-harness.model-execution.v2+json"
 
 _UNPINNED_REVISIONS = frozenset(
     {
@@ -58,7 +69,7 @@ class AttemptBudget(ImmutableModel):
 class AttemptReservation(ImmutableModel):
     """A persisted, single-use authorization created before model execution."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     ledger_id: NonEmptyStr
     budget_fingerprint: Sha256
     sequence: Annotated[int, Field(ge=0, strict=True)]
@@ -85,7 +96,7 @@ class AttemptReservation(ImmutableModel):
 class AttemptOutcome(ImmutableModel):
     """The immutable terminal record consuming exactly one reservation."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     ledger_id: NonEmptyStr
     budget_fingerprint: Sha256
     sequence: Annotated[int, Field(ge=0, strict=True)]
@@ -290,50 +301,137 @@ class CandidateTask(_FrozenExecutionModel):
         return cls(task_id=task_id, question=question)
 
 
-class PromptHarness(_FrozenExecutionModel):
-    """One prompt arm whose declared hash must match its exact UTF-8 bytes."""
+def resolve_system_prompt(
+    base_system_prompt: str,
+    skill_disclosure: SkillDisclosure | None,
+) -> str:
+    """Render the one canonical prompt shape accepted by the runner."""
 
-    schema_version: Literal["1"] = "1"
-    harness_id: ExactNonEmptyText
+    if not isinstance(base_system_prompt, str):
+        raise TypeError("base_system_prompt must be a string")
+    if not base_system_prompt:
+        raise ValueError("base_system_prompt must not be empty")
+    if (
+        SKILL_CONTEXT_START_DELIMITER in base_system_prompt
+        or SKILL_CONTEXT_END_DELIMITER in base_system_prompt
+    ):
+        raise ValueError("base_system_prompt contains a reserved skill context delimiter")
+    if skill_disclosure is None:
+        return base_system_prompt
+    checked = SkillDisclosure.model_validate(skill_disclosure, strict=True)
+    expected_start = SKILL_CONTEXT_START_DELIMITER + "\n"
+    expected_end = "\n" + SKILL_CONTEXT_END_DELIMITER
+    if not checked.context.startswith(expected_start) or not checked.context.endswith(expected_end):
+        raise ValueError("skill disclosure context does not use the frozen framing delimiters")
+    return base_system_prompt + "\n\n" + checked.context
+
+
+class ResolvedHarness(_FrozenExecutionModel):
+    """Fully materialized prompt/skill state presented to the model backend."""
+
+    schema_version: Literal["2"] = "2"
+    harness_ref: ArtifactRef
+    base_system_prompt: ExactNonEmptyText
+    base_system_prompt_sha256: ExecutionSha256
+    skill_disclosure: SkillDisclosure | None = None
     system_prompt: ExactNonEmptyText
-    prompt_sha256: ExecutionSha256
-
-    @field_validator("harness_id")
-    @classmethod
-    def harness_id_is_exact(cls, value: str) -> str:
-        if value != value.strip():
-            raise ValueError("harness_id must not have surrounding whitespace")
-        return value
+    resolved_prompt_sha256: ExecutionSha256
 
     @model_validator(mode="after")
-    def declared_prompt_hash_matches_bytes(self) -> Self:
-        actual = sha256_bytes(self.system_prompt.encode("utf-8"))
-        if self.prompt_sha256 != actual:
-            raise ValueError("prompt_sha256 does not match the exact system_prompt bytes")
+    def declared_prompt_hashes_match_exact_bytes(self) -> Self:
+        if self.harness_ref.media_type != HARNESS_MANIFEST_MEDIA_TYPE:
+            raise ValueError("harness_ref must declare the exact harness manifest v2 media type")
+        actual_base_sha256 = sha256_bytes(self.base_system_prompt.encode("utf-8"))
+        if self.base_system_prompt_sha256 != actual_base_sha256:
+            raise ValueError("base_system_prompt_sha256 does not match the exact base prompt bytes")
+        expected_prompt = resolve_system_prompt(
+            self.base_system_prompt,
+            self.skill_disclosure,
+        )
+        if self.system_prompt != expected_prompt:
+            raise ValueError(
+                "system_prompt is not the canonical base prompt and skill disclosure rendering"
+            )
+        actual_resolved_sha256 = sha256_bytes(self.system_prompt.encode("utf-8"))
+        if self.resolved_prompt_sha256 != actual_resolved_sha256:
+            raise ValueError("resolved_prompt_sha256 does not match the exact system_prompt bytes")
         return self
 
+    @property
+    def harness_id(self) -> str:
+        """Return the manifest digest used by schedule and grading coordinates."""
+
+        return self.harness_ref.sha256
+
     @classmethod
-    def from_prompt(cls, *, harness_id: str, system_prompt: str) -> PromptHarness:
-        """Construct a harness while making the exact prompt hash visible."""
+    def from_prompt(cls, *, harness_ref: ArtifactRef, system_prompt: str) -> ResolvedHarness:
+        """Construct the prompt-only form without inventing a compatibility facade."""
 
         if not isinstance(system_prompt, str):
             raise TypeError("system_prompt must be a string")
+        prompt_sha256 = sha256_bytes(system_prompt.encode("utf-8"))
         return cls(
-            harness_id=harness_id,
+            harness_ref=harness_ref,
+            base_system_prompt=system_prompt,
+            base_system_prompt_sha256=prompt_sha256,
+            skill_disclosure=None,
             system_prompt=system_prompt,
-            prompt_sha256=sha256_bytes(system_prompt.encode("utf-8")),
+            resolved_prompt_sha256=prompt_sha256,
+        )
+
+    @classmethod
+    def from_skill(
+        cls,
+        *,
+        harness_ref: ArtifactRef,
+        base_system_prompt: str,
+        skill_disclosure: SkillDisclosure,
+    ) -> ResolvedHarness:
+        """Construct the single-skill form using the frozen delimiter contract."""
+
+        checked_disclosure = SkillDisclosure.model_validate(skill_disclosure, strict=True)
+        system_prompt = resolve_system_prompt(base_system_prompt, checked_disclosure)
+        return cls(
+            harness_ref=harness_ref,
+            base_system_prompt=base_system_prompt,
+            base_system_prompt_sha256=sha256_bytes(base_system_prompt.encode("utf-8")),
+            skill_disclosure=checked_disclosure,
+            system_prompt=system_prompt,
+            resolved_prompt_sha256=sha256_bytes(system_prompt.encode("utf-8")),
         )
 
 
 class ModelRequest(_FrozenExecutionModel):
     """Exact structured request sent to a backend."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     task_id: ExactNonEmptyText
-    harness_id: ExactNonEmptyText
+    harness_ref: ArtifactRef
+    base_system_prompt: ExactNonEmptyText
+    base_system_prompt_sha256: ExecutionSha256
+    skill_disclosure: SkillDisclosure | None = None
     system_prompt: ExactNonEmptyText
+    resolved_prompt_sha256: ExecutionSha256
     user_prompt: ExactNonEmptyText
     seed: Annotated[int, Field(ge=0, strict=True)]
+
+    @model_validator(mode="after")
+    def resolved_prompt_is_self_authenticating(self) -> Self:
+        ResolvedHarness(
+            harness_ref=self.harness_ref,
+            base_system_prompt=self.base_system_prompt,
+            base_system_prompt_sha256=self.base_system_prompt_sha256,
+            skill_disclosure=self.skill_disclosure,
+            system_prompt=self.system_prompt,
+            resolved_prompt_sha256=self.resolved_prompt_sha256,
+        )
+        return self
+
+    @property
+    def harness_id(self) -> str:
+        """Return the exact manifest digest bound into this request."""
+
+        return self.harness_ref.sha256
 
     @property
     def fingerprint(self) -> str:
@@ -407,17 +505,13 @@ class ExecutionError(_FrozenExecutionModel):
 class ModelExecution(_FrozenExecutionModel):
     """Strict score-free execution artifact."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     task: CandidateTask
     request: ModelRequest
     output: str | None
     status: ExecutionStatus
     usage: ModelUsage
-    backend_fingerprint: ExactNonEmptyText
-    model_fingerprint: ExecutionSha256
-    inference_fingerprint: ExecutionSha256
-    runtime_fingerprint: ExecutionSha256
-    spec_fingerprint: ExecutionSha256
+    spec: FrozenModelSpec
     execution_fingerprint: ExecutionSha256
     request_sha256: ExecutionSha256
     error: ExecutionError | None
@@ -455,6 +549,26 @@ class ModelExecution(_FrozenExecutionModel):
         return self.request.harness_id
 
     @property
+    def backend_fingerprint(self) -> str:
+        return self.spec.backend_fingerprint
+
+    @property
+    def model_fingerprint(self) -> str:
+        return self.spec.model_fingerprint
+
+    @property
+    def inference_fingerprint(self) -> str:
+        return self.spec.inference_fingerprint
+
+    @property
+    def runtime_fingerprint(self) -> str:
+        return self.spec.runtime_fingerprint
+
+    @property
+    def spec_fingerprint(self) -> str:
+        return self.spec.fingerprint
+
+    @property
     def output_text(self) -> str | None:
         return self.output
 
@@ -478,7 +592,7 @@ class ModelExecution(_FrozenExecutionModel):
 class ModelExecutionRecord(_FrozenExecutionModel):
     """Atomic result of one fully persisted and terminally accounted execution."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     execution: ModelExecution
     execution_ref: ArtifactRef
     outcome_ref: ArtifactRef
@@ -513,5 +627,6 @@ __all__ = [
     "ModelExecutionRecord",
     "ModelRequest",
     "ModelUsage",
-    "PromptHarness",
+    "ResolvedHarness",
+    "resolve_system_prompt",
 ]

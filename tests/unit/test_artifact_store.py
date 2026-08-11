@@ -6,6 +6,7 @@ import pytest
 
 from spiral_harness.core.canonical import canonical_json_bytes, sha256_bytes
 from spiral_harness.core.models import (
+    HARNESS_MANIFEST_MEDIA_TYPE,
     ArtifactRef,
     ComponentKind,
     HarnessComponentRef,
@@ -64,7 +65,11 @@ def test_typed_json_rejects_noncanonical_model_representations(tmp_path, variant
         model_fingerprint="model",
         runtime_fingerprint="runtime",
         trusted_plane_version="trusted-plane-v1",
-        parent=ArtifactRef(sha256="f" * 64, size=1, media_type="application/json"),
+        parent=ArtifactRef(
+            sha256="f" * 64,
+            size=1,
+            media_type=HARNESS_MANIFEST_MEDIA_TYPE,
+        ),
         components=(
             HarnessComponentRef(
                 name="alpha",
@@ -171,7 +176,7 @@ def test_typed_json_read_checks_declared_media_type(tmp_path) -> None:
 
     vendor_ref = store.put_json(
         {"schema_version": "1"},
-        media_type="application/vnd.spiral-harness.manifest+json; charset=utf-8",
+        media_type="application/vnd.spiral-harness.example.v1+json; charset=utf-8",
     )
     assert store.get_json(vendor_ref) == {"schema_version": "1"}
 

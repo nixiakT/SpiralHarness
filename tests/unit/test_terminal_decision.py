@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from spiral_harness.core.experiment import (
+    CANDIDATE_MANIFEST_MEDIA_TYPE,
     EXPERIMENT_MANIFEST_MEDIA_TYPE,
     PROMOTION_GATE_IMPLEMENTATION_FINGERPRINT,
     PROTOCOL_MANIFEST_MEDIA_TYPE,
@@ -20,6 +21,8 @@ from spiral_harness.core.experiment import (
 )
 from spiral_harness.core.lifecycle import CandidateState
 from spiral_harness.core.models import (
+    CANDIDATE_MUTATION_MEDIA_TYPE,
+    HARNESS_MANIFEST_MEDIA_TYPE,
     ArtifactRef,
     BudgetPolicy,
     CandidateMutation,
@@ -207,6 +210,7 @@ def build_graph(
         model_fingerprint="model-v1",
         inference_fingerprint="inference-v1",
         runtime_fingerprint="runtime-v1",
+        model_spec_fingerprint="9" * 64,
         sandbox_fingerprint="sandbox-v1",
         capability_policy_ref=capability_policy_ref,
         grader_fingerprint="grader-v1",
@@ -237,7 +241,11 @@ def build_graph(
         components=(before,),
         budget=BudgetPolicy(max_evaluations=10),
     )
-    parent_harness_ref = put_json(store, parent_harness)
+    parent_harness_ref = put_json(
+        store,
+        parent_harness,
+        media_type=HARNESS_MANIFEST_MEDIA_TYPE,
+    )
     diagnostic_evidence_ref = put_json(store, {"evidence": "diagnostic"})
     mutation = CandidateMutation(
         target_component="system",
@@ -257,7 +265,7 @@ def build_graph(
             risks=("over-specific instruction",),
         ),
     )
-    mutation_ref = put_json(store, mutation)
+    mutation_ref = put_json(store, mutation, media_type=CANDIDATE_MUTATION_MEDIA_TYPE)
     mutation_policy = MutationPolicy(
         allowed_component_names=("system",),
         allowed_media_types=("text/plain",),
@@ -284,7 +292,11 @@ def build_graph(
         artifact_bytes=store.get_bytes(after_artifact_ref),
         artifact_media_type=after_artifact_ref.media_type,
     )
-    child_harness_ref = put_json(store, child_harness)
+    child_harness_ref = put_json(
+        store,
+        child_harness,
+        media_type=HARNESS_MANIFEST_MEDIA_TYPE,
+    )
     candidate = CandidateManifest(
         experiment_ref=experiment_ref,
         parent_harness_ref=parent_harness_ref,
@@ -293,7 +305,7 @@ def build_graph(
         evidence_refs=(diagnostic_evidence_ref,),
         evaluation_plan_ref=gate_config_ref,
     )
-    candidate_ref = put_json(store, candidate)
+    candidate_ref = put_json(store, candidate, media_type=CANDIDATE_MANIFEST_MEDIA_TYPE)
     admission_report = CandidateAdmissionService(store).admit(
         candidate_ref=candidate_ref,
         experiment_ref=experiment_ref,
@@ -744,7 +756,11 @@ def test_gate_batches_cannot_cross_candidate_or_gate_split_boundaries(
     tmp_path: Path,
 ) -> None:
     graph = build_graph(tmp_path)
-    another_candidate_ref = put_json(graph.store, {"candidate": "other"})
+    another_candidate_ref = put_json(
+        graph.store,
+        {"candidate": "other"},
+        media_type=CANDIDATE_MANIFEST_MEDIA_TYPE,
+    )
     cross_candidate_ref = store_batch(
         graph,
         reissue_batch(graph, graph.parent_batch, candidate_ref=another_candidate_ref),
@@ -788,7 +804,11 @@ def test_gate_batches_cannot_cross_candidate_or_gate_split_boundaries(
 
 def test_gate_batch_harness_ref_must_match_the_frozen_candidate_arm(tmp_path: Path) -> None:
     graph = build_graph(tmp_path)
-    another_harness_ref = put_json(graph.store, {"harness": "other"})
+    another_harness_ref = put_json(
+        graph.store,
+        {"harness": "other"},
+        media_type=HARNESS_MANIFEST_MEDIA_TYPE,
+    )
     observations = tuple(
         observation.model_copy(update={"harness_id": another_harness_ref.sha256})
         for observation in graph.parent_trials
@@ -904,7 +924,11 @@ def test_persisted_decision_must_match_every_recomputed_field(tmp_path: Path) ->
 
 def test_evaluation_candidate_and_config_are_joined_to_frozen_lineage(tmp_path: Path) -> None:
     graph = build_graph(tmp_path)
-    another_candidate_ref = put_json(graph.store, {"candidate": "other"})
+    another_candidate_ref = put_json(
+        graph.store,
+        {"candidate": "other"},
+        media_type=CANDIDATE_MANIFEST_MEDIA_TYPE,
+    )
     wrong_candidate_evaluation_ref = store_evaluation(
         graph,
         candidate_ref=another_candidate_ref,
@@ -954,6 +978,7 @@ def test_terminal_validation_requires_the_caller_frozen_experiment(tmp_path: Pat
     another_experiment_ref = put_json(
         graph.store,
         experiment.model_copy(update={"objective": "attacker-selected objective"}),
+        media_type=EXPERIMENT_MANIFEST_MEDIA_TYPE,
     )
 
     with pytest.raises(TerminalDecisionError, match="caller-frozen experiment"):
@@ -992,6 +1017,7 @@ def test_candidate_with_an_unadmitted_evaluation_plan_is_rejected(tmp_path: Path
     candidate_ref = put_json(
         graph.store,
         graph.candidate.model_copy(update={"evaluation_plan_ref": other_plan_ref}),
+        media_type=CANDIDATE_MANIFEST_MEDIA_TYPE,
     )
     evaluation_ref = store_evaluation(graph, candidate_ref=candidate_ref)
 
@@ -1252,7 +1278,11 @@ def test_verify_report_binds_caller_supplied_candidate_experiment_and_evaluation
         report,
         media_type=TERMINAL_DECISION_REPORT_MEDIA_TYPE,
     )
-    another_candidate_ref = put_json(graph.store, {"candidate": "other"})
+    another_candidate_ref = put_json(
+        graph.store,
+        {"candidate": "other"},
+        media_type=CANDIDATE_MANIFEST_MEDIA_TYPE,
+    )
     with pytest.raises(TerminalDecisionError, match="another candidate"):
         graph.service.verify_report(
             report_ref,
@@ -1261,7 +1291,11 @@ def test_verify_report_binds_caller_supplied_candidate_experiment_and_evaluation
             evaluation_ref=graph.evaluation_ref,
         )
 
-    another_experiment_ref = put_json(graph.store, {"experiment": "other"})
+    another_experiment_ref = put_json(
+        graph.store,
+        {"experiment": "other"},
+        media_type=EXPERIMENT_MANIFEST_MEDIA_TYPE,
+    )
     with pytest.raises(TerminalDecisionError, match="another experiment"):
         graph.service.verify_report(
             report_ref,

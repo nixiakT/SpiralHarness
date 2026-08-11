@@ -36,14 +36,16 @@ are later extensions, not part of the initial claim.
 The M0.2 verification and experiment-control kernel includes:
 
 - immutable schemas for harness manifests and atomic candidate mutations;
-- an exact-media v2 protocol and frozen experiment manifests binding split,
-  model, runtime, grader,
+- an exact-media v3 protocol and frozen experiment manifests binding split,
+  model, full credential-free model-spec fingerprint, runtime, grader,
   mechanism-evidence and gate-batch attestors, gate, mutation policy, stopping
   rule, and evaluation budget;
 - canonical typed-artifact reads that reject aliases, omitted defaults, and
   validator normalization when those would create a second content identity;
-- a prompt-only mutation registry that verifies the actual parent component and
-  candidate bytes, hash, media type, size, and immutable fields;
+- an atomic mutation registry whose safe default remains prompt-only and that
+  verifies the actual parent component and candidate bytes, hash, media type,
+  size, and immutable fields; skill replacement requires an explicit kind,
+  component-name, and media-type policy;
 - trusted candidate admission that reloads and rejoins the experiment,
   protocol, parent lineage, mutation, evidence, child, and gate configuration;
 - canonical hashing and an integrity-checking content-addressed artifact store;
@@ -106,6 +108,9 @@ The first M1 benchmark/runner foundation now also includes:
 - a provider-neutral fixed-model specification and score-free runner whose
   paired fingerprint separates treatment-arm request identity from the shared
   model/task/seed context;
+- a preflight certificate that freezes the exact model specification and
+  ledger boundary before a paired batch, with receipt replay recomputing that
+  fingerprint and requiring both arms to share the same task bytes;
 - an immutable attempt reservation/outcome ledger that reserves before a
   backend call, settles successes, burns uncertain failures, poisons known
   token overruns, and rejects restart under a different budget fingerprint;
@@ -113,6 +118,36 @@ The first M1 benchmark/runner foundation now also includes:
   evidence-targeted studies, including independent search-run seeds, paired
   rollout seeds, identical ceilings, information boundaries, and structural
   validation of declared aggregate usage.
+
+The first declarative skill execution slice now adds:
+
+- one canonical JSON `SkillPackage` artifact containing metadata, ordered
+  rules, procedure, examples, fixed model/runtime compatibility, and no
+  executable entry point or runtime permission grant;
+- strictly parsed and normalized SPDX licence expressions, plus package-declared
+  source class and immutable provenance, compliance-review, and third-party
+  notice references whose exact content-addressed bytes the trusted loader
+  requires before use; reference existence does not authenticate the declared
+  source class or a reviewer, prove approval, or establish a legal conclusion;
+- deterministic `metadata`, `rules`, and `full` disclosure levels with fixed
+  framing, renderer identity, exact context bytes, hash, and size;
+- a deliberately narrow skill mutation for a package declaring
+  `source_kind=generated`: the next revision must point directly to its exact
+  parent, increment by one, change rules, and preserve every other package field
+  byte-for-byte in canonical form; this path rejects packages declaring
+  first- or third-party source classes, but does not authenticate provenance or
+  recursively validate older lineage;
+- trusted candidate admission that reloads both package revisions and replays
+  those semantic checks in addition to the generic atomic registry;
+- a `HarnessMaterializer` that resolves exactly one prompt and at most one
+  compatible skill, using the fixed `rules` disclosure for scheduled execution;
+  the loader separately supports deterministic `metadata`, `rules`, and `full`
+  projections. `ResolvedHarness` and `ModelRequest` v2 place the exact manifest
+  reference and disclosure into the actual backend request; `ModelExecution` v2
+  embeds the complete credential-free frozen model specification. The preflight
+  certificate fixes that specification for the whole paired batch, and receipt
+  publication/replay automatically reconstruct the request from the manifest,
+  prompt, and package CAS artifacts.
 
 The automatic-search control kernel now adds:
 
@@ -170,11 +205,22 @@ cost is captured but is not yet pre-reserved or hard-bounded. Execution
 artifacts are strictly parsed and bound to reservations, but are assertions of
 the trusted in-process runner rather than cryptographic producer attestations.
 
+The skill slice establishes package integrity, direct/existence-only reference
+closure, immediate revision admission, and exact request activation plumbing
+only. The automatic strategy grammar, finite catalogue, and proposal contracts
+remain prompt-only; there is no
+general skill router or skill search proposal. No trusted skill-specific
+adherence, behavior, revert, or placebo result enters the promotion gate yet.
+Consequently this repository does not yet demonstrate a skill gain.
+
 The next implementation stages are:
 
-1. add skill packages and skill-specific activation/adherence verification;
-2. connect the replayable prompt/skill conditions to a credentialed fixed-model
-   provider and package the first preregistered, reportable benchmark study;
+1. turn execution/request replay into trusted skill-activation evidence, then
+   add independent adherence and behavior probes plus parent-revert and placebo
+   interventions before allowing a skill candidate to reach the gate;
+2. extend the bounded search grammar to skill proposals only after that
+   verification path is fail-closed, then connect the replayable conditions to
+   a credentialed fixed-model provider and preregistered reportable study;
 3. expand into memory, tools, middleware, and control flow only after the
    prompt/skill claims are measurable.
 

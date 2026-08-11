@@ -5,7 +5,7 @@ from collections.abc import Callable
 import pytest
 from pydantic import ValidationError
 
-from spiral_harness.core.models import ArtifactRef, ComponentKind
+from spiral_harness.core.models import HARNESS_MANIFEST_MEDIA_TYPE, ArtifactRef, ComponentKind
 from spiral_harness.experiments.baselines import (
     BaselineArmPlan,
     BaselineKind,
@@ -40,7 +40,7 @@ def study_plan() -> BaselineStudyPlan:
         runtime_fingerprint="runner-image:sha256:222",
         seed_harness_ref=ref(
             "b",
-            "application/vnd.spiral-harness.harness-manifest.v1+json",
+            HARNESS_MANIFEST_MEDIA_TYPE,
         ),
         mutation_policy=FrozenMutationPolicy(
             grammar_version="atomic-replace-v1",

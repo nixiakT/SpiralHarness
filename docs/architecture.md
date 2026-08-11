@@ -11,7 +11,12 @@
 > provider-neutral fixed/replay runner, pre-execution attempt accounting, the
 > frozen four-condition baseline protocol, receipt-backed exploration screens,
 > bounded diagnosis/proposal/search orchestration, and a study-level all-run
-> barrier. These trust boundaries remain in-process: there is no OS sandbox,
+> barrier. A first declarative skill slice adds canonical package loading,
+> declared-generated rules-only revision admission, exact prompt/skill
+> materialization, and backend-request/receipt replay. It does not yet add skill
+> proposals, search,
+> adherence/behavior verification, or a skill promotion result. These trust
+> boundaries remain in-process: there is no OS sandbox,
 > network/filesystem/process isolation, cross-process durable compare-and-swap
 > or lease, or live provider. The multi-condition fixture is not a reportable
 > benchmark result.
@@ -114,6 +119,39 @@ gate nominations, aggregate-only feedback, and immutable search/study journals.
 The GSM8K runner path and the automatic loop are each replayable, but a
 credentialed live provider and a reportable end-to-end study are not yet wired.
 
+The declarative skill slice stores one complete canonical JSON `SkillPackage`
+per revision. The package binds metadata, ordered rules, procedure, examples,
+model/runtime compatibility, a strictly parsed and normalized SPDX licence
+expression, a package-declared source class, provenance/compliance references,
+and third-party notices; it grants no executable entry point or runtime
+permission. `SkillPackageLoader` requires the exact content-addressed bytes for
+every declared reference, but follows only the direct package reference and
+does not recursively validate typed lineage. M1 does not authenticate source
+classification or reference producers, interpret reference semantics, prove
+review approval, or establish a legal conclusion. The loader can produce exact
+`metadata`, `rules`, or `full` disclosures with fixed delimiters, renderer
+identity, bytes, hash, and size. Its revision verifier permits only an immediate
+revision whose parent declares `source_kind=generated` and whose rules changed
+while every other canonical field stayed fixed. The path rejects packages
+declaring first- or third-party source classes; the declaration itself is not a
+provenance attestation.
+
+`HarnessMaterializer` resolves exactly one prompt and at most one compatible
+skill from a snapshot, with scheduled execution fixed to the `rules`
+projection until disclosure policy is frozen into protocol/preflight. It emits
+a `ResolvedHarness`; `ModelRequest` v2 carries the exact manifest reference,
+base prompt, disclosure, resolved prompt, and their hashes into the backend
+call. `ModelExecution` v2 embeds the complete
+credential-free `FrozenModelSpec`. Receipt publication and replay use those
+two exact inputs to call `HarnessMaterializer.verify_execution_request` and
+reconstruct the manifest, prompt, package, and its directly declared reference
+bytes from CAS. Before any scheduled backend call, a v2 preflight certificate
+freezes that complete spec for the paired batch. Replay rejects a spec mismatch,
+recomputes each paired execution fingerprint, and requires parent and candidate
+to share the exact task and seed context. This proves package and request
+identity, not that the model attended to the skill or that the skill improved
+behavior.
+
 These controllers are single-process, single-writer implementations with
 caller-held content-addressed tails. They reject stale tails and duplicate
 charges inside that process, but they do not provide durable cross-process
@@ -122,10 +160,12 @@ deliberately rejects any lifecycle tail supplied to a new controller:
 structural journal replay is not semantic authorization. Automatic search
 likewise rejects a partially open or previously completed run when a fresh
 loop instance cannot reconstruct process-local optimizer capabilities and call
-counts. The next
-integration boundary is a live fixed-model study; skill evolution can reuse the
-same run, evidence, screen, nomination, and study-barrier contracts after adding
-skill-specific activation and adherence checks.
+counts. The next integration boundary is to derive trusted skill-activation
+evidence from materialized request replay, then independently test adherence
+and the predeclared behavior change with parent-revert and placebo
+interventions. Only after that path feeds the existing mechanism-evidence and
+promotion gates should the bounded grammar gain skill proposals. A
+credentialed live fixed-model study remains a separate subsequent boundary.
 
 ## 3. Artifact model and lineage
 
@@ -140,10 +180,15 @@ Core artifacts are:
 
 | Artifact | Required references |
 | --- | --- |
-| `ProtocolManifest` v2 | split refs, gate-config and capability-policy refs, gate implementation and mechanism/batch-attestor identities, grader/runtime/model settings, budgets |
+| `ProtocolManifest` v3 | split refs, gate-config and capability-policy refs, gate implementation and mechanism/batch-attestor identities, full model-spec fingerprint, grader/runtime/model settings, budgets |
 | `ExperimentManifest` | protocol hash, seed harness, objectives, baselines, stopping rule |
 | `HarnessSnapshot` | typed component name → component artifact hash |
 | `HarnessPatch` | parent snapshot, changed component(s), canonical before/after hashes |
+| `SkillPackage` | direct parent ref (existence only unless it is the immediate revision edge being checked), fixed model/runtime compatibility, normalized SPDX expression, package-declared source class, provenance/compliance refs (existence only), notices, and declarative content |
+| `SkillDisclosure` | exact package, disclosure level, renderer, exposed sections, context bytes, hash, and size |
+| `ModelRequest` v2 | task, exact harness-manifest ref, base prompt, optional skill disclosure, resolved prompt and hashes, user prompt, and seed |
+| `ModelExecution` v2 | complete frozen model spec, exact request, score-free output/status/usage, paired execution identity, and request hash |
+| `SchedulePreflightCertificate` v2 | exact schedule, complete model spec, ledger start boundary, budget, and worst-case paired-batch capacity |
 | `CandidateManifest` | parent and child snapshots, patch, evidence IDs, hypothesis, risks, evaluation plan |
 | `CapabilityPolicy` | default-deny policy and exact per-capability resource grants |
 | `RunRecord` | task reference, snapshot, seed, execution fingerprint, resource usage, status |
@@ -377,17 +422,24 @@ sandbox-escape tests.
 
 ## 7. Mutation rollout order
 
-M1 first enables one-component **prompt mutations**. Prompts are canonical text
-artifacts: diffs are easy to inspect and revert, activation is observable at
-context construction, and there are no new execution privileges. This makes
-them the narrowest surface on which to validate lineage, matched evaluation,
-and the promotion gate.
+M1 automatic search first enables one-component **prompt mutations**. Prompts
+are canonical text artifacts: diffs are easy to inspect and revert, activation
+is observable at context construction, and there are no new execution
+privileges. This is the narrowest surface on which to validate lineage, matched
+evaluation, and the promotion gate.
 
-After that path is stable, M1 enables one-component **skill mutations** limited
-to declarative skill manifests and reusable text procedures. Skills add a
-second mechanism to verify—selection and loading before adherence—and therefore
-test whether the architecture handles conditional activation. Arbitrary Python
-or tool implementation changes are not classified as M1 skill edits.
+M1 now also implements a deliberately narrower direct **skill revision**
+slice. A candidate may replace one declarative package only when an explicit
+skill mutation policy is selected; admission permits an immediate rules-only
+revision when the parent package declares `source_kind=generated` and freezes
+every other package field. It verifies that direct revision edge, not
+recursively typed historical lineage or authenticated provenance. The loader
+supports three projections, while scheduled materialization always uses
+`rules`; selection, loading, and backend-request construction are replayable.
+They do not establish adherence or benefit, and the automatic proposal
+catalogue and strategy grammar remain prompt-only. Arbitrary Python,
+tool implementation changes, package metadata rewrites, and combined
+prompt+skill edits are not classified as this M1 skill operation.
 
 Memory, tools, middleware, and control flow remain planned for M2. They add,
 respectively, persistent/private state, side effects and credentials,
@@ -407,7 +459,8 @@ src/spiral_harness/
   verification/    # implemented: paired gate, bound trial batches, closure artifacts
   benchmark/       # controlled fixture + pinned GSM8K registry, split and trusted grader
   harness/         # implemented: atomic policy validation/snapshot application
-  execution/       # fixed/replay runner, schedules, receipts, attempt ledger, capability policy
+  skills/          # canonical declarative packages, disclosure, and revision verification
+  execution/       # harness materialization, fixed/replay runner, receipts, schedules, ledger
   evolution/       # typed strategies, scoped artifact views, automatic search orchestration
   experiments/     # experiment/search/study controllers, gate replay, four-condition protocol
 ```
@@ -442,5 +495,9 @@ integration additionally exercises score-free GSM8K execution, pre-call
 reservation, and trusted grading. The automatic-search fixture executes the
 four matched strategy conditions across multiple independent run seeds through
 the same bounded controller path and study barrier. It remains explicitly
-non-reportable; a live provider, OS isolation, and durable multi-process
-coordination remain future integration and hardening work.
+non-reportable. Skill integration tests establish canonical package loading,
+direct-edge revision admission, exact rules-only materialization, and
+request/receipt replay;
+they do not establish skill adherence, a causal behavior change, or benchmark
+gain. A live provider, OS isolation, and durable multi-process coordination
+remain future integration and hardening work.

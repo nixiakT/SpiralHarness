@@ -53,13 +53,7 @@ class ReplayMissError(LookupError):
 
 
 class ReplayBackend:
-    """Deterministic provider-free backend for tests and recorded experiments.
-
-    Responses are selected by a canonical key over the complete frozen model
-    spec and request, never by call order.  An optional immutable default
-    response is useful for fixtures that do not care about prompt-specific
-    output.  No provider SDK or network is used.
-    """
+    """Provider-free backend keyed by the complete frozen spec and request."""
 
     def __init__(
         self,
@@ -121,7 +115,7 @@ def replay_key(spec: _contracts.FrozenModelSpec, request: _contracts.ModelReques
     checked_request = _contracts.ModelRequest.model_validate(request, strict=True)
     return canonical_sha256(
         {
-            "schema": "spiral-harness/model-replay-key/v1",
+            "schema": "spiral-harness/model-replay-key/v2",
             "spec_fingerprint": checked_spec.fingerprint,
             "request_sha256": checked_request.fingerprint,
         }
@@ -130,22 +124,26 @@ def replay_key(spec: _contracts.FrozenModelSpec, request: _contracts.ModelReques
 
 def materialize_request(
     task: object,
-    harness: _contracts.PromptHarness,
+    harness: _contracts.ResolvedHarness,
     *,
     seed: int,
 ) -> _contracts.ModelRequest:
     """Build the exact structured backend request from candidate-visible inputs."""
 
     checked_task = _contracts.CandidateTask.from_task_view(task)
-    checked_harness = _contracts.PromptHarness.model_validate(harness, strict=True)
+    checked_harness = _contracts.ResolvedHarness.model_validate(harness, strict=True)
     if type(seed) is not int:
         raise TypeError("seed must be an integer")
     if seed < 0:
         raise ValueError("seed must not be negative")
     return _contracts.ModelRequest(
         task_id=checked_task.task_id,
-        harness_id=checked_harness.harness_id,
+        harness_ref=checked_harness.harness_ref,
+        base_system_prompt=checked_harness.base_system_prompt,
+        base_system_prompt_sha256=checked_harness.base_system_prompt_sha256,
+        skill_disclosure=checked_harness.skill_disclosure,
         system_prompt=checked_harness.system_prompt,
+        resolved_prompt_sha256=checked_harness.resolved_prompt_sha256,
         user_prompt=checked_task.question,
         seed=seed,
     )
@@ -185,7 +183,7 @@ def paired_execution_fingerprint(
 class FixedModelRunner:
     """Execute a frozen model only after reserving one auditable attempt."""
 
-    _IMPLEMENTATION_ID = "spiral-harness/fixed-model-runner/v1"
+    _IMPLEMENTATION_ID = "spiral-harness/fixed-model-runner/v2"
 
     def __init__(
         self,
@@ -255,7 +253,7 @@ class FixedModelRunner:
         self,
         task: object,
         *,
-        harness: _contracts.PromptHarness,
+        harness: _contracts.ResolvedHarness,
         seed: int,
     ) -> _contracts.ModelExecution:
         """Reserve, invoke once, then settle or conservatively burn the attempt."""
@@ -267,7 +265,7 @@ class FixedModelRunner:
         self,
         task: object,
         *,
-        harness: _contracts.PromptHarness,
+        harness: _contracts.ResolvedHarness,
         seed: int,
         reservation_token_ceiling: int | None = None,
         expected_previous_ledger_tail_ref: (
@@ -302,7 +300,7 @@ class FixedModelRunner:
         self,
         task: object,
         *,
-        harness: _contracts.PromptHarness,
+        harness: _contracts.ResolvedHarness,
         seed: int,
         reservation_token_ceiling: int | None = None,
         expected_previous_ledger_tail_ref: (
@@ -312,7 +310,7 @@ class FixedModelRunner:
         """Execute under ``_lock``; callers must never invoke this helper directly."""
 
         checked_task = _contracts.CandidateTask.from_task_view(task)
-        checked_harness = _contracts.PromptHarness.model_validate(harness, strict=True)
+        checked_harness = _contracts.ResolvedHarness.model_validate(harness, strict=True)
         request = materialize_request(checked_task, checked_harness, seed=seed)
         backend_fingerprint = self._require_backend_match()
         execution_fingerprint = paired_execution_fingerprint(
@@ -353,7 +351,6 @@ class FixedModelRunner:
                 request=request,
                 execution_fingerprint=execution_fingerprint,
                 request_sha256=request_sha256,
-                backend_fingerprint=backend_fingerprint,
                 usage=_contracts.BackendTokenUsage(input_tokens=0, output_tokens=0),
                 latency_ms=self._elapsed_ms(started),
                 error_class=_contracts.ExecutionErrorClass.BACKEND_TIMEOUT,
@@ -367,7 +364,6 @@ class FixedModelRunner:
                 request=request,
                 execution_fingerprint=execution_fingerprint,
                 request_sha256=request_sha256,
-                backend_fingerprint=backend_fingerprint,
                 usage=_contracts.BackendTokenUsage(input_tokens=0, output_tokens=0),
                 latency_ms=self._elapsed_ms(started),
                 error_class=_contracts.ExecutionErrorClass.BACKEND_EXCEPTION,
@@ -385,7 +381,6 @@ class FixedModelRunner:
                 request=request,
                 execution_fingerprint=execution_fingerprint,
                 request_sha256=request_sha256,
-                backend_fingerprint=backend_fingerprint,
                 usage=_contracts.BackendTokenUsage(input_tokens=0, output_tokens=0),
                 latency_ms=latency_ms,
                 error_class=_contracts.ExecutionErrorClass.BACKEND_FINGERPRINT_MISMATCH,
@@ -399,7 +394,6 @@ class FixedModelRunner:
                 request=request,
                 execution_fingerprint=execution_fingerprint,
                 request_sha256=request_sha256,
-                backend_fingerprint=backend_fingerprint,
                 usage=_contracts.BackendTokenUsage(input_tokens=0, output_tokens=0),
                 latency_ms=latency_ms,
                 error_class=_contracts.ExecutionErrorClass.BACKEND_FINGERPRINT_MISMATCH,
@@ -415,7 +409,6 @@ class FixedModelRunner:
                 request=request,
                 execution_fingerprint=execution_fingerprint,
                 request_sha256=request_sha256,
-                backend_fingerprint=backend_fingerprint,
                 usage=_contracts.BackendTokenUsage(input_tokens=0, output_tokens=0),
                 latency_ms=latency_ms,
                 error_class=_contracts.ExecutionErrorClass.INVALID_BACKEND_RESPONSE,
@@ -434,7 +427,6 @@ class FixedModelRunner:
                 request=request,
                 execution_fingerprint=execution_fingerprint,
                 request_sha256=request_sha256,
-                backend_fingerprint=backend_fingerprint,
                 usage=response.usage,
                 latency_ms=latency_ms,
                 error_class=_contracts.ExecutionErrorClass.USAGE_EXCEEDED,
@@ -449,7 +441,6 @@ class FixedModelRunner:
             status=_contracts.ExecutionStatus.COMPLETED,
             usage=response.usage,
             latency_ms=latency_ms,
-            backend_fingerprint=backend_fingerprint,
             execution_fingerprint=execution_fingerprint,
             request_sha256=request_sha256,
             error=None,
@@ -488,7 +479,6 @@ class FixedModelRunner:
         request: _contracts.ModelRequest,
         execution_fingerprint: str,
         request_sha256: str,
-        backend_fingerprint: str,
         usage: _contracts.BackendTokenUsage,
         latency_ms: float,
         error_class: _contracts.ExecutionErrorClass,
@@ -502,7 +492,6 @@ class FixedModelRunner:
             status=_contracts.ExecutionStatus.FAILED,
             usage=usage,
             latency_ms=latency_ms,
-            backend_fingerprint=backend_fingerprint,
             execution_fingerprint=execution_fingerprint,
             request_sha256=request_sha256,
             error=_contracts.ExecutionError(error_class=error_class, detail=detail),
@@ -540,7 +529,6 @@ class FixedModelRunner:
         status: _contracts.ExecutionStatus,
         usage: _contracts.BackendTokenUsage,
         latency_ms: float,
-        backend_fingerprint: str,
         execution_fingerprint: str,
         request_sha256: str,
         error: _contracts.ExecutionError | None,
@@ -557,11 +545,7 @@ class FixedModelRunner:
                 latency_ms=latency_ms,
                 cost_usd=cost_usd,
             ),
-            backend_fingerprint=backend_fingerprint,
-            model_fingerprint=self._spec.model_fingerprint,
-            inference_fingerprint=self._spec.inference_fingerprint,
-            runtime_fingerprint=self._spec.runtime_fingerprint,
-            spec_fingerprint=self._spec.fingerprint,
+            spec=self._spec,
             execution_fingerprint=execution_fingerprint,
             request_sha256=request_sha256,
             error=error,

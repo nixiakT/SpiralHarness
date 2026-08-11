@@ -9,6 +9,8 @@ from typing import Annotated, Literal
 from pydantic import AliasChoices, Field, field_validator, model_validator
 
 from spiral_harness.core.models import (
+    CANDIDATE_MUTATION_MEDIA_TYPE,
+    HARNESS_MANIFEST_MEDIA_TYPE,
     ArtifactRef,
     BudgetPolicy,
     ComponentKind,
@@ -26,8 +28,9 @@ _MEDIA_TYPE_RE = re.compile(rf"^{_MIME_TOKEN}/{_MIME_TOKEN}$")
 PROMOTION_GATE_IMPLEMENTATION_FINGERPRINT = (
     "spiral-harness.verification.promotion-gate:paired-bootstrap:v1"
 )
-PROTOCOL_MANIFEST_MEDIA_TYPE = "application/vnd.spiral-harness.protocol-manifest.v2+json"
-EXPERIMENT_MANIFEST_MEDIA_TYPE = "application/vnd.spiral-harness.experiment-manifest.v1+json"
+PROTOCOL_MANIFEST_MEDIA_TYPE = "application/vnd.spiral-harness.protocol-manifest.v3+json"
+EXPERIMENT_MANIFEST_MEDIA_TYPE = "application/vnd.spiral-harness.experiment-manifest.v2+json"
+CANDIDATE_MANIFEST_MEDIA_TYPE = "application/vnd.spiral-harness.candidate-manifest.v2+json"
 
 
 def _require_json_ref(ref: ArtifactRef, *, field_name: str) -> None:
@@ -145,7 +148,7 @@ class MutationPolicy(ImmutableModel):
 class ProtocolManifest(ImmutableModel):
     """Freeze every trusted input that can affect an evaluation result."""
 
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     benchmark_fingerprint: NonEmptyStr = Field(
         validation_alias=AliasChoices("benchmark_fingerprint", "benchmark")
     )
@@ -161,6 +164,7 @@ class ProtocolManifest(ImmutableModel):
     runtime_fingerprint: NonEmptyStr = Field(
         validation_alias=AliasChoices("runtime_fingerprint", "runtime")
     )
+    model_spec_fingerprint: Sha256
     sandbox_fingerprint: NonEmptyStr = Field(
         validation_alias=AliasChoices("sandbox_fingerprint", "sandbox")
     )
@@ -228,7 +232,7 @@ class ProtocolManifest(ImmutableModel):
 class ExperimentManifest(ImmutableModel):
     """Freeze one search plan before either harness arm is executed."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     protocol_ref: ArtifactRef = Field(validation_alias=AliasChoices("protocol_ref", "protocol"))
     seed_harness_ref: ArtifactRef = Field(
         validation_alias=AliasChoices("seed_harness_ref", "seed_harness")
@@ -255,15 +259,18 @@ class ExperimentManifest(ImmutableModel):
         if self.search_budget.max_evaluations is None:
             raise ValueError("search_budget must cap max_evaluations")
         if self.protocol_ref.media_type != PROTOCOL_MANIFEST_MEDIA_TYPE:
-            raise ValueError("protocol_ref must declare the exact protocol manifest v2 media type")
-        _require_json_ref(self.seed_harness_ref, field_name="seed_harness_ref")
+            raise ValueError("protocol_ref must declare the exact protocol manifest v3 media type")
+        if self.seed_harness_ref.media_type != HARNESS_MANIFEST_MEDIA_TYPE:
+            raise ValueError(
+                "seed_harness_ref must declare the exact harness manifest v2 media type"
+            )
         return self
 
 
 class CandidateManifest(ImmutableModel):
     """Freeze one nominated atomic child and every input to its evaluation."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     experiment_ref: ArtifactRef
     parent_harness_ref: ArtifactRef
     child_harness_ref: ArtifactRef
@@ -284,20 +291,25 @@ class CandidateManifest(ImmutableModel):
 
     @model_validator(mode="after")
     def parent_and_child_are_distinct(self) -> CandidateManifest:
-        for field_name in (
-            "experiment_ref",
-            "parent_harness_ref",
-            "child_harness_ref",
-            "mutation_ref",
-            "evaluation_plan_ref",
-        ):
-            _require_json_ref(getattr(self, field_name), field_name=field_name)
+        if self.experiment_ref.media_type != EXPERIMENT_MANIFEST_MEDIA_TYPE:
+            raise ValueError(
+                "experiment_ref must declare the exact experiment manifest v2 media type"
+            )
+        _require_json_ref(self.evaluation_plan_ref, field_name="evaluation_plan_ref")
+        if self.mutation_ref.media_type != CANDIDATE_MUTATION_MEDIA_TYPE:
+            raise ValueError("mutation_ref must declare the exact candidate mutation v1 media type")
+        for field_name in ("parent_harness_ref", "child_harness_ref"):
+            if getattr(self, field_name).media_type != HARNESS_MANIFEST_MEDIA_TYPE:
+                raise ValueError(
+                    f"{field_name} must declare the exact harness manifest v2 media type"
+                )
         if self.parent_harness_ref.sha256 == self.child_harness_ref.sha256:
             raise ValueError("candidate child_harness_ref must differ from its parent")
         return self
 
 
 __all__ = [
+    "CANDIDATE_MANIFEST_MEDIA_TYPE",
     "EXPERIMENT_MANIFEST_MEDIA_TYPE",
     "PROMOTION_GATE_IMPLEMENTATION_FINGERPRINT",
     "PROTOCOL_MANIFEST_MEDIA_TYPE",

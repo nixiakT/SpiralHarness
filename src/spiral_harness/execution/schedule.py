@@ -22,7 +22,10 @@ from spiral_harness.execution.contracts import (
     ATTEMPT_OUTCOME_MEDIA_TYPE,
     AttemptBudget,
     AttemptLedgerState,
+    FrozenModelSpec,
+    ModelExecution,
 )
+from spiral_harness.execution.model import paired_execution_fingerprint
 from spiral_harness.storage.protocol import ArtifactRepository
 
 _SEED_MASK = (1 << 63) - 1
@@ -30,7 +33,7 @@ _SEED_SCHEMA = "spiral-harness/deterministic-seed/v2"
 _CELL_SCHEMA = "spiral-harness/evaluation-cell/v2"
 _PAIRED_CELL_SCHEMA = "spiral-harness/paired-evaluation-cell/v2"
 SCHEDULE_PREFLIGHT_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.schedule-preflight-certificate.v1+json"
+    "application/vnd.spiral-harness.schedule-preflight-certificate.v2+json"
 )
 
 
@@ -343,8 +346,9 @@ class ScheduleBudgetExceeded(AttemptBudgetExceeded):
 class SchedulePreflightCertificate(ImmutableModel):
     """Immutable proof of the exact capacity checked before batch execution."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     schedule_fingerprint: Sha256
+    model_spec: FrozenModelSpec
     budget_fingerprint: Sha256
     ledger_id: NonEmptyStr | None
     ledger_tail_ref: ArtifactRef | None
@@ -379,10 +383,24 @@ class SchedulePreflightCertificate(ImmutableModel):
     def fingerprint(self) -> str:
         return canonical_sha256(self)
 
+    def binds_execution(self, execution: ModelExecution) -> bool:
+        """Return whether an execution exactly satisfies this frozen model boundary."""
+
+        checked = ModelExecution.model_validate(execution, strict=True)
+        return checked.spec == self.model_spec and checked.execution_fingerprint == (
+            paired_execution_fingerprint(
+                self.model_spec,
+                checked.task,
+                seed=checked.seed,
+                backend_fingerprint=self.model_spec.backend_fingerprint,
+            )
+        )
+
 
 def preflight_attempt_budget(
     schedule: EvaluationBatchSchedule,
     capacity: AttemptBudget | AttemptLedgerState,
+    model_spec: FrozenModelSpec,
 ) -> SchedulePreflightCertificate:
     """Atomically decide whether the complete frozen batch can be started.
 
@@ -392,6 +410,7 @@ def preflight_attempt_budget(
     """
 
     checked_schedule = EvaluationBatchSchedule.model_validate(schedule, strict=True)
+    checked_model_spec = FrozenModelSpec.model_validate(model_spec, strict=True)
     if isinstance(capacity, AttemptBudget):
         budget = AttemptBudget.model_validate(capacity, strict=True)
         ledger_id = None
@@ -429,6 +448,7 @@ def preflight_attempt_budget(
 
     return SchedulePreflightCertificate(
         schedule_fingerprint=checked_schedule.fingerprint,
+        model_spec=checked_model_spec,
         budget_fingerprint=budget.fingerprint,
         ledger_id=ledger_id,
         ledger_tail_ref=ledger_tail_ref,

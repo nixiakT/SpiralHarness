@@ -15,6 +15,8 @@ from typing import Annotated, Literal, Protocol, Self, runtime_checkable
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+import spiral_harness.execution.contracts as _contracts
+import spiral_harness.execution.receipts as _receipts
 from spiral_harness.core.canonical import canonical_json_bytes, sha256_bytes
 from spiral_harness.core.experiment import (
     EXPERIMENT_MANIFEST_MEDIA_TYPE,
@@ -86,6 +88,7 @@ from spiral_harness.execution.schedule import (
     SCHEDULE_PREFLIGHT_MEDIA_TYPE,
     EvaluationBatchSchedule,
     EvaluationPhase,
+    SchedulePreflightCertificate,
 )
 from spiral_harness.experiments.admission import (
     CandidateAdmissionError,
@@ -146,10 +149,10 @@ DIAGNOSTIC_GRADER_VERDICT_MEDIA_TYPE = (
     "application/vnd.spiral-harness.diagnostic-grader-verdict.v1+json"
 )
 TRUSTED_SCREEN_EVALUATION_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.trusted-screen-evaluation.v1+json"
+    "application/vnd.spiral-harness.trusted-screen-evaluation.v2+json"
 )
 TRUSTED_OBJECTIVE_AGGREGATE_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.trusted-objective-aggregate.v1+json"
+    "application/vnd.spiral-harness.trusted-objective-aggregate.v2+json"
 )
 TRUSTED_STRATEGY_FEEDBACK_MEDIA_TYPE = (
     "application/vnd.spiral-harness.trusted-strategy-feedback.v1+json"
@@ -823,7 +826,7 @@ class TrustedStrategyFeedbackService:
 class TrustedObjectiveAggregateContent(ImmutableModel):
     """Trusted grader authorization for screen scores over one receipt batch."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     search_run_ref: ArtifactRef
     proposal_ref: ArtifactRef
     candidate_ref: ArtifactRef
@@ -847,6 +850,8 @@ class TrustedObjectiveAggregateContent(ImmutableModel):
         value: tuple[ArtifactRef, ...],
     ) -> tuple[ArtifactRef, ...]:
         ordered = tuple(sorted(value, key=lambda ref: (ref.sha256, ref.size, ref.media_type)))
+        if {ref.media_type for ref in ordered} != {_receipts.EXECUTION_RECEIPT_MEDIA_TYPE}:
+            raise ValueError("objective receipt refs must be execution receipts")
         if len(ordered) != len({ref.sha256 for ref in ordered}):
             raise ValueError("objective receipt refs must not contain duplicates")
         return ordered
@@ -865,7 +870,7 @@ class TrustedObjectiveAggregateContent(ImmutableModel):
 class TrustedObjectiveAggregate(ImmutableModel):
     """HMAC-attested score aggregate issued by the independent grader plane."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     content: TrustedObjectiveAggregateContent
     attestor_id: Sha256
     authentication_tag: Sha256
@@ -884,9 +889,8 @@ class ObjectiveAggregateVerificationCapability:
             raise ValueError("objective aggregate attestor secret must contain at least 32 bytes")
         self.__store = store
         self.__secret = secret
-        self.__attestor_id = sha256_bytes(
-            b"spiral-harness/objective-aggregate-attestor/v1\x00" + secret
-        )
+        attestor_domain = b"spiral-harness/objective-aggregate-attestor/v2\x00"
+        self.__attestor_id = sha256_bytes(attestor_domain + secret)
 
     @property
     def attestor_id(self) -> str:
@@ -901,12 +905,10 @@ class ObjectiveAggregateVerificationCapability:
             raise AutomaticSearchLoopError("objective aggregate artifact is not canonical")
         if aggregate.attestor_id != self.__attestor_id:
             raise AutomaticSearchLoopError("objective aggregate uses another attestor")
-        expected = hmac.new(
-            self.__secret,
-            canonical_json_bytes(aggregate.content),
-            sha256,
-        ).hexdigest()
-        if not hmac.compare_digest(aggregate.authentication_tag, expected):
+        expected = hmac.new(self.__secret, b"spiral-harness/objective-aggregate/v2\x00", sha256)
+        expected.update(self.__attestor_id.encode("ascii") + b"\x00")
+        expected.update(canonical_json_bytes(aggregate.content))
+        if not hmac.compare_digest(aggregate.authentication_tag, expected.hexdigest()):
             raise AutomaticSearchLoopError("objective aggregate authentication failed")
         return aggregate.content
 
@@ -922,10 +924,7 @@ class TrustedObjectiveAggregateService:
     def __init__(self, store: ArtifactRepository, *, secret: bytes) -> None:
         self.__store = store
         self.__secret = secret
-        self.__capability = ObjectiveAggregateVerificationCapability(
-            store,
-            secret=secret,
-        )
+        self.__capability = ObjectiveAggregateVerificationCapability(store, secret=secret)
 
     @property
     def verification_capability(self) -> ObjectiveAggregateVerificationCapability:
@@ -936,25 +935,23 @@ class TrustedObjectiveAggregateService:
             content.model_dump(mode="python", round_trip=True, warnings="none"),
             strict=True,
         )
+        authentication = hmac.new(
+            self.__secret, b"spiral-harness/objective-aggregate/v2\x00", sha256
+        )
+        authentication.update(self.__capability.attestor_id.encode("ascii") + b"\x00")
+        authentication.update(canonical_json_bytes(checked))
         aggregate = TrustedObjectiveAggregate(
             content=checked,
             attestor_id=self.__capability.attestor_id,
-            authentication_tag=hmac.new(
-                self.__secret,
-                canonical_json_bytes(checked),
-                sha256,
-            ).hexdigest(),
+            authentication_tag=authentication.hexdigest(),
         )
-        return self.__store.put_json(
-            aggregate,
-            media_type=TRUSTED_OBJECTIVE_AGGREGATE_MEDIA_TYPE,
-        )
+        return self.__store.put_json(aggregate, media_type=TRUSTED_OBJECTIVE_AGGREGATE_MEDIA_TYPE)
 
 
 class TrustedScreenEvaluation(ImmutableModel):
     """Receipt-replay proof and trusted aggregate used by a candidate screen."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     search_run_ref: ArtifactRef
     baseline_kind: BaselineKind
     round_index: Annotated[int, Field(ge=0, strict=True)]
@@ -982,6 +979,8 @@ class TrustedScreenEvaluation(ImmutableModel):
         value: tuple[ArtifactRef, ...],
     ) -> tuple[ArtifactRef, ...]:
         ordered = tuple(sorted(value, key=lambda ref: (ref.sha256, ref.size, ref.media_type)))
+        if {ref.media_type for ref in ordered} != {_receipts.EXECUTION_RECEIPT_MEDIA_TYPE}:
+            raise ValueError("receipt_refs must be execution receipts")
         if len(ordered) != len({ref.sha256 for ref in ordered}):
             raise ValueError("receipt_refs must not contain duplicates")
         return ordered
@@ -996,6 +995,8 @@ class TrustedScreenEvaluation(ImmutableModel):
             raise ValueError("preflight_ref declares the wrong media type")
         if self.objective_aggregate_ref.media_type != TRUSTED_OBJECTIVE_AGGREGATE_MEDIA_TYPE:
             raise ValueError("objective_aggregate_ref declares the wrong media type")
+        if self.final_ledger_tail_ref.media_type != _contracts.ATTEMPT_OUTCOME_MEDIA_TYPE:
+            raise ValueError("final_ledger_tail_ref declares the wrong media type")
         if self.trusted_usage.schedule_fingerprint != self.schedule.fingerprint:
             raise ValueError("trusted usage belongs to another schedule")
         canonical_usage_receipts = tuple(
@@ -3519,32 +3520,30 @@ class AutomaticSearchLoop:
         candidate_harness_ref = screen.candidate_harness_ref
         if evaluation_ref is None or candidate_ref is None or candidate_harness_ref is None:
             raise AutomaticSearchLoopError("screen evaluation candidate binding is incomplete")
-        evaluation = self._load_exact(
-            evaluation_ref,
-            TrustedScreenEvaluation,
-            TRUSTED_SCREEN_EVALUATION_MEDIA_TYPE,
+        exact = self._load_exact
+        evaluation = exact(
+            evaluation_ref, TrustedScreenEvaluation, TRUSTED_SCREEN_EVALUATION_MEDIA_TYPE
         )
-        study = self._load_exact(
-            run.baseline_study_plan_ref,
-            BaselineStudyPlan,
-            BASELINE_STUDY_PLAN_MEDIA_TYPE,
+        study = exact(
+            run.baseline_study_plan_ref, BaselineStudyPlan, BASELINE_STUDY_PLAN_MEDIA_TYPE
         )
         arm = study.arm(run.baseline_kind)
-        benchmark = self._load_exact(
-            arm.context.benchmark_ref,
-            SearchBenchmarkBinding,
-            SEARCH_BENCHMARK_BINDING_MEDIA_TYPE,
+        benchmark = exact(
+            arm.context.benchmark_ref, SearchBenchmarkBinding, SEARCH_BENCHMARK_BINDING_MEDIA_TYPE
         )
-        experiment = self._load_exact(
-            run.experiment_ref,
-            ExperimentManifest,
-            EXPERIMENT_MANIFEST_MEDIA_TYPE,
+        experiment = exact(run.experiment_ref, ExperimentManifest, EXPERIMENT_MANIFEST_MEDIA_TYPE)
+        protocol = exact(experiment.protocol_ref, ProtocolManifest, PROTOCOL_MANIFEST_MEDIA_TYPE)
+        preflight = exact(
+            evaluation.preflight_ref, SchedulePreflightCertificate, SCHEDULE_PREFLIGHT_MEDIA_TYPE
         )
-        protocol = self._load_exact(
-            experiment.protocol_ref,
-            ProtocolManifest,
-            PROTOCOL_MANIFEST_MEDIA_TYPE,
-        )
+        fingerprint_fields = ("model_fingerprint", "inference_fingerprint", "runtime_fingerprint")
+        model_boundary = tuple(getattr(preflight.model_spec, field) for field in fingerprint_fields)
+        foreign_spec = preflight.model_spec.fingerprint != protocol.model_spec_fingerprint
+        if foreign_spec or any(
+            tuple(getattr(frozen, field) for field in fingerprint_fields) != model_boundary
+            for frozen in (protocol, arm.context)
+        ):
+            raise AutomaticSearchLoopError("screen preflight violates frozen model boundary")
         actual_coordinates = (
             evaluation.search_run_ref,
             evaluation.baseline_kind,

@@ -1,12 +1,4 @@
-"""Immutable execution receipts and outcome-derived trusted usage replay.
-
-Receipts make the controller's logical evaluation coordinate explicit without
-allowing model executions to become an accounting authority.  Reported and
-charged token fields are copied into a receipt for auditability, but replay
-loads the referenced :class:`~spiral_harness.execution.contracts.AttemptOutcome`
-and derives usage from that artifact again.  In particular, a timeout that
-reports zero tokens still charges its complete burned reservation.
-"""
+"""Immutable execution receipts with outcome-derived trusted usage replay."""
 
 from __future__ import annotations
 
@@ -16,6 +8,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import Field, model_validator
 
+import spiral_harness.execution.materialization as _materialization
 from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.models import ArtifactRef, ImmutableModel, Sha256
 from spiral_harness.execution.attempts import AttemptLedger
@@ -30,7 +23,6 @@ from spiral_harness.execution.contracts import (
     ExecutionStatus,
     ModelExecution,
     ModelExecutionRecord,
-    PromptHarness,
 )
 from spiral_harness.execution.model import FixedModelRunner
 from spiral_harness.execution.schedule import (
@@ -41,7 +33,7 @@ from spiral_harness.execution.schedule import (
 )
 from spiral_harness.storage.protocol import ArtifactRepository
 
-EXECUTION_RECEIPT_MEDIA_TYPE = "application/vnd.spiral-harness.execution-receipt.v1+json"
+EXECUTION_RECEIPT_MEDIA_TYPE = "application/vnd.spiral-harness.execution-receipt.v2+json"
 
 
 class ExecutionReceiptError(RuntimeError):
@@ -67,7 +59,7 @@ class ExecutionReceiptKey(ImmutableModel):
 class ExecutionReceipt(ImmutableModel):
     """Content-addressed binding from a scheduled cell to one terminal attempt."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     schedule_fingerprint: Sha256
     preflight_ref: ArtifactRef
     preflight_fingerprint: Sha256
@@ -114,7 +106,7 @@ class ExecutionReceipt(ImmutableModel):
 class ScheduledExecutionRecord(ImmutableModel):
     """Atomic runner result plus every reference needed for receipt replay."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     schedule_fingerprint: Sha256
     preflight_ref: ArtifactRef
     cell: EvaluationCellKey
@@ -164,7 +156,7 @@ class ScheduledExecutionRecord(ImmutableModel):
 class TrustedExecutionUsage(ImmutableModel):
     """Usage and completion counts derived solely by verified receipt replay."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     schedule_fingerprint: Sha256
     receipt_refs: tuple[ArtifactRef, ...]
     ledger_tail_refs: tuple[ArtifactRef, ...]
@@ -231,9 +223,7 @@ def publish_execution_receipt(
         raise ExecutionReceiptIntegrityError("receipt cell is outside the frozen schedule")
     _require_attempt_index(checked_schedule, attempt_index)
     checked_preflight_ref, preflight = _load_preflight(
-        checked_repository,
-        preflight_ref,
-        checked_schedule,
+        checked_repository, preflight_ref, checked_schedule
     )
     checked_reservation_ref = _validate_ref(
         reservation_ref,
@@ -266,7 +256,7 @@ def publish_execution_receipt(
         attempt_index,
         execution,
     )
-    _verify_preflight_attempt_binding(preflight, reservation, outcome)
+    _verify_preflight_attempt_binding(preflight, reservation, outcome, execution)
 
     receipt = ExecutionReceipt(
         schedule_fingerprint=checked_schedule.fingerprint,
@@ -304,9 +294,9 @@ def execute_scheduled_attempt(
     cell: EvaluationCellKey,
     attempt_index: int,
     task: object,
-    harness: PromptHarness,
+    harness_ref: ArtifactRef,
 ) -> ScheduledExecutionRecord:
-    """Execute one candidate-facing task and atomically bind its accounting refs.
+    """Materialize an exact harness ref, execute, and bind its accounting refs.
 
     ``task`` must be a single candidate-facing view containing only the task id
     and question.  Benchmark adapters, rosters, gold answers, graders, and
@@ -314,9 +304,7 @@ def execute_scheduled_attempt(
 
     Calls for one batch are deliberately serialized.  The first call binds to
     the preflight ledger tail.  Every later call must name the immediately
-    preceding outcome and its already-published receipt.  The process-local
-    ledger capability must remain exclusive to this batch; final replay still
-    proves that the complete post-preflight suffix contains no foreign attempt.
+    preceding outcome and its already-published receipt.
     """
 
     if type(runner) is not FixedModelRunner:
@@ -326,7 +314,14 @@ def execute_scheduled_attempt(
     if not checked_schedule.contains(checked_cell):
         raise ExecutionReceiptIntegrityError("scheduled cell is outside the frozen schedule")
     _require_attempt_index(checked_schedule, attempt_index)
-    checked_harness = PromptHarness.model_validate(harness, strict=True)
+    repository = runner.repository
+    checked_preflight_ref, preflight = _load_preflight(repository, preflight_ref, checked_schedule)
+    if runner.spec != preflight.model_spec:
+        raise ExecutionReceiptIntegrityError("runner model spec differs from preflight")
+    checked_harness = _materialization.HarnessMaterializer(
+        repository,
+        spec=runner.spec,
+    ).materialize(harness_ref)
     expected_harness_id = checked_schedule.harness_id_for(checked_cell.side)
     if checked_harness.harness_id != expected_harness_id:
         raise ExecutionReceiptIntegrityError(
@@ -343,12 +338,6 @@ def execute_scheduled_attempt(
             "candidate-facing task id does not match the scheduled cell"
         )
 
-    repository = runner.repository
-    checked_preflight_ref, preflight = _load_preflight(
-        repository,
-        preflight_ref,
-        checked_schedule,
-    )
     expected_tail = (
         None
         if expected_previous_ledger_tail_ref is None
@@ -425,6 +414,7 @@ def execute_scheduled_attempt(
             preflight,
             previous_reservation,
             previous_outcome,
+            previous_execution,
         )
     state = runner.attempt_state()
     if state.ledger_id != preflight.ledger_id:
@@ -525,9 +515,7 @@ def replay_trusted_usage(
     checked_repository = _require_repository(repository)
     checked_schedule = EvaluationBatchSchedule.model_validate(schedule, strict=True)
     checked_preflight_ref, preflight = _load_preflight(
-        checked_repository,
-        preflight_ref,
-        checked_schedule,
+        checked_repository, preflight_ref, checked_schedule
     )
     if type(attempt_ledger) is not AttemptLedger:
         raise TypeError("attempt_ledger must be an exact AttemptLedger")
@@ -622,7 +610,7 @@ def replay_trusted_usage(
             receipt.attempt_index,
             execution,
         )
-        _verify_preflight_attempt_binding(preflight, reservation, outcome)
+        _verify_preflight_attempt_binding(preflight, reservation, outcome, execution)
 
         receipts_by_slot[slot] = (receipt_ref, receipt)
         attempts_by_cell[receipt.cell_fingerprint].append(
@@ -653,18 +641,19 @@ def replay_trusted_usage(
                     "a settled or poisoned attempt cannot be followed by a retry"
                 )
 
-    paired_attempts: dict[str, dict[str, tuple[int, ...]]] = defaultdict(dict)
+    paired_attempts: dict[str, dict[str, tuple[tuple[int, str], ...]]] = defaultdict(dict)
     for cell_fingerprint, attempts in attempts_by_cell.items():
         cell = expected_cells[cell_fingerprint]
         paired_attempts[cell.pairing_fingerprint][cell.side.value] = tuple(
-            item[0] for item in attempts
+            (item[0], linked_by_receipt[item[2].sha256][2].execution_fingerprint)
+            for item in attempts
         )
     for sides in paired_attempts.values():
         if set(sides) != {"parent", "candidate"}:
             raise ExecutionReceiptIntegrityError("paired receipt schedule is missing a side")
         if sides["parent"] != sides["candidate"]:
             raise ExecutionReceiptIntegrityError(
-                "parent and candidate retry schedules must be exactly paired"
+                "parent and candidate retry executions must be exactly paired"
             )
 
     if any(
@@ -847,7 +836,10 @@ def _verify_preflight_attempt_binding(
     preflight: SchedulePreflightCertificate,
     reservation: AttemptReservation,
     outcome: AttemptOutcome,
+    execution: ModelExecution,
 ) -> None:
+    if not preflight.binds_execution(execution):
+        raise ExecutionReceiptIntegrityError("execution model boundary differs from preflight")
     if (
         reservation.budget_fingerprint != preflight.budget_fingerprint
         or outcome.budget_fingerprint != preflight.budget_fingerprint
@@ -893,7 +885,7 @@ def _load_linked_attempt(
         ModelExecution,
         "execution",
     )
-    _verify_execution_binding(reservation, outcome, execution)
+    _verify_execution_binding(repository, reservation, outcome, execution)
     return reservation, outcome, execution
 
 
@@ -928,6 +920,7 @@ def _verify_reservation_outcome_pair(
 
 
 def _verify_execution_binding(
+    repository: ArtifactRepository,
     reservation: AttemptReservation,
     outcome: AttemptOutcome,
     execution: ModelExecution,
@@ -938,6 +931,11 @@ def _verify_execution_binding(
         raise ExecutionReceiptIntegrityError("execution fingerprint differs from its reservation")
     if execution.request_sha256 != reservation.request_sha256:
         raise ExecutionReceiptIntegrityError("execution request differs from its reservation")
+    try:
+        materializer = _materialization.HarnessMaterializer(repository, spec=execution.spec)
+        materializer.verify_execution_request(execution.request.harness_ref, execution)
+    except _materialization.HarnessMaterializationError as exc:
+        raise ExecutionReceiptIntegrityError(f"harness request replay failed: {exc}") from exc
     if execution.usage.total_tokens != outcome.reported_tokens:
         raise ExecutionReceiptIntegrityError("execution tokens differ from its AttemptOutcome")
     if (
@@ -1013,7 +1011,7 @@ def _replay_attempt_chain(
                 ModelExecution,
                 "execution",
             )
-            _verify_execution_binding(reservation, outcome, execution)
+            _verify_execution_binding(repository, reservation, outcome, execution)
         if ledger_id is None:
             ledger_id = outcome.ledger_id
             budget_fingerprint = outcome.budget_fingerprint

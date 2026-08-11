@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from spiral_harness.core.canonical import canonical_json_bytes, sha256_bytes
 from spiral_harness.core.experiment import MutationPolicy
 from spiral_harness.core.models import (
+    HARNESS_MANIFEST_MEDIA_TYPE,
     ArtifactRef,
     BudgetPolicy,
     CandidateMutation,
@@ -84,7 +85,7 @@ def manifest_ref(manifest: HarnessManifest) -> ArtifactRef:
     payload = canonical_json_bytes(manifest)
     return artifact_for(
         payload,
-        media_type="application/vnd.spiral-harness.manifest+json",
+        media_type=HARNESS_MANIFEST_MEDIA_TYPE,
     )
 
 
@@ -273,7 +274,7 @@ def test_registry_verifies_actual_artifact_bytes_media_type_and_size_policy() ->
             )
 
 
-def test_registry_verifies_parent_reference_content_and_json_type() -> None:
+def test_registry_verifies_parent_reference_content_and_exact_media_type() -> None:
     parent = parent_manifest()
     payload = b"candidate prompt"
     candidate = mutation(
@@ -302,9 +303,9 @@ def test_registry_verifies_parent_reference_content_and_json_type() -> None:
             ArtifactRef(
                 sha256=valid_ref.sha256,
                 size=valid_ref.size,
-                media_type="text/plain",
+                media_type="application/json",
             ),
-            "JSON media type",
+            "exact harness manifest v2 media type",
         ),
     ]
 

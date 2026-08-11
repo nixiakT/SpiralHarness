@@ -15,6 +15,7 @@ from spiral_harness.core.experiment import (
     ProtocolSplit,
 )
 from spiral_harness.core.models import (
+    HARNESS_MANIFEST_MEDIA_TYPE,
     ArtifactRef,
     BudgetPolicy,
     ComponentKind,
@@ -84,9 +85,6 @@ from spiral_harness.verification.artifacts import TrustedGateBatchService
 from spiral_harness.verification.mechanism import TrustedMechanismEvidenceService
 from spiral_harness.verification.models import GateConfig
 
-HARNESS_MANIFEST_MEDIA_TYPE = "application/vnd.spiral-harness.manifest+json"
-CANDIDATE_MANIFEST_MEDIA_TYPE = "application/vnd.spiral-harness.candidate-manifest.v1+json"
-CANDIDATE_MUTATION_MEDIA_TYPE = "application/vnd.spiral-harness.candidate-mutation.v1+json"
 GATE_CONFIG_MEDIA_TYPE = "application/vnd.spiral-harness.gate-config+json"
 PROMPT_MEDIA_TYPE = "text/plain"
 SEARCH_RUN_SEEDS = (701, 702)
@@ -375,6 +373,7 @@ def build_frozen_replay_fixture(root: str | Path) -> FrozenReplayFixture:
         model_fingerprint=seed_harness.model_fingerprint,
         inference_fingerprint="fixture-inference@sha256:non-reportable-v1",
         runtime_fingerprint=seed_harness.runtime_fingerprint,
+        model_spec_fingerprint="0" * 64,
         sandbox_fingerprint="fixture-logical-isolation:no-security-claim",
         capability_policy_ref=capability_policy_ref,
         grader_fingerprint="fixture-grader@sha256:non-reportable-v1",
@@ -636,9 +635,6 @@ def freeze_replay_search_runs(
 
 
 __all__ = [
-    "CANDIDATE_MANIFEST_MEDIA_TYPE",
-    "CANDIDATE_MUTATION_MEDIA_TYPE",
-    "HARNESS_MANIFEST_MEDIA_TYPE",
     "PROMPT_COMPONENT_NAME",
     "REPEAT_SEEDS",
     "SEARCH_RUN_SEEDS",

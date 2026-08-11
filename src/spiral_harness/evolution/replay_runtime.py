@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from spiral_harness.core.experiment import (
+    CANDIDATE_MANIFEST_MEDIA_TYPE,
     CandidateManifest,
     ExperimentManifest,
     ProtocolPartition,
 )
 from spiral_harness.core.models import (
+    CANDIDATE_MUTATION_MEDIA_TYPE,
+    HARNESS_MANIFEST_MEDIA_TYPE,
     ArtifactRef,
     CandidateMutation,
     ComponentKind,
@@ -33,9 +36,6 @@ from spiral_harness.evolution.orchestrator import (
     TrustedStrategyFeedbackContent,
 )
 from spiral_harness.evolution.replay_setup import (
-    CANDIDATE_MANIFEST_MEDIA_TYPE,
-    CANDIDATE_MUTATION_MEDIA_TYPE,
-    HARNESS_MANIFEST_MEDIA_TYPE,
     PROMPT_COMPONENT_NAME,
     FrozenReplayFixture,
 )
@@ -130,6 +130,11 @@ class ReplayRuntime:
         del feedback_ref
         self.materialization_call_count += 1
         store = self.fixture.store
+        if champion_harness_ref.media_type != HARNESS_MANIFEST_MEDIA_TYPE:
+            raise ValueError(
+                "champion_harness_ref must declare owner media type "
+                f"{HARNESS_MANIFEST_MEDIA_TYPE!r}"
+            )
         parent = store.get_json(champion_harness_ref, HarnessManifest)
         experiment = store.get_json(self.fixture.experiment_ref, ExperimentManifest)
         hypothesis = store.get_json(proposal.hypothesis_ref, MutationHypothesis)

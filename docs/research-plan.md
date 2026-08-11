@@ -77,11 +77,15 @@ Every candidate is an immutable child of one parent harness and contains:
 - the evaluation plan and budget;
 - resulting measurements and a promotion decision.
 
-The first implementation supports atomic prompt and skill mutations. The state
-schema will reserve explicit boundaries for memory, tools, middleware, and
-control flow so they can be added without turning the harness into an opaque
-code blob. Multi-component edits require an explicit interaction experiment;
-otherwise they make credit assignment needlessly ambiguous.
+The automatic-search implementation currently supports atomic prompt
+mutations. A separate first skill slice supports direct replacement by an
+immediate rules-only declarative revision when the parent package declares
+`source_kind=generated`, and replays its admission, materialization, and backend
+request; it is not yet an automatic skill-search loop. The state schema
+reserves explicit boundaries for memory, tools,
+middleware, and control flow so they can be added without turning the harness
+into an opaque code blob. Multi-component edits require an explicit interaction
+experiment; otherwise they make credit assignment needlessly ambiguous.
 
 ## 5. Evolution loop
 
@@ -157,9 +161,37 @@ place. The first bounded prompt-search kernel now adds typed diagnosis and
 proposal contracts, finite-catalogue random-valid sampling, scoped strategy
 artifact access, receipt-backed candidate screens, aggregate-only gate
 feedback, immutable search journals, and an exact all-run study barrier. Its
-multi-condition replay fixture is non-reportable. A credentialed fixed-model
-provider and preregistered live study remain necessary for an empirical result;
-skill evolution is the next component-level extension of the control loop.
+multi-condition replay fixture is non-reportable.
+
+The first declarative skill execution slice now adds one canonical JSON
+`SkillPackage`, strictly parsed and normalized SPDX expressions,
+licence/provenance/compliance/notice reference closure, and deterministic
+`metadata`/`rules`/`full` disclosure. Admission allows only an immediate
+rules-only revision whose parent declares `source_kind=generated`; scheduled
+materialization always selects the `rules` projection. Reference closure proves
+only that directly declared content-addressed bytes exist and does not
+recursively validate typed package lineage, authenticate the declared source
+class or a reviewer, prove approval, or establish a legal conclusion. Packages
+declaring first- or third-party source classes are rejected by this revision
+path. `ResolvedHarness` and `ModelRequest` v2 carry the exact manifest reference
+and rules disclosure into the backend request; `ModelExecution` v2 embeds the
+complete credential-free frozen model spec, and receipt publication/replay
+automatically reconstruct the request from CAS artifacts. A preflight
+certificate fixes the exact spec and clean ledger boundary before the batch;
+trusted replay recomputes the execution fingerprints and rejects unequal
+parent/candidate task bytes. The automatic proposal grammar and finite catalogue
+remain prompt-only, however;
+there is no general skill router, skill proposal/search path, trusted
+skill-specific adherence/behavior check, parent-revert/placebo gate, or live
+provider result. These package and request guarantees therefore do not
+demonstrate a skill gain.
+
+The next skill batch will turn request/execution replay into trusted activation
+evidence, independently test adherence and the predeclared behavior change,
+and add parent-revert and placebo interventions before a skill candidate can
+enter the promotion gate. Only then should automatic skill proposals be added.
+A credentialed fixed-model provider and preregistered live study remain
+necessary for an empirical result.
 
 ### M2 — Multi-component evolution
 
@@ -180,6 +212,8 @@ skill evolution is the next component-level extension of the control loop.
 - letting the optimizer alter graders or evaluation policy;
 - repeatedly tuning against the sealed test set;
 - accepting a change solely through LLM self-judgment;
+- treating package loading or request binding as evidence of skill adherence,
+  causal behavior change, or benchmark gain;
 - optimizing an unbounded scalar that silently trades correctness for cost or
   safety.
 

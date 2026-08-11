@@ -1,15 +1,24 @@
 from __future__ import annotations
 
+import hmac
+from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
-from test_execution_receipts import ledger_for, persist_preflight, record_attempt
+from test_execution_receipts import (
+    ledger_for,
+    put_prompt_harness,
+    record_attempt,
+    runner_spec,
+)
 from test_terminal_decision import build_graph
 
+from spiral_harness.core.canonical import canonical_json_bytes, sha256_bytes
 from spiral_harness.core.experiment import (
     EXPERIMENT_MANIFEST_MEDIA_TYPE,
+    PROTOCOL_MANIFEST_MEDIA_TYPE,
     ExperimentManifest,
     ProtocolPartition,
 )
@@ -88,16 +97,26 @@ from spiral_harness.evolution.strategies import (
     make_search_policy,
     make_strategy_plugin_manifest,
 )
-from spiral_harness.execution.contracts import ExecutionStatus
+from spiral_harness.execution.contracts import ATTEMPT_OUTCOME_MEDIA_TYPE, ExecutionStatus
 from spiral_harness.execution.receipts import (
     EXECUTION_RECEIPT_MEDIA_TYPE,
     ExecutionReceiptIntegrityError,
+    TrustedExecutionUsage,
     replay_trusted_usage,
 )
-from spiral_harness.execution.schedule import EvaluationBatchSchedule, EvaluationPhase
+from spiral_harness.execution.schedule import (
+    SCHEDULE_PREFLIGHT_MEDIA_TYPE,
+    EvaluationBatchSchedule,
+    EvaluationPhase,
+    EvaluationSide,
+    SchedulePreflightCertificate,
+    preflight_attempt_budget,
+    publish_schedule_preflight,
+)
 from spiral_harness.experiments.baselines import (
     BASELINE_STUDY_PLAN_MEDIA_TYPE,
     BaselineKind,
+    BaselineStudyPlan,
     FeedbackType,
     FrozenMutationPolicy,
     FrozenRunContext,
@@ -626,19 +645,51 @@ def build_receipt_backed_screen(tmp_path: Path) -> SimpleNamespace:
         for component in env.seed_harness.components
         if component.kind is ComponentKind.PROMPT
     )
-    candidate_harness = env.seed_harness.model_copy(
+    execution_spec = runner_spec()
+    study = store.get_json(run.baseline_study_plan_ref, BaselineStudyPlan)
+    frozen_context = study.arms[0].context.model_copy(
         update={
-            "parent": env.seed_harness_ref,
-            "components": (seed_prompt.model_copy(update={"artifact": env.after_prompt_ref}),),
+            "model_fingerprint": execution_spec.model_fingerprint,
+            "inference_fingerprint": execution_spec.inference_fingerprint,
+            "runtime_fingerprint": execution_spec.runtime_fingerprint,
         }
     )
-    candidate_harness_ref = store.put_json(candidate_harness)
+    study = study.model_copy(
+        update={
+            "arms": tuple(arm.model_copy(update={"context": frozen_context}) for arm in study.arms)
+        }
+    )
+    study_ref = store.put_json(study, media_type=BASELINE_STUDY_PLAN_MEDIA_TYPE)
+    protocol = env.protocol.model_copy(
+        update={
+            "model_fingerprint": execution_spec.model_fingerprint,
+            "inference_fingerprint": execution_spec.inference_fingerprint,
+            "runtime_fingerprint": execution_spec.runtime_fingerprint,
+            "model_spec_fingerprint": execution_spec.fingerprint,
+        }
+    )
+    protocol_ref = store.put_json(protocol, media_type=PROTOCOL_MANIFEST_MEDIA_TYPE)
+    experiment = store.get_json(run.experiment_ref, ExperimentManifest)
+    experiment_ref = store.put_json(
+        experiment.model_copy(update={"protocol_ref": protocol_ref}),
+        media_type=EXPERIMENT_MANIFEST_MEDIA_TYPE,
+    )
+    run = run.model_copy(
+        update={
+            "baseline_study_plan_ref": study_ref,
+            "experiment_ref": experiment_ref,
+            "baseline_plan_fingerprint": study_ref.sha256,
+        }
+    )
+    run_ref = store.put_json(run, media_type=SEARCH_RUN_MANIFEST_MEDIA_TYPE)
+    parent_harness_ref = put_prompt_harness(store, execution_spec, EvaluationSide.PARENT)
+    candidate_harness_ref = put_prompt_harness(store, execution_spec, EvaluationSide.CANDIDATE)
     candidate_ref = put_json(store, "screen-candidate")
     proposal = PromptProposal(
         proposal_id="receipt-backed-proposal",
         baseline_kind=BaselineKind.PROMPT_ONLY,
         round_index=0,
-        parent_harness_ref=env.seed_harness_ref,
+        parent_harness_ref=parent_harness_ref,
         target_component_name=seed_prompt.name,
         before_prompt_ref=seed_prompt.artifact,
         after_prompt_ref=env.after_prompt_ref,
@@ -648,12 +699,12 @@ def build_receipt_backed_screen(tmp_path: Path) -> SimpleNamespace:
     )
     proposal_ref = store.put_json(proposal, media_type=PROMPT_PROPOSAL_MEDIA_TYPE)
     schedule = EvaluationBatchSchedule(
-        study=env.study_ref.sha256,
+        study=study_ref.sha256,
         kind=BaselineKind.PROMPT_ONLY.value,
         phase=EvaluationPhase.EXPLORATION,
         query=0,
         master_seed=run.search_run_seed,
-        parent_harness_id=env.seed_harness_ref.sha256,
+        parent_harness_id=parent_harness_ref.sha256,
         candidate_harness_id=candidate_harness_ref.sha256,
         task_ids=("exploration-01", "exploration-02"),
         search_runs=(run.search_run_seed,),
@@ -662,7 +713,8 @@ def build_receipt_backed_screen(tmp_path: Path) -> SimpleNamespace:
         token_ceiling_per_attempt=10,
     )
     ledger = ledger_for(store, schedule, extra_attempts=1)
-    preflight_ref = persist_preflight(store, schedule, ledger)
+    preflight = preflight_attempt_budget(schedule, ledger.state(), execution_spec)
+    preflight_ref = publish_schedule_preflight(store, preflight)
     records = tuple(
         record_attempt(
             store,
@@ -697,7 +749,7 @@ def build_receipt_backed_screen(tmp_path: Path) -> SimpleNamespace:
             search_run_ref=run_ref,
             proposal_ref=proposal_ref,
             candidate_ref=candidate_ref,
-            parent_harness_ref=env.seed_harness_ref,
+            parent_harness_ref=parent_harness_ref,
             candidate_harness_ref=candidate_harness_ref,
             benchmark_binding_ref=env.benchmark_ref,
             grader_fingerprint=env.protocol.grader_fingerprint,
@@ -712,7 +764,7 @@ def build_receipt_backed_screen(tmp_path: Path) -> SimpleNamespace:
         round_index=0,
         proposal_ref=proposal_ref,
         candidate_ref=candidate_ref,
-        parent_harness_ref=env.seed_harness_ref,
+        parent_harness_ref=parent_harness_ref,
         candidate_harness_ref=candidate_harness_ref,
         schedule=schedule,
         preflight_ref=preflight_ref,
@@ -750,8 +802,10 @@ def build_receipt_backed_screen(tmp_path: Path) -> SimpleNamespace:
         run_ref=run_ref,
         proposal_ref=proposal_ref,
         candidate_ref=candidate_ref,
+        screen_parent_harness_ref=parent_harness_ref,
         candidate_harness_ref=candidate_harness_ref,
         schedule=schedule,
+        preflight=preflight,
         ledger=ledger,
         usage=usage,
         aggregate_ref=aggregate_ref,
@@ -800,6 +854,124 @@ def test_objective_aggregate_requires_independent_exact_capability(tmp_path: Pat
 
         class EvilVerifier(ObjectiveAggregateVerificationCapability):
             pass
+
+
+def test_objective_aggregate_v2_binds_receipts_attestor_and_hmac_domain(
+    tmp_path: Path,
+) -> None:
+    store = ArtifactStore(tmp_path)
+    content = objective_content(store)
+    secret = b"v" * 32
+    service = TrustedObjectiveAggregateService(store, secret=secret)
+    aggregate_ref = service.attest(content)
+    envelope = store.get_json(aggregate_ref, TrustedObjectiveAggregate)
+
+    assert TRUSTED_OBJECTIVE_AGGREGATE_MEDIA_TYPE.endswith(".v2+json")
+    assert aggregate_ref.media_type == TRUSTED_OBJECTIVE_AGGREGATE_MEDIA_TYPE
+    assert content.schema_version == "2"
+    assert envelope.schema_version == "2"
+    assert service.verification_capability.attestor_id == sha256_bytes(
+        b"spiral-harness/objective-aggregate-attestor/v2\x00" + secret
+    )
+    expected = hmac.new(secret, b"spiral-harness/objective-aggregate/v2\x00", sha256)
+    expected.update(envelope.attestor_id.encode("ascii") + b"\x00")
+    expected.update(canonical_json_bytes(envelope.content))
+    assert envelope.authentication_tag == expected.hexdigest()
+
+    content_payload = content.model_dump(mode="python", round_trip=True, warnings="none")
+    content_payload["receipt_refs"] = (
+        put_json(
+            store,
+            "legacy-receipt",
+            media_type="application/vnd.spiral-harness.execution-receipt.v1+json",
+        ),
+    )
+    with pytest.raises(ValidationError, match="must be execution receipts"):
+        TrustedObjectiveAggregateContent.model_validate(content_payload, strict=True)
+
+
+def test_screen_evaluation_v2_rejects_legacy_receipt_and_outcome_refs(tmp_path: Path) -> None:
+    store = ArtifactStore(tmp_path)
+    schedule = EvaluationBatchSchedule(
+        study="screen-v2-contract",
+        kind=BaselineKind.PROMPT_ONLY.value,
+        phase=EvaluationPhase.EXPLORATION,
+        query=0,
+        master_seed=17,
+        parent_harness_id="parent-v2",
+        candidate_harness_id="candidate-v2",
+        task_ids=("task-v2",),
+        search_runs=(17,),
+        repeat_seeds=(23,),
+        max_attempts_per_cell=1,
+        token_ceiling_per_attempt=10,
+    )
+    receipt_ref = put_json(store, "receipt-v2", media_type=EXECUTION_RECEIPT_MEDIA_TYPE)
+    outcome_ref = put_json(store, "outcome-v2", media_type=ATTEMPT_OUTCOME_MEDIA_TYPE)
+    usage = TrustedExecutionUsage(
+        schedule_fingerprint=schedule.fingerprint,
+        receipt_refs=(receipt_ref,),
+        ledger_tail_refs=(outcome_ref,),
+        cell_count=1,
+        attempt_count=1,
+        settled_attempts=1,
+        burned_attempts=0,
+        poisoned_attempts=0,
+        reported_tokens=3,
+        charged_tokens=3,
+    )
+    evaluation = TrustedScreenEvaluation(
+        search_run_ref=put_json(store, "run-v2", media_type=SEARCH_RUN_MANIFEST_MEDIA_TYPE),
+        baseline_kind=BaselineKind.PROMPT_ONLY,
+        round_index=0,
+        proposal_ref=put_json(store, "proposal-v2", media_type=PROMPT_PROPOSAL_MEDIA_TYPE),
+        candidate_ref=put_json(store, "candidate-v2"),
+        parent_harness_ref=put_json(store, "parent-v2"),
+        candidate_harness_ref=put_json(store, "harness-v2"),
+        schedule=schedule,
+        preflight_ref=put_json(store, "preflight-v2", media_type=SCHEDULE_PREFLIGHT_MEDIA_TYPE),
+        receipt_refs=(receipt_ref,),
+        final_ledger_tail_ref=outcome_ref,
+        trusted_usage=usage,
+        objective_aggregate_ref=put_json(
+            store,
+            "objective-v2",
+            media_type=TRUSTED_OBJECTIVE_AGGREGATE_MEDIA_TYPE,
+        ),
+        primary_score=0.8,
+        mean_delta=0.1,
+        confidence_lower=0.02,
+        regression_rate=0.0,
+        tokens_ratio=1.0,
+        latency_ratio=1.0,
+    )
+    evaluation_ref = store.put_json(
+        evaluation,
+        media_type=TRUSTED_SCREEN_EVALUATION_MEDIA_TYPE,
+    )
+    payload = evaluation.model_dump(mode="python", round_trip=True, warnings="none")
+
+    assert TRUSTED_SCREEN_EVALUATION_MEDIA_TYPE.endswith(".v2+json")
+    assert evaluation_ref.media_type == TRUSTED_SCREEN_EVALUATION_MEDIA_TYPE
+    assert evaluation.schema_version == "2"
+    assert all(ref.media_type == EXECUTION_RECEIPT_MEDIA_TYPE for ref in evaluation.receipt_refs)
+    assert evaluation.final_ledger_tail_ref.media_type == ATTEMPT_OUTCOME_MEDIA_TYPE
+
+    payload["receipt_refs"] = tuple(
+        ref.model_copy(
+            update={"media_type": "application/vnd.spiral-harness.execution-receipt.v1+json"}
+        )
+        for ref in evaluation.receipt_refs
+    )
+    with pytest.raises(ValidationError, match="must be execution receipts"):
+        TrustedScreenEvaluation.model_validate(payload, strict=True)
+
+    payload = evaluation.model_dump(mode="python", round_trip=True, warnings="none")
+    payload["final_ledger_tail_ref"] = evaluation.final_ledger_tail_ref.model_copy(
+        update={"media_type": "application/vnd.spiral-harness.attempt-outcome.v1+json"}
+    )
+    with pytest.raises(ValidationError, match="final_ledger_tail_ref declares the wrong"):
+        TrustedScreenEvaluation.model_validate(payload, strict=True)
 
 
 def test_shared_analysis_plan_admits_static_and_all_three_search_arms(
@@ -1250,7 +1422,7 @@ def test_receipt_backed_screen_replays_live_ledger_and_hmac_aggregate(
         run_ref=env.run_ref,
         run=env.run,
         round_index=0,
-        champion_ref=env.seed_harness_ref,
+        champion_ref=env.screen_parent_harness_ref,
         proposal_ref=env.proposal_ref,
         screen=env.screen,
     )
@@ -1261,6 +1433,47 @@ def test_receipt_backed_screen_replays_live_ledger_and_hmac_aggregate(
     assert verified.trusted_usage.settled_attempts == 8
     assert verified.trusted_usage.charged_tokens == 24
     assert verified.schedule.repeat_seeds == (11, 12)
+
+
+def test_screen_rejects_foreign_preflight_model_spec(tmp_path: Path) -> None:
+    env = build_receipt_backed_screen(tmp_path)
+    foreign_spec = env.preflight.model_spec.model_copy(
+        update={"backend_fingerprint": "foreign-backend@sha256:fixed-v2"}
+    )
+    assert (
+        foreign_spec.model_fingerprint,
+        foreign_spec.inference_fingerprint,
+        foreign_spec.runtime_fingerprint,
+    ) == (
+        env.preflight.model_spec.model_fingerprint,
+        env.preflight.model_spec.inference_fingerprint,
+        env.preflight.model_spec.runtime_fingerprint,
+    )
+    assert foreign_spec.fingerprint != env.preflight.model_spec.fingerprint
+    foreign_preflight = SchedulePreflightCertificate.model_validate(
+        env.preflight.model_copy(update={"model_spec": foreign_spec}),
+        strict=True,
+    )
+    foreign_preflight_ref = env.store.put_json(
+        foreign_preflight,
+        media_type=SCHEDULE_PREFLIGHT_MEDIA_TYPE,
+    )
+    foreign_evaluation = env.evaluation.model_copy(update={"preflight_ref": foreign_preflight_ref})
+    foreign_evaluation_ref = env.store.put_json(
+        foreign_evaluation,
+        media_type=TRUSTED_SCREEN_EVALUATION_MEDIA_TYPE,
+    )
+    foreign_screen = env.screen.model_copy(update={"evaluation_ref": foreign_evaluation_ref})
+
+    with pytest.raises(AutomaticSearchLoopError, match="frozen model boundary"):
+        env.loop._verify_screen_evaluation(
+            run_ref=env.run_ref,
+            run=env.run,
+            round_index=0,
+            champion_ref=env.screen_parent_harness_ref,
+            proposal_ref=env.proposal_ref,
+            screen=foreign_screen,
+        )
 
 
 def test_screen_rejects_hmac_aggregate_tamper_and_unreceipted_ledger_tail(
@@ -1284,7 +1497,7 @@ def test_screen_rejects_hmac_aggregate_tamper_and_unreceipted_ledger_tail(
             run_ref=env.run_ref,
             run=env.run,
             round_index=0,
-            champion_ref=env.seed_harness_ref,
+            champion_ref=env.screen_parent_harness_ref,
             proposal_ref=env.proposal_ref,
             screen=forged_screen,
         )
@@ -1301,7 +1514,7 @@ def test_screen_rejects_hmac_aggregate_tamper_and_unreceipted_ledger_tail(
             run_ref=env.run_ref,
             run=env.run,
             round_index=0,
-            champion_ref=env.seed_harness_ref,
+            champion_ref=env.screen_parent_harness_ref,
             proposal_ref=env.proposal_ref,
             screen=env.screen,
         )

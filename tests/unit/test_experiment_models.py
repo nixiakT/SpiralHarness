@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.experiment import (
+    EXPERIMENT_MANIFEST_MEDIA_TYPE,
     PROTOCOL_MANIFEST_MEDIA_TYPE,
     CandidateManifest,
     ExperimentManifest,
@@ -15,11 +16,25 @@ from spiral_harness.core.experiment import (
     ProtocolPartition,
     ProtocolSplit,
 )
-from spiral_harness.core.models import ArtifactRef, BudgetPolicy, ComponentKind
+from spiral_harness.core.models import (
+    CANDIDATE_MUTATION_MEDIA_TYPE,
+    HARNESS_MANIFEST_MEDIA_TYPE,
+    ArtifactRef,
+    BudgetPolicy,
+    ComponentKind,
+)
 
 
 def artifact(digit: str, *, media_type: str = "application/json") -> ArtifactRef:
     return ArtifactRef(sha256=digit * 64, size=1, media_type=media_type)
+
+
+def harness_artifact(digit: str) -> ArtifactRef:
+    return artifact(digit, media_type=HARNESS_MANIFEST_MEDIA_TYPE)
+
+
+def mutation_artifact(digit: str) -> ArtifactRef:
+    return artifact(digit, media_type=CANDIDATE_MUTATION_MEDIA_TYPE)
 
 
 def split(partition: ProtocolPartition, digit: str) -> ProtocolSplit:
@@ -33,6 +48,7 @@ def protocol(*splits: ProtocolSplit) -> ProtocolManifest:
         model_fingerprint="model@sha256:fixed",
         inference_fingerprint="temperature=0;seeded=true",
         runtime_fingerprint="runner@sha256:fixed",
+        model_spec_fingerprint="9" * 64,
         sandbox_fingerprint="sandbox@sha256:fixed",
         capability_policy_ref=artifact("e"),
         grader_fingerprint="grader@sha256:fixed",
@@ -51,7 +67,7 @@ def test_protocol_requires_exploration_and_gate_and_canonicalizes_splits() -> No
         split(ProtocolPartition.EXPLORATION, "a"),
     )
 
-    assert manifest.schema_version == "2"
+    assert manifest.schema_version == "3"
     assert [item.partition for item in manifest.splits] == [
         ProtocolPartition.EXPLORATION,
         ProtocolPartition.GATE,
@@ -168,7 +184,7 @@ def test_mutation_policy_rejects_empty_and_duplicate_allowlists(
 def test_experiment_binds_search_contract_and_canonicalizes_set_like_fields() -> None:
     values = {
         "protocol_ref": artifact("a", media_type=PROTOCOL_MANIFEST_MEDIA_TYPE),
-        "seed_harness_ref": artifact("b"),
+        "seed_harness_ref": harness_artifact("b"),
         "objective": "maximize paired benchmark score subject to frozen constraints",
         "search_budget": BudgetPolicy(max_evaluations=24, max_cost_usd=5.0),
     }
@@ -194,7 +210,7 @@ def test_experiment_binds_search_contract_and_canonicalizes_set_like_fields() ->
 def test_experiment_rejects_empty_or_duplicate_set_like_fields(field_name: str) -> None:
     values = {
         "protocol_ref": artifact("a", media_type=PROTOCOL_MANIFEST_MEDIA_TYPE),
-        "seed_harness_ref": artifact("b"),
+        "seed_harness_ref": harness_artifact("b"),
         "objective": "score",
         "baselines": ("static",),
         "stopping": ("budget",),
@@ -217,7 +233,7 @@ def test_protocol_and_search_require_an_explicit_evaluation_ceiling() -> None:
     with pytest.raises(ValidationError, match="search_budget"):
         ExperimentManifest(
             protocol_ref=artifact("a", media_type=PROTOCOL_MANIFEST_MEDIA_TYPE),
-            seed_harness_ref=artifact("b"),
+            seed_harness_ref=harness_artifact("b"),
             objective="score",
             baselines=("static",),
             stopping=("budget",),
@@ -227,10 +243,10 @@ def test_protocol_and_search_require_an_explicit_evaluation_ceiling() -> None:
 
 def test_candidate_manifest_binds_atomic_child_evidence_and_evaluation_plan() -> None:
     candidate = CandidateManifest(
-        experiment_ref=artifact("a"),
-        parent_harness_ref=artifact("b"),
-        child_harness_ref=artifact("c"),
-        mutation_ref=artifact("d"),
+        experiment_ref=artifact("a", media_type=EXPERIMENT_MANIFEST_MEDIA_TYPE),
+        parent_harness_ref=harness_artifact("b"),
+        child_harness_ref=harness_artifact("c"),
+        mutation_ref=mutation_artifact("d"),
         evidence_refs=(artifact("f"), artifact("e")),
         evaluation_plan_ref=artifact("9"),
     )
@@ -248,6 +264,61 @@ def test_candidate_manifest_binds_atomic_child_evidence_and_evaluation_plan() ->
         CandidateManifest.model_validate(values)
 
 
+@pytest.mark.parametrize(
+    "media_type",
+    [
+        "application/json",
+        "application/vnd.spiral-harness.manifest+json",
+        f"{HARNESS_MANIFEST_MEDIA_TYPE}; charset=utf-8",
+    ],
+)
+def test_experiment_and_candidate_require_exact_harness_media_type(
+    media_type: str,
+) -> None:
+    wrong_ref = artifact("b", media_type=media_type)
+    with pytest.raises(ValidationError, match="seed_harness_ref"):
+        ExperimentManifest(
+            protocol_ref=artifact("a", media_type=PROTOCOL_MANIFEST_MEDIA_TYPE),
+            seed_harness_ref=wrong_ref,
+            objective="score",
+            baselines=("static",),
+            stopping=("budget",),
+            search_budget=BudgetPolicy(max_evaluations=1),
+        )
+
+    values = {
+        "experiment_ref": artifact("a", media_type=EXPERIMENT_MANIFEST_MEDIA_TYPE),
+        "parent_harness_ref": harness_artifact("b"),
+        "child_harness_ref": harness_artifact("c"),
+        "mutation_ref": mutation_artifact("d"),
+        "evidence_refs": (artifact("e"),),
+        "evaluation_plan_ref": artifact("f"),
+    }
+    for field_name in ("parent_harness_ref", "child_harness_ref"):
+        with pytest.raises(ValidationError, match=field_name):
+            CandidateManifest(**{**values, field_name: wrong_ref})
+
+
+@pytest.mark.parametrize(
+    "media_type",
+    [
+        "application/json",
+        "application/vnd.spiral-harness.experiment-manifest.v1+json",
+        f"{EXPERIMENT_MANIFEST_MEDIA_TYPE}; charset=utf-8",
+    ],
+)
+def test_candidate_requires_exact_experiment_manifest_media_type(media_type: str) -> None:
+    with pytest.raises(ValidationError, match="experiment_ref"):
+        CandidateManifest(
+            experiment_ref=artifact("a", media_type=media_type),
+            parent_harness_ref=harness_artifact("b"),
+            child_harness_ref=harness_artifact("c"),
+            mutation_ref=mutation_artifact("d"),
+            evidence_refs=(artifact("e"),),
+            evaluation_plan_ref=artifact("f"),
+        )
+
+
 def test_manifest_references_fail_closed_on_non_json_types() -> None:
     with pytest.raises(ValidationError, match="manifest_ref"):
         ProtocolSplit(
@@ -258,7 +329,7 @@ def test_manifest_references_fail_closed_on_non_json_types() -> None:
     with pytest.raises(ValidationError, match="protocol_ref"):
         ExperimentManifest(
             protocol_ref=artifact("a", media_type="text/plain"),
-            seed_harness_ref=artifact("b"),
+            seed_harness_ref=harness_artifact("b"),
             objective="score",
             baselines=("static",),
             stopping=("budget",),
@@ -267,9 +338,9 @@ def test_manifest_references_fail_closed_on_non_json_types() -> None:
 
     with pytest.raises(ValidationError, match="mutation_ref"):
         CandidateManifest(
-            experiment_ref=artifact("a"),
-            parent_harness_ref=artifact("b"),
-            child_harness_ref=artifact("c"),
+            experiment_ref=artifact("a", media_type=EXPERIMENT_MANIFEST_MEDIA_TYPE),
+            parent_harness_ref=harness_artifact("b"),
+            child_harness_ref=harness_artifact("c"),
             mutation_ref=artifact("d", media_type="text/plain"),
             evidence_refs=(artifact("e", media_type="text/plain"),),
             evaluation_plan_ref=artifact("f"),

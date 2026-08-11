@@ -8,6 +8,8 @@ from pydantic import BaseModel
 
 from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.experiment import (
+    CANDIDATE_MANIFEST_MEDIA_TYPE,
+    EXPERIMENT_MANIFEST_MEDIA_TYPE,
     PROTOCOL_MANIFEST_MEDIA_TYPE,
     CandidateManifest,
     ExperimentManifest,
@@ -17,6 +19,8 @@ from spiral_harness.core.experiment import (
     ProtocolSplit,
 )
 from spiral_harness.core.models import (
+    CANDIDATE_MUTATION_MEDIA_TYPE,
+    HARNESS_MANIFEST_MEDIA_TYPE,
     ArtifactRef,
     BudgetPolicy,
     CandidateMutation,
@@ -37,10 +41,9 @@ from spiral_harness.storage.artifact_store import ArtifactStore
 from spiral_harness.verification.models import GateConfig
 
 _PROTOCOL_MEDIA_TYPE = PROTOCOL_MANIFEST_MEDIA_TYPE
-_EXPERIMENT_MEDIA_TYPE = "application/vnd.spiral-harness.experiment-manifest.v1+json"
-_HARNESS_MEDIA_TYPE = "application/vnd.spiral-harness.manifest+json"
-_MUTATION_MEDIA_TYPE = "application/vnd.spiral-harness.candidate-mutation+json"
-_CANDIDATE_MEDIA_TYPE = "application/vnd.spiral-harness.candidate-manifest.v1+json"
+_EXPERIMENT_MEDIA_TYPE = EXPERIMENT_MANIFEST_MEDIA_TYPE
+_MUTATION_MEDIA_TYPE = CANDIDATE_MUTATION_MEDIA_TYPE
+_CANDIDATE_MEDIA_TYPE = CANDIDATE_MANIFEST_MEDIA_TYPE
 _GATE_MEDIA_TYPE = "application/vnd.spiral-harness.gate-config+json"
 
 
@@ -132,6 +135,7 @@ def _fixture(root: Path) -> AdmissionFixture:
         model_fingerprint="model-v1",
         inference_fingerprint="inference-v1",
         runtime_fingerprint="runtime-v1",
+        model_spec_fingerprint="9" * 64,
         sandbox_fingerprint="sandbox-v1",
         capability_policy_ref=capability_policy_ref,
         grader_fingerprint="grader-v1",
@@ -162,7 +166,7 @@ def _fixture(root: Path) -> AdmissionFixture:
         components=(before,),
         budget=BudgetPolicy(max_evaluations=4),
     )
-    parent_ref = store.put_json(parent, media_type=_HARNESS_MEDIA_TYPE)
+    parent_ref = store.put_json(parent, media_type=HARNESS_MANIFEST_MEDIA_TYPE)
     evidence_ref = store.put_json(
         {"failure": "old prompt fails the probe"},
         media_type="application/vnd.spiral-harness.evidence+json",
@@ -208,7 +212,7 @@ def _fixture(root: Path) -> AdmissionFixture:
         artifact_bytes=store.get_bytes(after_artifact),
         artifact_media_type=after_artifact.media_type,
     )
-    child_ref = store.put_json(child, media_type=_HARNESS_MEDIA_TYPE)
+    child_ref = store.put_json(child, media_type=HARNESS_MANIFEST_MEDIA_TYPE)
     candidate = CandidateManifest(
         experiment_ref=experiment_ref,
         parent_harness_ref=parent_ref,
@@ -241,7 +245,7 @@ def _fixture(root: Path) -> AdmissionFixture:
     )
 
 
-def test_admission_loads_and_joins_the_complete_frozen_lineage(tmp_path: Path) -> None:
+def test_admission_reaches_seed_and_joins_current_candidate(tmp_path: Path) -> None:
     fixture = _fixture(tmp_path)
 
     report = CandidateAdmissionService(fixture.store).admit(
@@ -260,19 +264,22 @@ def test_admission_loads_and_joins_the_complete_frozen_lineage(tmp_path: Path) -
     assert report.capability_policy_ref == fixture.capability_policy_ref
     assert report.evidence_refs == (fixture.evidence_ref,)
     assert report.mutation_policy_sha256 == canonical_sha256(fixture.policy)
+    assert report.component_contract == "prompt-atomic-replacement-v1"
     assert report.checks == (
         "canonical_artifacts_verified",
         "candidate_experiment_joined",
         "protocol_seed_planes_matched",
         "frozen_policy_applied",
-        "mutation_lineage_recomputed",
+        "ancestry_reaches_seed",
+        "current_mutation_recomputed",
+        "component_contract_verified",
         "evidence_joined",
         "evaluation_plan_joined",
         "capability_policy_joined",
     )
 
 
-def test_admission_rejects_v2_protocol_payload_labeled_as_v1_media(tmp_path: Path) -> None:
+def test_admission_rejects_v3_protocol_payload_labeled_as_v1_media(tmp_path: Path) -> None:
     fixture = _fixture(tmp_path)
     mislabeled_ref = fixture.store.put_json(
         fixture.protocol,
@@ -290,6 +297,20 @@ def test_admission_rejects_v2_protocol_payload_labeled_as_v1_media(tmp_path: Pat
         CandidateAdmissionService(fixture.store).admit(
             candidate_ref=candidate_ref,
             experiment_ref=experiment_ref,
+        )
+
+
+def test_admission_rejects_candidate_payload_under_generic_json_media(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    mislabeled_ref = fixture.store.put_json(
+        fixture.candidate,
+        media_type="application/json",
+    )
+
+    with pytest.raises(CandidateAdmissionError, match=r"candidate artifact.*wrong media type"):
+        CandidateAdmissionService(fixture.store).admit(
+            candidate_ref=mislabeled_ref,
+            experiment_ref=fixture.experiment_ref,
         )
 
 
@@ -312,7 +333,10 @@ def test_admission_rejects_candidate_from_another_experiment(tmp_path: Path) -> 
 def test_admission_rejects_parent_that_is_not_the_experiment_seed(tmp_path: Path) -> None:
     fixture = _fixture(tmp_path)
     other_parent = _replace(fixture.parent, budget=BudgetPolicy(max_evaluations=3))
-    other_parent_ref = fixture.store.put_json(other_parent, media_type=_HARNESS_MEDIA_TYPE)
+    other_parent_ref = fixture.store.put_json(
+        other_parent,
+        media_type=HARNESS_MANIFEST_MEDIA_TYPE,
+    )
     candidate_ref = _candidate_ref(fixture, parent_harness_ref=other_parent_ref)
 
     with pytest.raises(CandidateAdmissionError, match="experiment seed harness"):
@@ -339,7 +363,10 @@ def test_admission_accepts_descendant_parent_with_intact_lineage_to_seed(tmp_pat
         artifact_bytes=fixture.store.get_bytes(third_artifact),
         artifact_media_type=third_artifact.media_type,
     )
-    grandchild_ref = fixture.store.put_json(grandchild, media_type=_HARNESS_MEDIA_TYPE)
+    grandchild_ref = fixture.store.put_json(
+        grandchild,
+        media_type=HARNESS_MANIFEST_MEDIA_TYPE,
+    )
     candidate = _replace(
         fixture.candidate,
         parent_harness_ref=fixture.child_ref,
@@ -362,12 +389,12 @@ def test_admission_rejects_descendant_with_missing_seed_lineage(tmp_path: Path) 
     missing_ancestor = ArtifactRef(
         sha256="e" * 64,
         size=10,
-        media_type=_HARNESS_MEDIA_TYPE,
+        media_type=HARNESS_MANIFEST_MEDIA_TYPE,
     )
     disconnected_parent = _replace(fixture.parent, parent=missing_ancestor)
     disconnected_parent_ref = fixture.store.put_json(
         disconnected_parent,
-        media_type=_HARNESS_MEDIA_TYPE,
+        media_type=HARNESS_MANIFEST_MEDIA_TYPE,
     )
     candidate_ref = _candidate_ref(
         fixture,
@@ -424,6 +451,71 @@ def test_admission_applies_the_policy_frozen_in_the_experiment(tmp_path: Path) -
         )
 
 
+@pytest.mark.parametrize(
+    "kind",
+    [
+        ComponentKind.MEMORY,
+        ComponentKind.TOOL,
+        ComponentKind.MIDDLEWARE,
+        ComponentKind.CONTROL_FLOW,
+    ],
+)
+def test_admission_rejects_component_without_a_semantic_contract(
+    tmp_path: Path,
+    kind: ComponentKind,
+) -> None:
+    fixture = _fixture(tmp_path)
+    media_type = "application/octet-stream"
+    before = _replace(
+        fixture.before,
+        kind=kind,
+        artifact=fixture.store.put_bytes(b"old state", media_type=media_type),
+    )
+    after = _replace(
+        fixture.after,
+        kind=kind,
+        artifact=fixture.store.put_bytes(b"new state", media_type=media_type),
+    )
+    parent = _replace(fixture.parent, components=(before,))
+    parent_ref = fixture.store.put_json(parent, media_type=HARNESS_MANIFEST_MEDIA_TYPE)
+    policy = MutationPolicy(
+        allowed_kinds=(kind,),
+        allowed_component_names=(before.name,),
+        allowed_media_types=(media_type,),
+        max_artifact_size_bytes=1_024,
+    )
+    experiment = _replace(
+        fixture.experiment,
+        seed_harness_ref=parent_ref,
+        mutation_policy=policy,
+    )
+    experiment_ref = fixture.store.put_json(experiment, media_type=_EXPERIMENT_MEDIA_TYPE)
+    mutation = _replace(fixture.mutation, before=before, after=after)
+    mutation_ref = fixture.store.put_json(mutation, media_type=_MUTATION_MEDIA_TYPE)
+    child = HarnessRegistry(policy).apply_mutation(
+        parent=parent,
+        parent_ref=parent_ref,
+        mutation=mutation,
+        artifact_bytes=fixture.store.get_bytes(after.artifact),
+        artifact_media_type=media_type,
+    )
+    child_ref = fixture.store.put_json(child, media_type=HARNESS_MANIFEST_MEDIA_TYPE)
+    candidate = _replace(
+        fixture.candidate,
+        experiment_ref=experiment_ref,
+        parent_harness_ref=parent_ref,
+        child_harness_ref=child_ref,
+        mutation_ref=mutation_ref,
+    )
+    candidate_ref = fixture.store.put_json(candidate, media_type=_CANDIDATE_MEDIA_TYPE)
+
+    with pytest.raises(CandidateAdmissionError, match=f"no semantic.*{kind.value}"):
+        CandidateAdmissionService(fixture.store).admit(
+            candidate_ref=candidate_ref,
+            experiment_ref=experiment_ref,
+        )
+
+
 def test_admission_rejects_search_budget_above_protocol_ceiling(tmp_path: Path) -> None:
     fixture = _fixture(tmp_path)
     experiment = _replace(
@@ -470,7 +562,7 @@ def test_admission_rejects_missing_before_artifact_bytes(tmp_path: Path) -> None
     )
     missing_before = _replace(fixture.before, artifact=missing_before_ref)
     parent = _replace(fixture.parent, components=(missing_before,))
-    parent_ref = fixture.store.put_json(parent, media_type=_HARNESS_MEDIA_TYPE)
+    parent_ref = fixture.store.put_json(parent, media_type=HARNESS_MANIFEST_MEDIA_TYPE)
     experiment = _replace(fixture.experiment, seed_harness_ref=parent_ref)
     experiment_ref = fixture.store.put_json(experiment, media_type=_EXPERIMENT_MEDIA_TYPE)
     mutation = _replace(fixture.mutation, before=missing_before)
@@ -496,7 +588,10 @@ def test_admission_rejects_child_not_recomputed_from_the_mutation(tmp_path: Path
         fixture.parent,
         parent=fixture.parent_ref,
     )
-    wrong_child_ref = fixture.store.put_json(wrong_child, media_type=_HARNESS_MEDIA_TYPE)
+    wrong_child_ref = fixture.store.put_json(
+        wrong_child,
+        media_type=HARNESS_MANIFEST_MEDIA_TYPE,
+    )
     candidate_ref = _candidate_ref(fixture, child_harness_ref=wrong_child_ref)
 
     with pytest.raises(CandidateAdmissionError, match="recomputed from parent and mutation"):

@@ -1,5 +1,4 @@
 """One deterministic M0 vertical slice over a synthetic controlled fault.
-
 The flow exists to test evidence plumbing and promotion semantics.  It is not
 a real benchmark, a learned optimizer, or evidence of general agent gains.
 """
@@ -26,6 +25,7 @@ from spiral_harness.benchmark.controlled_fixture import (
     DeterministicExecutor,
 )
 from spiral_harness.core.experiment import (
+    CANDIDATE_MANIFEST_MEDIA_TYPE,
     EXPERIMENT_MANIFEST_MEDIA_TYPE,
     PROTOCOL_MANIFEST_MEDIA_TYPE,
     CandidateManifest,
@@ -37,6 +37,8 @@ from spiral_harness.core.experiment import (
 )
 from spiral_harness.core.lifecycle import CandidateState
 from spiral_harness.core.models import (
+    CANDIDATE_MUTATION_MEDIA_TYPE,
+    HARNESS_MANIFEST_MEDIA_TYPE,
     ArtifactRef,
     BudgetPolicy,
     CandidateMutation,
@@ -389,10 +391,7 @@ def run_controlled_demo(
         artifact=seed_prompt_ref,
     )
     seed_manifest = _manifest(seed_component)
-    seed_manifest_ref = store.put_json(
-        seed_manifest,
-        media_type="application/vnd.spiral-harness.manifest+json",
-    )
+    seed_manifest_ref = store.put_json(seed_manifest, media_type=HARNESS_MANIFEST_MEDIA_TYPE)
 
     executor = DeterministicExecutor()
     mutation_policy = MutationPolicy(
@@ -416,6 +415,7 @@ def run_controlled_demo(
         model_fingerprint=seed_manifest.model_fingerprint,
         inference_fingerprint="synthetic-deterministic:no-inference-settings",
         runtime_fingerprint=seed_manifest.runtime_fingerprint,
+        model_spec_fingerprint="0" * 64,
         sandbox_fingerprint="logical-fixture-isolation:no-security-claim",
         capability_policy_ref=capability_policy_ref,
         grader_fingerprint="synthetic-match-label-grader-v1",
@@ -556,7 +556,7 @@ def run_controlled_demo(
     )
     candidate_mutation_ref = store.put_json(
         mutation,
-        media_type="application/vnd.spiral-harness.candidate-mutation+json",
+        media_type=CANDIDATE_MUTATION_MEDIA_TYPE,
     )
     candidate_manifest = HarnessRegistry(mutation_policy).apply_mutation(
         parent=seed_manifest,
@@ -567,7 +567,7 @@ def run_controlled_demo(
     )
     candidate_manifest_ref = store.put_json(
         candidate_manifest,
-        media_type="application/vnd.spiral-harness.manifest+json",
+        media_type=HARNESS_MANIFEST_MEDIA_TYPE,
     )
     candidate_record = CandidateManifest(
         experiment_ref=experiment_manifest_ref,
@@ -579,7 +579,7 @@ def run_controlled_demo(
     )
     candidate_record_ref = store.put_json(
         candidate_record,
-        media_type="application/vnd.spiral-harness.candidate-manifest.v1+json",
+        media_type=CANDIDATE_MANIFEST_MEDIA_TYPE,
     )
     admission_service = CandidateAdmissionService(store)
     admission_report = admission_service.admit(

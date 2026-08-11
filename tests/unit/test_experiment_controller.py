@@ -16,6 +16,7 @@ from test_terminal_decision import (
 )
 
 from spiral_harness.core.experiment import (
+    CANDIDATE_MANIFEST_MEDIA_TYPE,
     EXPERIMENT_MANIFEST_MEDIA_TYPE,
     PROTOCOL_MANIFEST_MEDIA_TYPE,
     CandidateManifest,
@@ -26,6 +27,8 @@ from spiral_harness.core.experiment import (
 )
 from spiral_harness.core.lifecycle import CandidateLifecycleEvent, CandidateState
 from spiral_harness.core.models import (
+    CANDIDATE_MUTATION_MEDIA_TYPE,
+    HARNESS_MANIFEST_MEDIA_TYPE,
     ArtifactRef,
     BudgetPolicy,
     CandidateMutation,
@@ -222,7 +225,11 @@ def rebind_experiment_budget(
         media_type=EXPERIMENT_MANIFEST_MEDIA_TYPE,
     )
     candidate = graph.candidate.model_copy(update={"experiment_ref": experiment_ref})
-    candidate_ref = put_json(graph.store, candidate)
+    candidate_ref = put_json(
+        graph.store,
+        candidate,
+        media_type=CANDIDATE_MANIFEST_MEDIA_TYPE,
+    )
     admission = CandidateAdmissionService(graph.store).admit(
         candidate_ref=candidate_ref,
         experiment_ref=experiment_ref,
@@ -332,7 +339,7 @@ def add_sealed_split(
         media_type=EXPERIMENT_MANIFEST_MEDIA_TYPE,
     )
     candidate = graph.candidate.model_copy(update={"experiment_ref": experiment_ref})
-    candidate_ref = put_json(store, candidate)
+    candidate_ref = put_json(store, candidate, media_type=CANDIDATE_MANIFEST_MEDIA_TYPE)
     admission = CandidateAdmissionService(store).admit(
         candidate_ref=candidate_ref,
         experiment_ref=experiment_ref,
@@ -429,7 +436,11 @@ def another_candidate(graph: DecisionGraph) -> SimpleNamespace:
         artifact=second_artifact_ref,
     )
     second_mutation = mutation.model_copy(update={"after": second_component})
-    mutation_ref = put_json(store, second_mutation)
+    mutation_ref = put_json(
+        store,
+        second_mutation,
+        media_type=CANDIDATE_MUTATION_MEDIA_TYPE,
+    )
     child = HarnessRegistry(experiment.mutation_policy).apply_mutation(
         parent=parent,
         parent_ref=graph.candidate.parent_harness_ref,
@@ -437,7 +448,7 @@ def another_candidate(graph: DecisionGraph) -> SimpleNamespace:
         artifact_bytes=store.get_bytes(second_artifact_ref),
         artifact_media_type=second_artifact_ref.media_type,
     )
-    child_ref = put_json(store, child)
+    child_ref = store.put_json(child, media_type=HARNESS_MANIFEST_MEDIA_TYPE)
     candidate = CandidateManifest(
         experiment_ref=graph.experiment_ref,
         parent_harness_ref=graph.candidate.parent_harness_ref,
@@ -446,7 +457,7 @@ def another_candidate(graph: DecisionGraph) -> SimpleNamespace:
         evidence_refs=graph.candidate.evidence_refs,
         evaluation_plan_ref=graph.candidate.evaluation_plan_ref,
     )
-    candidate_ref = put_json(store, candidate)
+    candidate_ref = put_json(store, candidate, media_type=CANDIDATE_MANIFEST_MEDIA_TYPE)
     admission = CandidateAdmissionService(store).admit(
         candidate_ref=candidate_ref,
         experiment_ref=graph.experiment_ref,
@@ -931,7 +942,11 @@ def test_mechanism_attestation_and_frozen_context_fail_closed_before_gate(
             original.content.model_copy(update={"execution_context": context})
         )
     else:
-        foreign_candidate_ref = put_json(graph.store, {"candidate": "foreign"})
+        foreign_candidate_ref = put_json(
+            graph.store,
+            {"candidate": "foreign"},
+            media_type=CANDIDATE_MANIFEST_MEDIA_TYPE,
+        )
         attacked = graph.mechanism_evidence_service.issue(
             original.content.model_copy(update={"candidate_ref": foreign_candidate_ref})
         )
@@ -1050,7 +1065,11 @@ def test_wrong_candidate_evidence_and_old_candidate_or_usage_tails_fail_closed(
             evaluation_ref=graph.evaluation_ref,
             previous_usage_tail_ref=None,
         )
-    other_candidate_ref = put_json(graph.store, {"candidate": "foreign"})
+    other_candidate_ref = put_json(
+        graph.store,
+        {"candidate": "foreign"},
+        media_type=CANDIDATE_MANIFEST_MEDIA_TYPE,
+    )
     with pytest.raises(ExperimentControllerError, match="not registered"):
         controller.complete_evidence(
             candidate_ref=other_candidate_ref,

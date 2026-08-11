@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from spiral_harness.core.canonical import canonical_json_bytes, canonical_sha256
 from spiral_harness.core.experiment import (
+    CANDIDATE_MANIFEST_MEDIA_TYPE,
     EXPERIMENT_MANIFEST_MEDIA_TYPE,
     PROTOCOL_MANIFEST_MEDIA_TYPE,
     CandidateManifest,
@@ -17,25 +18,29 @@ from spiral_harness.core.experiment import (
 from spiral_harness.core.models import (
     ArtifactRef,
     CandidateMutation,
+    ComponentKind,
     HarnessManifest,
     ImmutableModel,
     Sha256,
 )
 from spiral_harness.execution.policy import CapabilityPolicy
 from spiral_harness.harness.registry import HarnessRegistry, HarnessRegistryError
+from spiral_harness.skills.loading import SkillPackageError, SkillPackageLoader
 from spiral_harness.storage.protocol import ArtifactRepository
 from spiral_harness.verification.models import GateConfig
 
 _ModelT = TypeVar("_ModelT", bound=BaseModel)
 
-ADMISSION_REPORT_MEDIA_TYPE = "application/vnd.spiral-harness.admission-report.v1+json"
+ADMISSION_REPORT_MEDIA_TYPE = "application/vnd.spiral-harness.admission-report.v2+json"
 
 _ADMISSION_CHECKS = (
     "canonical_artifacts_verified",
     "candidate_experiment_joined",
     "protocol_seed_planes_matched",
     "frozen_policy_applied",
-    "mutation_lineage_recomputed",
+    "ancestry_reaches_seed",
+    "current_mutation_recomputed",
+    "component_contract_verified",
     "evidence_joined",
     "evaluation_plan_joined",
     "capability_policy_joined",
@@ -49,7 +54,7 @@ class CandidateAdmissionError(ValueError):
 class AdmissionReport(ImmutableModel):
     """Typed proof emitted only after all trusted admission checks succeed."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     admitted: Literal[True] = True
     candidate_ref: ArtifactRef
     experiment_ref: ArtifactRef
@@ -62,12 +67,18 @@ class AdmissionReport(ImmutableModel):
     gate_config_ref: ArtifactRef
     capability_policy_ref: ArtifactRef
     mutation_policy_sha256: Sha256
+    component_contract: Literal[
+        "prompt-atomic-replacement-v1",
+        "skill-rules-revision-v1",
+    ]
     checks: tuple[
         Literal["canonical_artifacts_verified"],
         Literal["candidate_experiment_joined"],
         Literal["protocol_seed_planes_matched"],
         Literal["frozen_policy_applied"],
-        Literal["mutation_lineage_recomputed"],
+        Literal["ancestry_reaches_seed"],
+        Literal["current_mutation_recomputed"],
+        Literal["component_contract_verified"],
         Literal["evidence_joined"],
         Literal["evaluation_plan_joined"],
         Literal["capability_policy_joined"],
@@ -93,6 +104,8 @@ class CandidateAdmissionService:
     ) -> AdmissionReport:
         """Return a proof for a valid candidate, otherwise fail without side effects."""
 
+        if candidate_ref.media_type != CANDIDATE_MANIFEST_MEDIA_TYPE:
+            raise CandidateAdmissionError("candidate artifact declares the wrong media type")
         if experiment_ref.media_type != EXPERIMENT_MANIFEST_MEDIA_TYPE:
             raise CandidateAdmissionError("experiment artifact declares the wrong media type")
         candidate = self._load_canonical(candidate_ref, CandidateManifest, "candidate")
@@ -173,6 +186,27 @@ class CandidateAdmissionService:
         except Exception as exc:
             raise CandidateAdmissionError("candidate after artifact could not be verified") from exc
 
+        if mutation.after.kind is ComponentKind.SKILL:
+            try:
+                SkillPackageLoader(self.store).verify_revision(
+                    before_ref=mutation.before.artifact,
+                    after_ref=mutation.after.artifact,
+                    expected_component_name=mutation.target_component,
+                    model_fingerprint=protocol.model_fingerprint,
+                    runtime_fingerprint=protocol.runtime_fingerprint,
+                )
+            except SkillPackageError as exc:
+                raise CandidateAdmissionError(
+                    f"candidate skill revision failed semantic verification: {exc}"
+                ) from exc
+            component_contract = "skill-rules-revision-v1"
+        elif mutation.after.kind is ComponentKind.PROMPT:
+            component_contract = "prompt-atomic-replacement-v1"
+        else:
+            raise CandidateAdmissionError(
+                f"no semantic admission contract exists for {mutation.after.kind.value}"
+            )
+
         try:
             recomputed_child = HarnessRegistry(experiment.mutation_policy).apply_mutation(
                 parent=parent,
@@ -203,6 +237,7 @@ class CandidateAdmissionService:
             gate_config_ref=protocol.gate_config_ref,
             capability_policy_ref=protocol.capability_policy_ref,
             mutation_policy_sha256=canonical_sha256(experiment.mutation_policy),
+            component_contract=component_contract,
         )
 
     def verify_report(
@@ -260,7 +295,7 @@ class CandidateAdmissionService:
         seed_ref: ArtifactRef,
         protocol: ProtocolManifest,
     ) -> None:
-        """Require an intact, acyclic parent chain ending at the experiment seed."""
+        """Require acyclic referenced ancestry that reaches the experiment seed."""
 
         current_ref = parent_ref
         current = parent

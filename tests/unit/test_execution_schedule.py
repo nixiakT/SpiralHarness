@@ -8,6 +8,8 @@ from spiral_harness.execution.contracts import (
     ATTEMPT_OUTCOME_MEDIA_TYPE,
     AttemptBudget,
     AttemptLedgerState,
+    FrozenModelSpec,
+    InferenceConfig,
 )
 from spiral_harness.execution.schedule import (
     SCHEDULE_PREFLIGHT_MEDIA_TYPE,
@@ -21,6 +23,22 @@ from spiral_harness.execution.schedule import (
     publish_schedule_preflight,
 )
 from spiral_harness.storage.artifact_store import ArtifactStore
+
+MODEL_SPEC = FrozenModelSpec(
+    backend="deterministic-replay",
+    backend_fingerprint="schedule-test-backend@sha256:fixed-v1",
+    model="hosted/schedule-test-model",
+    revision="snapshot-2026-08-12",
+    tokenizer="provider/schedule-test-tokenizer",
+    tokenizer_revision="snapshot-2026-08-12",
+    runtime="schedule-test-runtime@sha256:fixed-v1",
+    inference=InferenceConfig(
+        temperature=0.0,
+        top_p=1.0,
+        max_output_tokens=8,
+        timeout_seconds=5.0,
+    ),
+)
 
 
 def batch(**updates: object) -> EvaluationBatchSchedule:
@@ -158,9 +176,10 @@ def test_seed_v2_is_domain_separated_deterministic_and_paired() -> None:
 
 def test_all_or_nothing_preflight_accepts_exact_capacity_and_rejects_difference_of_one() -> None:
     schedule = batch()
-    certificate = preflight_attempt_budget(schedule, exact_budget(schedule))
+    certificate = preflight_attempt_budget(schedule, exact_budget(schedule), MODEL_SPEC)
 
     assert certificate.schedule_fingerprint == schedule.fingerprint
+    assert certificate.model_spec == MODEL_SPEC
     assert certificate.cell_count == 16
     assert certificate.required_attempts == certificate.available_attempts == 32
     assert certificate.required_tokens == certificate.available_tokens == 320
@@ -175,6 +194,7 @@ def test_all_or_nothing_preflight_accepts_exact_capacity_and_rejects_difference_
                 max_total_tokens=schedule.required_tokens,
                 max_tokens_per_attempt=schedule.token_ceiling_per_attempt,
             ),
+            MODEL_SPEC,
         )
     with pytest.raises(ScheduleBudgetExceeded, match="token budget"):
         preflight_attempt_budget(
@@ -184,6 +204,7 @@ def test_all_or_nothing_preflight_accepts_exact_capacity_and_rejects_difference_
                 max_total_tokens=schedule.required_tokens - 1,
                 max_tokens_per_attempt=schedule.token_ceiling_per_attempt,
             ),
+            MODEL_SPEC,
         )
     with pytest.raises(ScheduleBudgetExceeded, match="per-attempt ceiling"):
         preflight_attempt_budget(
@@ -193,6 +214,7 @@ def test_all_or_nothing_preflight_accepts_exact_capacity_and_rejects_difference_
                 max_total_tokens=schedule.required_tokens,
                 max_tokens_per_attempt=schedule.token_ceiling_per_attempt - 1,
             ),
+            MODEL_SPEC,
         )
 
 
@@ -222,7 +244,8 @@ def test_preflight_binds_exact_clean_ledger_tail_and_is_persisted(tmp_path) -> N
         remaining_tokens=320,
     )
 
-    certificate = preflight_attempt_budget(schedule, state)
+    certificate = preflight_attempt_budget(schedule, state, MODEL_SPEC)
+    assert certificate.schema_version == "2"
     assert certificate.ledger_id == "study-ledger"
     assert certificate.ledger_tail_ref == tail
     store = ArtifactStore(tmp_path / "cas")
@@ -236,14 +259,14 @@ def test_preflight_binds_exact_clean_ledger_tail_and_is_persisted(tmp_path) -> N
             "tail_ref": ArtifactRef(
                 sha256="b" * 64,
                 size=1,
-                media_type="application/vnd.spiral-harness.attempt-reservation.v1+json",
+                media_type="application/vnd.spiral-harness.attempt-reservation.v2+json",
             ),
             "pending_reservation_ref": ArtifactRef(
                 sha256="b" * 64,
                 size=1,
-                media_type="application/vnd.spiral-harness.attempt-reservation.v1+json",
+                media_type="application/vnd.spiral-harness.attempt-reservation.v2+json",
             ),
         }
     )
     with pytest.raises(ScheduleBudgetExceeded, match="open reservation"):
-        preflight_attempt_budget(schedule, pending)
+        preflight_attempt_budget(schedule, pending, MODEL_SPEC)

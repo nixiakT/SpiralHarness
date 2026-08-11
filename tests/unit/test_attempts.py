@@ -3,7 +3,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from spiral_harness.core.models import ArtifactRef
+from spiral_harness.core.canonical import canonical_sha256
+from spiral_harness.core.models import HARNESS_MANIFEST_MEDIA_TYPE, ArtifactRef
 from spiral_harness.execution.attempts import (
     AttemptBudgetExceeded,
     AttemptLedger,
@@ -22,16 +23,34 @@ from spiral_harness.execution.contracts import (
     ExecutionError,
     ExecutionErrorClass,
     ExecutionStatus,
+    FrozenModelSpec,
+    InferenceConfig,
     ModelExecution,
-    ModelRequest,
     ModelUsage,
+    ResolvedHarness,
 )
+from spiral_harness.execution.model import materialize_request
 from spiral_harness.storage.artifact_store import ArtifactStore
 
 SHA_A = "a" * 64
-SHA_B = "b" * 64
-SHA_C = "c" * 64
-SHA_D = "d" * 64
+
+
+def fixed_spec() -> FrozenModelSpec:
+    return FrozenModelSpec(
+        backend="deterministic-replay",
+        backend_fingerprint="backend@fixed",
+        model="hosted/attempt-model",
+        revision="snapshot-2026-08-12",
+        tokenizer="provider/attempt-tokenizer",
+        tokenizer_revision="snapshot-2026-08-12",
+        runtime="attempt-runtime@sha256:fixed-v1",
+        inference=InferenceConfig(
+            temperature=0.0,
+            top_p=1.0,
+            max_output_tokens=8,
+            timeout_seconds=5.0,
+        ),
+    )
 
 
 def budget(
@@ -60,11 +79,16 @@ def execution(
     status: ExecutionStatus = ExecutionStatus.COMPLETED,
 ) -> ModelExecution:
     candidate_task = CandidateTask(task_id=task_id, question=question)
-    request = ModelRequest(
-        task_id=task_id,
-        harness_id=harness_id,
-        system_prompt=system_prompt,
-        user_prompt=question,
+    request = materialize_request(
+        candidate_task,
+        ResolvedHarness.from_prompt(
+            harness_ref=ArtifactRef(
+                sha256=canonical_sha256({"test_harness": harness_id}),
+                size=0,
+                media_type=HARNESS_MANIFEST_MEDIA_TYPE,
+            ),
+            system_prompt=system_prompt,
+        ),
         seed=seed,
     )
     failed = status is ExecutionStatus.FAILED
@@ -79,11 +103,7 @@ def execution(
             latency_ms=1.0,
             cost_usd=None,
         ),
-        backend_fingerprint="backend@fixed",
-        model_fingerprint=SHA_B,
-        inference_fingerprint=SHA_C,
-        runtime_fingerprint=SHA_D,
-        spec_fingerprint="e" * 64,
+        spec=fixed_spec(),
         execution_fingerprint=execution_fingerprint,
         request_sha256=request.fingerprint,
         error=(
@@ -125,6 +145,7 @@ def test_reservation_is_persisted_before_settlement_and_usage_is_derived(tmp_pat
     assert pending.charged_tokens == 0
     assert pending.encumbered_tokens == 10
     reservation = store.get_json(reservation_ref, AttemptReservation)
+    assert reservation.schema_version == "2"
     assert reservation.request_sha256 == completed.request_sha256
     assert reservation.budget_fingerprint == ledger.budget.fingerprint
 
@@ -136,6 +157,7 @@ def test_reservation_is_persisted_before_settlement_and_usage_is_derived(tmp_pat
     outcome = store.get_json(outcome_ref, AttemptOutcome)
 
     assert outcome_ref.media_type == ATTEMPT_OUTCOME_MEDIA_TYPE
+    assert outcome.schema_version == "2"
     assert outcome.disposition is AttemptDisposition.SETTLED
     assert outcome.reported_tokens == outcome.charged_tokens == 4
     assert state.pending_reservation_ref is None

@@ -5,6 +5,7 @@ from __future__ import annotations
 from spiral_harness.core.canonical import canonical_json_bytes, sha256_bytes
 from spiral_harness.core.experiment import MutationPolicy
 from spiral_harness.core.models import (
+    HARNESS_MANIFEST_MEDIA_TYPE,
     ArtifactRef,
     CandidateMutation,
     HarnessManifest,
@@ -27,11 +28,6 @@ def _validated_model[T: ImmutableModel](value: T) -> T:
         warnings="none",
     )
     return type(value).model_validate(content, strict=True, by_name=True)
-
-
-def _is_json_media_type(media_type: str) -> bool:
-    base_type = _base_media_type(media_type)
-    return base_type == "application/json" or base_type.endswith("+json")
 
 
 def _base_media_type(media_type: str) -> str:
@@ -116,8 +112,10 @@ class HarnessRegistry:
 
     @staticmethod
     def _verify_parent_ref(parent: HarnessManifest, parent_ref: ArtifactRef) -> None:
-        if not _is_json_media_type(parent_ref.media_type):
-            raise HarnessRegistryError("parent_ref must declare a JSON media type")
+        if parent_ref.media_type != HARNESS_MANIFEST_MEDIA_TYPE:
+            raise HarnessRegistryError(
+                "parent_ref must declare the exact harness manifest v2 media type"
+            )
         parent_bytes = canonical_json_bytes(parent)
         if parent_ref.size != len(parent_bytes):
             raise HarnessRegistryError(

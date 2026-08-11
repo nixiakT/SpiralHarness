@@ -9,6 +9,8 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 NonEmptyStr = Annotated[str, Field(min_length=1)]
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+HARNESS_MANIFEST_MEDIA_TYPE = "application/vnd.spiral-harness.manifest.v2+json"
+CANDIDATE_MUTATION_MEDIA_TYPE = "application/vnd.spiral-harness.candidate-mutation.v1+json"
 
 
 class ImmutableModel(BaseModel):
@@ -92,7 +94,7 @@ class HarnessManifest(ImmutableModel):
     experiment protocol rather than an attributed component mutation.
     """
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     model_fingerprint: NonEmptyStr
     runtime_fingerprint: NonEmptyStr
     trusted_plane_version: NonEmptyStr
@@ -124,6 +126,12 @@ class HarnessManifest(ImmutableModel):
         if duplicates:
             joined = ", ".join(sorted(duplicates))
             raise ValueError(f"component names must be unique; duplicates: {joined}")
+        return self
+
+    @model_validator(mode="after")
+    def parent_has_exact_manifest_media_type(self) -> HarnessManifest:
+        if self.parent is not None and self.parent.media_type != HARNESS_MANIFEST_MEDIA_TYPE:
+            raise ValueError("parent must declare the exact harness manifest v2 media type")
         return self
 
     @property
@@ -231,6 +239,8 @@ def model_content(model: ImmutableModel) -> dict[str, Any]:
 
 
 __all__ = [
+    "CANDIDATE_MUTATION_MEDIA_TYPE",
+    "HARNESS_MANIFEST_MEDIA_TYPE",
     "ArtifactRef",
     "BudgetPolicy",
     "CandidateMutation",

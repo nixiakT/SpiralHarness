@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from spiral_harness.core.canonical import canonical_json_bytes, canonical_sha256
 from spiral_harness.core.models import (
+    HARNESS_MANIFEST_MEDIA_TYPE,
     ArtifactRef,
     BudgetPolicy,
     CandidateMutation,
@@ -108,7 +109,7 @@ def test_manifest_rejects_duplicate_component_names() -> None:
 
 
 def test_manifest_records_lineage_and_is_deeply_immutable() -> None:
-    parent = artifact("f")
+    parent = artifact("f", media_type=HARNESS_MANIFEST_MEDIA_TYPE)
     manifest = HarnessManifest(
         model_fingerprint="fixed-model/settings/seed",
         runtime_fingerprint="runtime-image-digest",
@@ -124,6 +125,25 @@ def test_manifest_records_lineage_and_is_deeply_immutable() -> None:
     assert isinstance(manifest.components, tuple)
     with pytest.raises(ValidationError):
         manifest.components[0].name = "changed"
+
+
+@pytest.mark.parametrize(
+    "media_type",
+    [
+        "application/json",
+        "application/vnd.spiral-harness.manifest+json",
+        f"{HARNESS_MANIFEST_MEDIA_TYPE}; charset=utf-8",
+    ],
+)
+def test_manifest_parent_requires_the_exact_v1_media_type(media_type: str) -> None:
+    with pytest.raises(ValidationError, match="exact harness manifest v2 media type"):
+        HarnessManifest(
+            model_fingerprint="fixed-model/settings/seed",
+            runtime_fingerprint="runtime-image-digest",
+            trusted_plane_version="verification-v1",
+            parent=artifact("f", media_type=media_type),
+            components=(component("system", ComponentKind.PROMPT, "a"),),
+        )
 
 
 def test_candidate_mutation_is_atomic_and_non_noop() -> None:

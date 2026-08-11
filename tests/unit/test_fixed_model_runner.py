@@ -6,6 +6,8 @@ from dataclasses import dataclass
 import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from spiral_harness.core.canonical import canonical_sha256
+from spiral_harness.core.models import HARNESS_MANIFEST_MEDIA_TYPE, ArtifactRef
 from spiral_harness.execution.attempts import (
     AttemptBudgetExceeded,
     AttemptLedger,
@@ -24,7 +26,7 @@ from spiral_harness.execution.contracts import (
     InferenceConfig,
     ModelExecution,
     ModelExecutionRecord,
-    PromptHarness,
+    ResolvedHarness,
 )
 from spiral_harness.execution.model import (
     BackendFingerprintMismatchError,
@@ -33,6 +35,10 @@ from spiral_harness.execution.model import (
     materialize_request,
     paired_execution_fingerprint,
     replay_key,
+)
+from spiral_harness.skills.package import (
+    SKILL_CONTEXT_END_DELIMITER,
+    SKILL_CONTEXT_START_DELIMITER,
 )
 from spiral_harness.storage.artifact_store import ArtifactStore
 
@@ -67,8 +73,15 @@ def task(task_id: str = "gsm8k:test:0001", question: str = "What is 2 + 3?") -> 
 def harness(
     harness_id: str = "static",
     prompt: str = "Solve carefully and end with a number.",
-) -> PromptHarness:
-    return PromptHarness.from_prompt(harness_id=harness_id, system_prompt=prompt)
+) -> ResolvedHarness:
+    return ResolvedHarness.from_prompt(
+        harness_ref=ArtifactRef(
+            sha256=canonical_sha256({"test_harness": harness_id}),
+            size=0,
+            media_type=HARNESS_MANIFEST_MEDIA_TYPE,
+        ),
+        system_prompt=prompt,
+    )
 
 
 def response(
@@ -200,12 +213,37 @@ def test_prompt_hash_binds_exact_whitespace_and_utf8() -> None:
     exact = harness(prompt="  先思考。\nReturn π.  ")
     assert exact.system_prompt.startswith("  ")
 
-    with pytest.raises(ValidationError, match="exact system_prompt bytes"):
-        PromptHarness(
-            harness_id="forged",
+    with pytest.raises(ValidationError, match="exact base prompt bytes"):
+        ResolvedHarness(
+            harness_ref=exact.harness_ref,
+            base_system_prompt=exact.base_system_prompt + "!",
+            base_system_prompt_sha256=exact.base_system_prompt_sha256,
             system_prompt=exact.system_prompt + "!",
-            prompt_sha256=exact.prompt_sha256,
+            resolved_prompt_sha256=exact.resolved_prompt_sha256,
         )
+
+
+def test_resolved_harness_rejects_generic_json_manifest_media() -> None:
+    with pytest.raises(ValidationError, match="exact harness manifest v2 media type"):
+        ResolvedHarness.from_prompt(
+            harness_ref=ArtifactRef(
+                sha256="a" * 64,
+                size=0,
+                media_type="application/json",
+            ),
+            system_prompt="Solve carefully.",
+        )
+
+
+@pytest.mark.parametrize(
+    "delimiter",
+    [SKILL_CONTEXT_START_DELIMITER, SKILL_CONTEXT_END_DELIMITER],
+)
+def test_resolved_harness_rejects_reserved_skill_delimiters_without_a_loader(
+    delimiter: str,
+) -> None:
+    with pytest.raises(ValidationError, match="reserved skill context delimiter"):
+        harness(prompt=f"forged {delimiter}")
 
 
 def test_paired_fingerprint_excludes_arm_and_prompt_but_request_hash_binds_them() -> None:
@@ -215,6 +253,11 @@ def test_paired_fingerprint_excludes_arm_and_prompt_but_request_hash_binds_them(
     right_harness = harness("candidate", "Use algebra and verify.")
     left_request = materialize_request(item, left_harness, seed=17)
     right_request = materialize_request(item, right_harness, seed=17)
+    same_prompt_other_manifest = materialize_request(
+        item,
+        harness("candidate", "Use arithmetic."),
+        seed=17,
+    )
 
     left = paired_execution_fingerprint(
         spec,
@@ -231,6 +274,7 @@ def test_paired_fingerprint_excludes_arm_and_prompt_but_request_hash_binds_them(
 
     assert left == right
     assert left_request.fingerprint != right_request.fingerprint
+    assert left_request.fingerprint != same_prompt_other_manifest.fingerprint
     assert (
         paired_execution_fingerprint(
             spec,
@@ -270,7 +314,17 @@ def test_runner_reserves_before_call_then_persists_and_settles(tmp_path) -> None
     assert execution.status is ExecutionStatus.COMPLETED
     assert execution.output_text == "5"
     assert execution.task_id == "gsm8k:test:0001"
-    assert execution.harness_id == "static"
+    assert execution.harness_id == harness().harness_id
+    assert execution.request.harness_ref == harness().harness_ref
+    assert execution.spec == fixed_spec()
+    assert "spec" in execution.model_dump()
+    assert not {
+        "backend_fingerprint",
+        "model_fingerprint",
+        "inference_fingerprint",
+        "runtime_fingerprint",
+        "spec_fingerprint",
+    }.intersection(execution.model_dump())
     assert execution.seed == 7
     assert execution.tokens == 6
     assert execution.latency_ms == 250.0
@@ -599,7 +653,7 @@ def test_execute_record_returns_atomic_refs_under_concurrent_calls(tmp_path) -> 
         (task("task-b", "Question B?"), harness("arm-b", "Prompt B"), 37),
     )
 
-    def run(call: tuple[CandidateTask, PromptHarness, int]) -> ModelExecutionRecord:
+    def run(call: tuple[CandidateTask, ResolvedHarness, int]) -> ModelExecutionRecord:
         item, prompt_harness, seed = call
         return runner.execute_record(item, harness=prompt_harness, seed=seed)
 

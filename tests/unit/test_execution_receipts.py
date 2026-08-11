@@ -5,7 +5,13 @@ from dataclasses import dataclass
 import pytest
 
 from spiral_harness.core.canonical import canonical_sha256
-from spiral_harness.core.models import ArtifactRef
+from spiral_harness.core.models import (
+    HARNESS_MANIFEST_MEDIA_TYPE,
+    ArtifactRef,
+    ComponentKind,
+    HarnessComponentRef,
+    HarnessManifest,
+)
 from spiral_harness.execution.attempts import AttemptLedger
 from spiral_harness.execution.contracts import (
     MODEL_EXECUTION_MEDIA_TYPE,
@@ -24,11 +30,13 @@ from spiral_harness.execution.contracts import (
     ModelExecution,
     ModelRequest,
     ModelUsage,
-    PromptHarness,
+    ResolvedHarness,
 )
 from spiral_harness.execution.model import (
     FixedModelRunner,
     ReplayBackend,
+    materialize_request,
+    paired_execution_fingerprint,
 )
 from spiral_harness.execution.receipts import (
     EXECUTION_RECEIPT_MEDIA_TYPE,
@@ -49,10 +57,6 @@ from spiral_harness.execution.schedule import (
 )
 from spiral_harness.storage.artifact_store import ArtifactStore
 
-SHA_B = "b" * 64
-SHA_C = "c" * 64
-SHA_D = "d" * 64
-SHA_E = "e" * 64
 RUNNER_BACKEND_FINGERPRINT = "scheduled-replay@sha256:fixed-v1"
 
 
@@ -111,10 +115,72 @@ def runner_spec() -> FrozenModelSpec:
     )
 
 
-def prompt_harness(schedule: EvaluationBatchSchedule, side: EvaluationSide) -> PromptHarness:
-    return PromptHarness.from_prompt(
-        harness_id=schedule.harness_id_for(side),
-        system_prompt=f"Prompt for {side.value}",
+def put_prompt_harness(
+    store: ArtifactStore,
+    spec: FrozenModelSpec,
+    side: EvaluationSide,
+) -> ArtifactRef:
+    prompt_ref = store.put_bytes(
+        f"Prompt for {side.value}".encode(),
+        media_type="text/plain",
+    )
+    manifest = HarnessManifest(
+        model_fingerprint=spec.model_fingerprint,
+        runtime_fingerprint=spec.runtime_fingerprint,
+        trusted_plane_version="receipt-test-v1",
+        components=(
+            HarnessComponentRef(
+                name="system-prompt",
+                kind=ComponentKind.PROMPT,
+                artifact=prompt_ref,
+            ),
+        ),
+    )
+    return store.put_json(manifest, media_type=HARNESS_MANIFEST_MEDIA_TYPE)
+
+
+def scheduled_batch(
+    store: ArtifactStore,
+    spec: FrozenModelSpec,
+    **updates: object,
+) -> tuple[EvaluationBatchSchedule, dict[EvaluationSide, ArtifactRef]]:
+    refs = {
+        side: put_prompt_harness(store, spec, side)
+        for side in (EvaluationSide.PARENT, EvaluationSide.CANDIDATE)
+    }
+    return (
+        batch(
+            parent_harness_id=refs[EvaluationSide.PARENT].sha256,
+            candidate_harness_id=refs[EvaluationSide.CANDIDATE].sha256,
+            **updates,
+        ),
+        refs,
+    )
+
+
+def prompt_request(
+    *,
+    task_id: str,
+    question: str,
+    harness_ref: ArtifactRef,
+    system_prompt: str,
+    seed: int,
+) -> ModelRequest:
+    return materialize_request(
+        CandidateTask(task_id=task_id, question=question),
+        ResolvedHarness.from_prompt(
+            harness_ref=harness_ref,
+            system_prompt=system_prompt,
+        ),
+        seed=seed,
+    )
+
+
+def unpersisted_harness_ref(label: str) -> ArtifactRef:
+    return ArtifactRef(
+        sha256=canonical_sha256({"unpersisted_test_harness": label}),
+        size=0,
+        media_type=HARNESS_MANIFEST_MEDIA_TYPE,
     )
 
 
@@ -123,11 +189,12 @@ def persist_preflight(
     schedule: EvaluationBatchSchedule,
     ledger: AttemptLedger,
 ) -> ArtifactRef:
-    certificate = preflight_attempt_budget(schedule, ledger.state())
+    certificate = preflight_attempt_budget(schedule, ledger.state(), runner_spec())
     return publish_schedule_preflight(store, certificate)
 
 
 def execution_for(
+    store: ArtifactStore,
     schedule: EvaluationBatchSchedule,
     cell: EvaluationCellKey,
     *,
@@ -135,26 +202,25 @@ def execution_for(
     status: ExecutionStatus,
     input_tokens: int,
     output_tokens: int,
+    question: str | None = None,
 ) -> ModelExecution:
-    question = f"Question for {cell.task_id}?"
-    task = CandidateTask(task_id=cell.task_id, question=question)
-    request = ModelRequest(
+    spec = runner_spec()
+    harness_ref = put_prompt_harness(store, spec, cell.side)
+    resolved_question = question or f"Question for {cell.task_id}?"
+    task = CandidateTask(task_id=cell.task_id, question=resolved_question)
+    request = prompt_request(
         task_id=cell.task_id,
-        harness_id=schedule.harness_id_for(cell.side),
-        system_prompt=f"System prompt for {cell.side.value}",
-        user_prompt=question,
+        question=resolved_question,
+        harness_ref=harness_ref,
+        system_prompt=f"Prompt for {cell.side.value}",
         seed=schedule.seed_for(cell, attempt_index=attempt_index),
     )
     failed = status is ExecutionStatus.FAILED
-    execution_fingerprint = canonical_sha256(
-        {
-            "schema": "test/receipt-execution/v1",
-            "cell": cell,
-            "attempt_index": attempt_index,
-            "request": request,
-            "status": status,
-            "tokens": (input_tokens, output_tokens),
-        }
+    execution_fingerprint = paired_execution_fingerprint(
+        spec,
+        task,
+        seed=request.seed,
+        backend_fingerprint=spec.backend_fingerprint,
     )
     return ModelExecution(
         task=task,
@@ -167,11 +233,7 @@ def execution_for(
             latency_ms=1.0,
             cost_usd=None,
         ),
-        backend_fingerprint="replay@fixed",
-        model_fingerprint=SHA_B,
-        inference_fingerprint=SHA_C,
-        runtime_fingerprint=SHA_D,
-        spec_fingerprint=SHA_E,
+        spec=spec,
         execution_fingerprint=execution_fingerprint,
         request_sha256=request.fingerprint,
         error=(
@@ -206,14 +268,17 @@ def record_attempt(
     status: ExecutionStatus,
     input_tokens: int = 0,
     output_tokens: int = 0,
+    question: str | None = None,
 ) -> RecordedAttempt:
     execution = execution_for(
+        store,
         schedule,
         cell,
         attempt_index=attempt_index,
         status=status,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
+        question=question,
     )
     reservation_ref = ledger.reserve(
         task_fingerprint=execution.task.fingerprint,
@@ -258,7 +323,7 @@ def complete_paired_retry_run(
     ArtifactRef,
     tuple[RecordedAttempt, ...],
 ]:
-    schedule = batch()
+    schedule, _ = scheduled_batch(store, runner_spec())
     ledger = ledger_for(store, schedule)
     preflight_ref = persist_preflight(store, schedule, ledger)
     cells = tuple(schedule.iter_cells())
@@ -321,6 +386,7 @@ def test_receipt_replay_uses_charged_outcomes_including_timeout_burn(tmp_path) -
         receipt_refs=(record.receipt_ref for record in reversed(records)),
     )
 
+    assert usage.schema_version == "2"
     assert usage.cell_count == 2
     assert usage.attempt_count == 4
     assert usage.settled_attempts == 2
@@ -332,6 +398,7 @@ def test_receipt_replay_uses_charged_outcomes_including_timeout_burn(tmp_path) -
     assert all(ref.media_type == EXECUTION_RECEIPT_MEDIA_TYPE for ref in usage.receipt_refs)
 
     first = store.get_json(records[0].receipt_ref, ExecutionReceipt)
+    assert first.schema_version == "2"
     assert first.reported_tokens == 0
     assert first.charged_tokens == schedule.token_ceiling_per_attempt
     assert first.preflight_ref == preflight_ref
@@ -366,6 +433,134 @@ def test_missing_duplicate_and_asymmetric_retry_receipts_fail_closed(tmp_path) -
             preflight_ref=preflight_ref,
             attempt_ledger=ledger,
             receipt_refs=refs[:-1],
+        )
+
+
+def test_paired_replay_rejects_different_questions_under_the_same_task_id(tmp_path) -> None:
+    store = ArtifactStore(tmp_path / "cas")
+    schedule, _ = scheduled_batch(store, runner_spec(), max_attempts_per_cell=1)
+    ledger = ledger_for(store, schedule)
+    preflight_ref = persist_preflight(store, schedule, ledger)
+    cells = {cell.side: cell for cell in schedule.iter_cells()}
+    parent = record_attempt(
+        store,
+        ledger,
+        schedule,
+        preflight_ref,
+        cells[EvaluationSide.PARENT],
+        attempt_index=0,
+        status=ExecutionStatus.COMPLETED,
+        question="What is 2 + 2?",
+    )
+    candidate = record_attempt(
+        store,
+        ledger,
+        schedule,
+        preflight_ref,
+        cells[EvaluationSide.CANDIDATE],
+        attempt_index=0,
+        status=ExecutionStatus.COMPLETED,
+        question="What is 20 + 22?",
+    )
+
+    with pytest.raises(ExecutionReceiptIntegrityError, match="retry executions"):
+        replay_trusted_usage(
+            store,
+            schedule=schedule,
+            preflight_ref=preflight_ref,
+            attempt_ledger=ledger,
+            receipt_refs=(parent.receipt_ref, candidate.receipt_ref),
+        )
+
+
+def test_receipt_recomputes_a_reservation_consistent_execution_fingerprint(tmp_path) -> None:
+    store = ArtifactStore(tmp_path / "cas")
+    schedule, _ = scheduled_batch(store, runner_spec(), max_attempts_per_cell=1)
+    ledger = ledger_for(store, schedule)
+    preflight_ref = persist_preflight(store, schedule, ledger)
+    parent = next(cell for cell in schedule.iter_cells() if cell.side is EvaluationSide.PARENT)
+    execution = execution_for(
+        store,
+        schedule,
+        parent,
+        attempt_index=0,
+        status=ExecutionStatus.COMPLETED,
+        input_tokens=2,
+        output_tokens=1,
+    ).model_copy(update={"execution_fingerprint": "f" * 64})
+    reservation_ref = ledger.reserve(
+        task_fingerprint=execution.task.fingerprint,
+        execution_fingerprint=execution.execution_fingerprint,
+        request_sha256=execution.request_sha256,
+        token_ceiling=schedule.token_ceiling_per_attempt,
+    )
+    execution_ref = store.put_json(execution, media_type=MODEL_EXECUTION_MEDIA_TYPE)
+    outcome_ref = ledger.settle(reservation_ref, execution_ref=execution_ref)
+
+    with pytest.raises(ExecutionReceiptIntegrityError, match="model boundary"):
+        publish_execution_receipt(
+            store,
+            schedule=schedule,
+            cell=parent,
+            attempt_index=0,
+            preflight_ref=preflight_ref,
+            reservation_ref=reservation_ref,
+            outcome_ref=outcome_ref,
+            ledger_tail_ref=outcome_ref,
+        )
+
+
+def test_receipt_rejects_a_self_consistent_execution_from_an_unfrozen_spec(tmp_path) -> None:
+    store = ArtifactStore(tmp_path / "cas")
+    expected_spec = runner_spec()
+    schedule, _ = scheduled_batch(store, expected_spec, max_attempts_per_cell=1)
+    ledger = ledger_for(store, schedule)
+    preflight_ref = persist_preflight(store, schedule, ledger)
+    parent = next(cell for cell in schedule.iter_cells() if cell.side is EvaluationSide.PARENT)
+    execution = execution_for(
+        store,
+        schedule,
+        parent,
+        attempt_index=0,
+        status=ExecutionStatus.COMPLETED,
+        input_tokens=2,
+        output_tokens=1,
+    )
+    wrong_spec = expected_spec.model_copy(
+        update={
+            "backend": "other-replay",
+            "backend_fingerprint": "other-backend@sha256:fixed-v1",
+            "inference": expected_spec.inference.model_copy(update={"temperature": 0.5}),
+        }
+    )
+    wrong_fingerprint = paired_execution_fingerprint(
+        wrong_spec,
+        execution.task,
+        seed=execution.seed,
+        backend_fingerprint=wrong_spec.backend_fingerprint,
+    )
+    execution = execution.model_copy(
+        update={"spec": wrong_spec, "execution_fingerprint": wrong_fingerprint}
+    )
+    reservation_ref = ledger.reserve(
+        task_fingerprint=execution.task.fingerprint,
+        execution_fingerprint=execution.execution_fingerprint,
+        request_sha256=execution.request_sha256,
+        token_ceiling=schedule.token_ceiling_per_attempt,
+    )
+    execution_ref = store.put_json(execution, media_type=MODEL_EXECUTION_MEDIA_TYPE)
+    outcome_ref = ledger.settle(reservation_ref, execution_ref=execution_ref)
+
+    with pytest.raises(ExecutionReceiptIntegrityError, match="model boundary"):
+        publish_execution_receipt(
+            store,
+            schedule=schedule,
+            cell=parent,
+            attempt_index=0,
+            preflight_ref=preflight_ref,
+            reservation_ref=reservation_ref,
+            outcome_ref=outcome_ref,
+            ledger_tail_ref=outcome_ref,
         )
 
 
@@ -407,7 +602,9 @@ def test_side_swap_and_cross_task_relabeling_are_rejected(tmp_path) -> None:
             ledger_tail_ref=parent_record.outcome_ref,
         )
 
-    two_task_schedule = batch(
+    two_task_schedule, _ = scheduled_batch(
+        store,
+        runner_spec(),
         task_ids=("task-1", "task-2"),
         max_attempts_per_cell=1,
     )
@@ -449,18 +646,18 @@ def test_side_swap_and_cross_task_relabeling_are_rejected(tmp_path) -> None:
 
 def test_unreceipted_burn_after_preflight_is_not_silently_omitted(tmp_path) -> None:
     store = ArtifactStore(tmp_path / "cas")
-    schedule = batch(max_attempts_per_cell=1)
+    schedule, _ = scheduled_batch(store, runner_spec(), max_attempts_per_cell=1)
     ledger = ledger_for(store, schedule, extra_attempts=1)
     preflight_ref = persist_preflight(store, schedule, ledger)
 
     # This conservative failure is in the exact post-preflight ledger suffix,
     # but deliberately receives no cell receipt.
     foreign_task = CandidateTask(task_id="foreign", question="not in schedule")
-    foreign_request = ModelRequest(
+    foreign_request = prompt_request(
         task_id="foreign",
-        harness_id="foreign",
+        question=foreign_task.question,
+        harness_ref=unpersisted_harness_ref("foreign"),
         system_prompt="foreign",
-        user_prompt=foreign_task.question,
         seed=1,
     )
     unreceipted = ledger.reserve(
@@ -497,7 +694,7 @@ def test_unreceipted_burn_after_preflight_is_not_silently_omitted(tmp_path) -> N
 
 def test_unreceipted_trailing_burn_cannot_be_hidden_with_a_stale_receipt_tail(tmp_path) -> None:
     store = ArtifactStore(tmp_path / "cas")
-    schedule = batch(max_attempts_per_cell=1)
+    schedule, _ = scheduled_batch(store, runner_spec(), max_attempts_per_cell=1)
     ledger = ledger_for(store, schedule, extra_attempts=1)
     preflight_ref = persist_preflight(store, schedule, ledger)
     records = tuple(
@@ -516,11 +713,11 @@ def test_unreceipted_trailing_burn_cannot_be_hidden_with_a_stale_receipt_tail(tm
     )
 
     foreign_task = CandidateTask(task_id="trailing", question="trailing")
-    foreign_request = ModelRequest(
+    foreign_request = prompt_request(
         task_id="trailing",
-        harness_id="trailing",
+        question="trailing",
+        harness_ref=unpersisted_harness_ref("trailing"),
         system_prompt="trailing",
-        user_prompt="trailing",
         seed=2,
     )
     trailing = ledger.reserve(
@@ -543,15 +740,15 @@ def test_unreceipted_trailing_burn_cannot_be_hidden_with_a_stale_receipt_tail(tm
 
 def test_preflight_start_tail_excludes_verified_prior_ledger_history(tmp_path) -> None:
     store = ArtifactStore(tmp_path / "cas")
-    schedule = batch(max_attempts_per_cell=1)
+    schedule, _ = scheduled_batch(store, runner_spec(), max_attempts_per_cell=1)
     ledger = ledger_for(store, schedule, extra_attempts=1)
 
     prior_task = CandidateTask(task_id="prior", question="prior")
-    prior_request = ModelRequest(
+    prior_request = prompt_request(
         task_id="prior",
-        harness_id="prior",
+        question="prior",
+        harness_ref=unpersisted_harness_ref("prior"),
         system_prompt="prior",
-        user_prompt="prior",
         seed=0,
     )
     prior = ledger.reserve(
@@ -593,7 +790,8 @@ def test_preflight_start_tail_excludes_verified_prior_ledger_history(tmp_path) -
 
 def test_scheduled_attempts_bind_each_atomic_record_to_serial_receipt_progress(tmp_path) -> None:
     store = ArtifactStore(tmp_path / "cas")
-    schedule = batch(max_attempts_per_cell=1)
+    spec = runner_spec()
+    schedule, harness_refs = scheduled_batch(store, spec, max_attempts_per_cell=1)
     ledger = ledger_for(store, schedule)
     preflight_ref = persist_preflight(store, schedule, ledger)
 
@@ -605,7 +803,7 @@ def test_scheduled_attempts_bind_each_atomic_record_to_serial_receipt_progress(t
         ),
     )
     runner = FixedModelRunner(
-        spec=runner_spec(),
+        spec=spec,
         backend=backend,
         attempt_ledger=ledger,
     )
@@ -624,7 +822,7 @@ def test_scheduled_attempts_bind_each_atomic_record_to_serial_receipt_progress(t
             cell=cell,
             attempt_index=0,
             task=candidate_task,
-            harness=prompt_harness(schedule, cell.side),
+            harness_ref=harness_refs[cell.side],
         )
         records.append(record)
         expected_tail = record.outcome_ref
@@ -654,9 +852,52 @@ def test_scheduled_attempts_bind_each_atomic_record_to_serial_receipt_progress(t
     assert usage.charged_tokens == 8
 
 
+def test_scheduled_attempt_rejects_wrong_full_spec_before_reservation_or_backend_call(
+    tmp_path,
+) -> None:
+    store = ArtifactStore(tmp_path / "cas")
+    expected_spec = runner_spec()
+    schedule, harness_refs = scheduled_batch(store, expected_spec, max_attempts_per_cell=1)
+    ledger = ledger_for(store, schedule)
+    preflight_ref = persist_preflight(store, schedule, ledger)
+    wrong_spec = expected_spec.model_copy(
+        update={
+            "backend": "other-replay",
+            "backend_fingerprint": "other-backend@sha256:fixed-v1",
+            "runtime": "other-runtime@sha256:fixed-v1",
+            "inference": expected_spec.inference.model_copy(update={"temperature": 0.5}),
+        }
+    )
+    backend = ReplayBackend(
+        fingerprint=wrong_spec.backend_fingerprint,
+        default_response=BackendResponse(
+            output="must not run",
+            usage=BackendTokenUsage(input_tokens=2, output_tokens=1),
+        ),
+    )
+    runner = FixedModelRunner(spec=wrong_spec, backend=backend, attempt_ledger=ledger)
+    parent = next(cell for cell in schedule.iter_cells() if cell.side is EvaluationSide.PARENT)
+
+    with pytest.raises(ExecutionReceiptIntegrityError, match="model spec"):
+        execute_scheduled_attempt(
+            runner=runner,
+            schedule=schedule,
+            preflight_ref=preflight_ref,
+            expected_previous_ledger_tail_ref=None,
+            cell=parent,
+            attempt_index=0,
+            task=CandidateTask(task_id="task-1", question="What is 2 + 2?"),
+            harness_ref=harness_refs[EvaluationSide.PARENT],
+        )
+
+    assert backend.calls == ()
+    assert ledger.state().attempts_used == 0
+
+
 def test_scheduled_timeout_receipt_charges_full_reservation(tmp_path) -> None:
     store = ArtifactStore(tmp_path / "cas")
-    schedule = batch(max_attempts_per_cell=1)
+    spec = runner_spec()
+    schedule, harness_refs = scheduled_batch(store, spec, max_attempts_per_cell=1)
     ledger = AttemptLedger(
         store,
         ledger_id="wide-ledger",
@@ -681,7 +922,7 @@ def test_scheduled_timeout_receipt_charges_full_reservation(tmp_path) -> None:
 
     backend = TimeoutBackend()
     runner = FixedModelRunner(
-        spec=runner_spec(),
+        spec=spec,
         backend=backend,
         attempt_ledger=ledger,
     )
@@ -694,7 +935,7 @@ def test_scheduled_timeout_receipt_charges_full_reservation(tmp_path) -> None:
         cell=parent,
         attempt_index=0,
         task=CandidateTask(task_id="task-1", question="What is 2 + 2?"),
-        harness=prompt_harness(schedule, EvaluationSide.PARENT),
+        harness_ref=harness_refs[EvaluationSide.PARENT],
     )
 
     assert backend.calls == 1
@@ -710,7 +951,8 @@ def test_schedule_ceiling_overrun_poisons_wider_ledger_and_stops_before_retry(
     tmp_path,
 ) -> None:
     store = ArtifactStore(tmp_path / "cas")
-    schedule = batch(max_attempts_per_cell=1)
+    spec = runner_spec()
+    schedule, harness_refs = scheduled_batch(store, spec, max_attempts_per_cell=1)
     ledger = AttemptLedger(
         store,
         ledger_id="wide-overrun-ledger",
@@ -729,7 +971,7 @@ def test_schedule_ceiling_overrun_poisons_wider_ledger_and_stops_before_retry(
         ),
     )
     runner = FixedModelRunner(
-        spec=runner_spec(),
+        spec=spec,
         backend=backend,
         attempt_ledger=ledger,
     )
@@ -746,7 +988,7 @@ def test_schedule_ceiling_overrun_poisons_wider_ledger_and_stops_before_retry(
         cell=parent,
         attempt_index=0,
         task=item,
-        harness=prompt_harness(schedule, EvaluationSide.PARENT),
+        harness_ref=harness_refs[EvaluationSide.PARENT],
     )
 
     reservation = store.get_json(first.reservation_ref, AttemptReservation)
@@ -766,23 +1008,24 @@ def test_schedule_ceiling_overrun_poisons_wider_ledger_and_stops_before_retry(
             cell=candidate,
             attempt_index=0,
             task=item,
-            harness=prompt_harness(schedule, EvaluationSide.CANDIDATE),
+            harness_ref=harness_refs[EvaluationSide.CANDIDATE],
         )
     assert len(backend.calls) == 1
 
 
 def test_stale_preflight_is_rejected_before_scheduled_backend_call(tmp_path) -> None:
     store = ArtifactStore(tmp_path / "cas")
-    schedule = batch(max_attempts_per_cell=1)
+    spec = runner_spec()
+    schedule, harness_refs = scheduled_batch(store, spec, max_attempts_per_cell=1)
     ledger = ledger_for(store, schedule, extra_attempts=1)
     preflight_ref = persist_preflight(store, schedule, ledger)
 
     foreign_task = CandidateTask(task_id="foreign", question="foreign")
-    foreign_request = ModelRequest(
+    foreign_request = prompt_request(
         task_id="foreign",
-        harness_id="foreign",
+        question="foreign",
+        harness_ref=unpersisted_harness_ref("foreign"),
         system_prompt="foreign",
-        user_prompt="foreign",
         seed=1,
     )
     foreign_reservation = ledger.reserve(
@@ -801,7 +1044,7 @@ def test_stale_preflight_is_rejected_before_scheduled_backend_call(tmp_path) -> 
         ),
     )
     runner = FixedModelRunner(
-        spec=runner_spec(),
+        spec=spec,
         backend=backend,
         attempt_ledger=ledger,
     )
@@ -816,7 +1059,7 @@ def test_stale_preflight_is_rejected_before_scheduled_backend_call(tmp_path) -> 
             cell=parent,
             attempt_index=0,
             task=CandidateTask(task_id="task-1", question="What is 2 + 2?"),
-            harness=prompt_harness(schedule, EvaluationSide.PARENT),
+            harness_ref=harness_refs[EvaluationSide.PARENT],
         )
     assert backend.calls == ()
 
@@ -825,16 +1068,17 @@ def test_forged_previous_receipt_cannot_authorize_a_foreign_tail_backend_call(
     tmp_path,
 ) -> None:
     store = ArtifactStore(tmp_path / "cas")
-    schedule = batch(max_attempts_per_cell=1)
+    spec = runner_spec()
+    schedule, harness_refs = scheduled_batch(store, spec, max_attempts_per_cell=1)
     ledger = ledger_for(store, schedule, extra_attempts=1)
     preflight_ref = persist_preflight(store, schedule, ledger)
 
     foreign_task = CandidateTask(task_id="foreign", question="foreign")
-    foreign_request = ModelRequest(
+    foreign_request = prompt_request(
         task_id="foreign",
-        harness_id="foreign",
+        question="foreign",
+        harness_ref=unpersisted_harness_ref("foreign"),
         system_prompt="foreign",
-        user_prompt="foreign",
         seed=1,
     )
     foreign_reservation_ref = ledger.reserve(
@@ -851,6 +1095,7 @@ def test_forged_previous_receipt_cannot_authorize_a_foreign_tail_backend_call(
 
     parent = next(cell for cell in schedule.iter_cells() if cell.side is EvaluationSide.PARENT)
     decoy_execution = execution_for(
+        store,
         schedule,
         parent,
         attempt_index=0,
@@ -888,7 +1133,7 @@ def test_forged_previous_receipt_cannot_authorize_a_foreign_tail_backend_call(
         ),
     )
     runner = FixedModelRunner(
-        spec=runner_spec(),
+        spec=spec,
         backend=backend,
         attempt_ledger=ledger,
     )
@@ -903,7 +1148,7 @@ def test_forged_previous_receipt_cannot_authorize_a_foreign_tail_backend_call(
             cell=parent,
             attempt_index=0,
             task=CandidateTask(task_id="task-1", question="What is 2 + 2?"),
-            harness=prompt_harness(schedule, EvaluationSide.PARENT),
+            harness_ref=harness_refs[EvaluationSide.PARENT],
         )
     assert backend.calls == ()
     assert ledger.tail_ref == foreign_tail
@@ -913,7 +1158,7 @@ def test_receipt_publish_and_replay_reject_reservation_above_preflight_ceiling(
     tmp_path,
 ) -> None:
     store = ArtifactStore(tmp_path / "cas")
-    schedule = batch(max_attempts_per_cell=1)
+    schedule, _ = scheduled_batch(store, runner_spec(), max_attempts_per_cell=1)
     ledger = AttemptLedger(
         store,
         ledger_id="forged-wide-ledger",
@@ -926,6 +1171,7 @@ def test_receipt_publish_and_replay_reject_reservation_above_preflight_ceiling(
     preflight_ref = persist_preflight(store, schedule, ledger)
     parent = next(cell for cell in schedule.iter_cells() if cell.side is EvaluationSide.PARENT)
     execution = execution_for(
+        store,
         schedule,
         parent,
         attempt_index=0,
@@ -990,7 +1236,8 @@ def test_scheduled_wrapper_rejects_fixed_runner_subclasses_before_backend_call(
         pass
 
     store = ArtifactStore(tmp_path / "cas")
-    schedule = batch(max_attempts_per_cell=1)
+    spec = runner_spec()
+    schedule, harness_refs = scheduled_batch(store, spec, max_attempts_per_cell=1)
     ledger = ledger_for(store, schedule)
     preflight_ref = persist_preflight(store, schedule, ledger)
     backend = ReplayBackend(
@@ -1001,7 +1248,7 @@ def test_scheduled_wrapper_rejects_fixed_runner_subclasses_before_backend_call(
         ),
     )
     runner = ForgedRunner(
-        spec=runner_spec(),
+        spec=spec,
         backend=backend,
         attempt_ledger=ledger,
     )
@@ -1016,14 +1263,15 @@ def test_scheduled_wrapper_rejects_fixed_runner_subclasses_before_backend_call(
             cell=parent,
             attempt_index=0,
             task=CandidateTask(task_id="task-1", question="What is 2 + 2?"),
-            harness=prompt_harness(schedule, EvaluationSide.PARENT),
+            harness_ref=harness_refs[EvaluationSide.PARENT],
         )
     assert backend.calls == ()
 
 
 def test_scheduled_side_harness_mismatch_is_rejected_before_backend_call(tmp_path) -> None:
     store = ArtifactStore(tmp_path / "cas")
-    schedule = batch(max_attempts_per_cell=1)
+    spec = runner_spec()
+    schedule, harness_refs = scheduled_batch(store, spec, max_attempts_per_cell=1)
     ledger = ledger_for(store, schedule)
     preflight_ref = persist_preflight(store, schedule, ledger)
     backend = ReplayBackend(
@@ -1034,16 +1282,11 @@ def test_scheduled_side_harness_mismatch_is_rejected_before_backend_call(tmp_pat
         ),
     )
     runner = FixedModelRunner(
-        spec=runner_spec(),
+        spec=spec,
         backend=backend,
         attempt_ledger=ledger,
     )
     parent = next(cell for cell in schedule.iter_cells() if cell.side is EvaluationSide.PARENT)
-    wrong_harness = PromptHarness.from_prompt(
-        harness_id=schedule.candidate_harness_id,
-        system_prompt="wrong side",
-    )
-
     with pytest.raises(ExecutionReceiptIntegrityError, match="scheduled side"):
         execute_scheduled_attempt(
             runner=runner,
@@ -1053,8 +1296,54 @@ def test_scheduled_side_harness_mismatch_is_rejected_before_backend_call(tmp_pat
             cell=parent,
             attempt_index=0,
             task=CandidateTask(task_id="task-1", question="What is 2 + 2?"),
-            harness=wrong_harness,
+            harness_ref=harness_refs[EvaluationSide.CANDIDATE],
         )
 
     assert backend.calls == ()
     assert ledger.state().attempts_used == 0
+
+
+def test_direct_runner_cannot_publish_a_forged_prompt_under_an_exact_manifest_id(
+    tmp_path,
+) -> None:
+    store = ArtifactStore(tmp_path / "cas")
+    spec = runner_spec()
+    schedule, harness_refs = scheduled_batch(store, spec, max_attempts_per_cell=1)
+    ledger = ledger_for(store, schedule)
+    preflight_ref = persist_preflight(store, schedule, ledger)
+    backend = ReplayBackend(
+        fingerprint=RUNNER_BACKEND_FINGERPRINT,
+        default_response=BackendResponse(
+            output="forged answer",
+            usage=BackendTokenUsage(input_tokens=2, output_tokens=1),
+        ),
+    )
+    runner = FixedModelRunner(spec=spec, backend=backend, attempt_ledger=ledger)
+    cell = next(cell for cell in schedule.iter_cells() if cell.side is EvaluationSide.PARENT)
+    task = CandidateTask(task_id=cell.task_id, question="What is 2 + 2?")
+    forged = ResolvedHarness.from_prompt(
+        harness_ref=harness_refs[EvaluationSide.PARENT],
+        system_prompt="A caller-authored prompt that is absent from the manifest.",
+    )
+    record = runner.execute_record(
+        task,
+        harness=forged,
+        seed=schedule.seed_for(cell, attempt_index=0),
+        reservation_token_ceiling=schedule.token_ceiling_per_attempt,
+        expected_previous_ledger_tail_ref=None,
+    )
+    outcome = store.get_json(record.outcome_ref, AttemptOutcome)
+
+    with pytest.raises(ExecutionReceiptIntegrityError, match="exact materialized harness"):
+        publish_execution_receipt(
+            store,
+            schedule=schedule,
+            cell=cell,
+            attempt_index=0,
+            preflight_ref=preflight_ref,
+            reservation_ref=outcome.reservation_ref,
+            outcome_ref=record.outcome_ref,
+            ledger_tail_ref=record.outcome_ref,
+        )
+
+    assert len(backend.calls) == 1

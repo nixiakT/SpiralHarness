@@ -33,8 +33,9 @@ symmetric verification capabilities nevertheless run in the same process as
 the controlled fixture. A deny-by-default capability schema is bound into the
 protocol and checked at admission, but it is not OS enforcement. M0.2 has no
 enforced network, filesystem, or process isolation and no worker sandbox.
-The expanded protocol schema is version 2 and is accepted only under its exact
-v2 media type; a v2 payload mislabeled as v1 fails closed.
+The protocol schema is version 3 and is accepted only under its exact v3 media
+type. Version 3 adds the full model-spec fingerprint needed to authorize a
+scheduled preflight; a payload under another version's media type fails closed.
 
 ## 2. Data boundaries
 
@@ -95,6 +96,21 @@ rejoins that reference with the experiment and protocol. A future trusted
 worker launcher must enforce those grants; the current schema does not itself
 restrict network, filesystem, secrets, subprocesses, or tools.
 
+For a skill candidate, admission additionally reloads the exact parent and
+child `SkillPackage` artifacts and replays an immediate rules-only revision
+when the parent declares `source_kind=generated`. That declaration is not an
+attestation, and the check covers the direct edge rather than recursively typed
+historical lineage. `HarnessMaterializer` then resolves exactly one prompt and
+at most one compatible skill using a fixed `rules` disclosure for scheduled
+execution; `ModelRequest` v2 binds the exact manifest ref, `SkillDisclosure`,
+base prompt, resolved prompt, and hashes into the backend call. `ModelExecution`
+v2 embeds the credential-free frozen model
+spec, allowing receipt publication and replay to reconstruct that same request
+from the manifest, prompt, package, and its directly declared reference bytes
+in CAS. This establishes a replayable request-level activation fact. It is not
+yet a producer-attested skill mechanism check and does not show that the model
+followed the rules or changed behavior.
+
 ## 4. Matched evaluation
 
 Evaluate the candidate and its exact parent on the same task instances, seeds,
@@ -105,6 +121,15 @@ fingerprint matches.
 For stochastic agents, use repeated runs or a predeclared seed set. Preserve
 per-task paired outcomes; aggregate means alone erase the evidence needed for a
 reliable comparison.
+
+Each scheduled paired batch starts from a persisted v2 preflight certificate
+that freezes the exact `FrozenModelSpec`, schedule, clean ledger boundary, and
+worst-case attempt/token capacity before a backend call. Receipt publication
+and trusted replay require every execution to match that spec, recompute its
+paired fingerprint, and compare parent/candidate fingerprints for each retry
+slot. The preflight spec fingerprint is also joined to the protocol and frozen
+run context, so a self-consistent batch cannot authorize a different backend
+or model configuration.
 
 M0.2 closes the gate inputs before a decision is accepted. Each v2 gate trial
 batch is signed by a process-local HMAC capability. The signed content binds
@@ -166,6 +191,20 @@ the same verification. This closes the caller-authored `passed=true` path.
 As with gate batches, this HMAC authenticates the trusted producer's complete
 assertion but does not re-execute its sources to derive each check boolean.
 Typed capture bundles and trusted probe replay remain runner-stage hardening.
+
+The skill path has not yet entered this mechanism-evidence boundary. Its next
+fail-closed integration is:
+
+1. derive a trusted activation source by replaying the actual execution request
+   with `HarnessMaterializer.verify_execution_request`;
+2. obtain independent evidence for rule adherence and the predeclared behavior
+   change rather than inferring either from prompt inclusion;
+3. run matched parent-revert and placebo interventions; and
+4. submit those concrete sources through `TrustedMechanismEvidenceService` and
+   the existing promotion gate.
+
+Until all four steps are present, a loaded skill cannot be promoted on the
+basis of its package/request binding.
 
 ## 6. Promotion gate
 
@@ -288,6 +327,9 @@ production completion must add an authenticated evaluator producer.
 
 M0.2 validates the promotion protocol against deterministic synthetic tasks.
 M1 now supplies a pinned real GSM8K adapter and provider-neutral score-free
-runner with replay backend, but no automatic optimizer or live-model benchmark
-result yet. The controlled fixture remains evidence about verifier plumbing and
-fail-closed behavior, not evidence of agent capability improvement.
+runner with replay backend, plus a bounded prompt-only automatic-search kernel.
+The declarative skill slice reaches admission, materialized backend requests,
+and receipt replay, but not automatic skill search, a live-model study, or a
+verified skill gain. The controlled fixture remains evidence about verifier
+plumbing and fail-closed behavior, not evidence of agent capability
+improvement.

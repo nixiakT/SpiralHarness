@@ -4,6 +4,7 @@ import json
 
 from spiral_harness.benchmark.gsm8k import GSM8KBenchmarkAdapter
 from spiral_harness.core.experiment import ProtocolPartition
+from spiral_harness.core.models import HARNESS_MANIFEST_MEDIA_TYPE, ArtifactRef
 from spiral_harness.execution.attempts import AttemptLedger
 from spiral_harness.execution.contracts import (
     AttemptBudget,
@@ -11,7 +12,7 @@ from spiral_harness.execution.contracts import (
     BackendTokenUsage,
     FrozenModelSpec,
     InferenceConfig,
-    PromptHarness,
+    ResolvedHarness,
 )
 from spiral_harness.execution.model import (
     FixedModelRunner,
@@ -107,19 +108,29 @@ def test_score_free_fixed_runner_closes_into_trusted_gsm8k_grading(tmp_path) -> 
         attempt_ledger=ledger,
         clock=lambda: next(clock_values),
     )
+    parent_ref = ArtifactRef(
+        sha256="a" * 64,
+        size=0,
+        media_type=HARNESS_MANIFEST_MEDIA_TYPE,
+    )
+    candidate_ref = ArtifactRef(
+        sha256="b" * 64,
+        size=0,
+        media_type=HARNESS_MANIFEST_MEDIA_TYPE,
+    )
 
     parent = runner.execute(
         task,
-        harness=PromptHarness.from_prompt(
-            harness_id="parent",
+        harness=ResolvedHarness.from_prompt(
+            harness_ref=parent_ref,
             system_prompt="Solve and end with #### <number>.",
         ),
         seed=17,
     )
     candidate = runner.execute(
         task,
-        harness=PromptHarness.from_prompt(
-            harness_id="candidate",
+        harness=ResolvedHarness.from_prompt(
+            harness_ref=candidate_ref,
             system_prompt="Solve, verify, and end with #### <number>.",
         ),
         seed=17,
@@ -127,14 +138,14 @@ def test_score_free_fixed_runner_closes_into_trusted_gsm8k_grading(tmp_path) -> 
     parent_observation = adapter.grade(
         task,
         parent,
-        harness_id="parent",
+        harness_id=parent_ref.sha256,
         seed=17,
         execution_fingerprint=parent.execution_fingerprint,
     )
     candidate_observation = adapter.grade(
         task,
         candidate,
-        harness_id="candidate",
+        harness_id=candidate_ref.sha256,
         seed=17,
         execution_fingerprint=candidate.execution_fingerprint,
     )
