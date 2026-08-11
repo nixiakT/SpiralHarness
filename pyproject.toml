@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "spiral-harness"
+version = "0.1.0"
+description = "Evidence-gated, training-free self-evolution for agent harnesses"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "SpiralHarness contributors" }]
+dependencies = [
+  "pydantic>=2.11,<3",
+  "typer>=0.16,<1",
+]
+
+[project.scripts]
+spiral = "spiral_harness.cli:app"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3,<10",
+  "pytest-cov>=6,<8",
+  "ruff>=0.12,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/spiral_harness"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "RUF", "SIM", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101"]
+
+[tool.coverage.run]
+branch = true
+source = ["spiral_harness"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = true

@@ -11,6 +11,10 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 .venv/
 dist/
 build/
@@ -28,4 +32,3 @@ data/sealed/
 .DS_Store
 .idea/
 .vscode/
-

@@ -33,14 +33,22 @@ are later extensions, not part of the initial claim.
 
 ## Status
 
-The project is at the foundation stage. The immediate plan is:
+The M0 verification kernel now includes:
 
-1. specify the experiment and verification contracts;
-2. implement the typed state, artifact store, and promotion gate;
-3. connect one reproducible benchmark and a fixed-model runner;
-4. compare targeted evolution with static, random-mutation, and prompt-only
+- immutable schemas for harness manifests and atomic candidate mutations;
+- canonical hashing and an integrity-checking content-addressed artifact store;
+- strict task/seed pairing with task-level bootstrap statistics;
+- a three-state promotion gate (`promote`, `reject`, `inconclusive`);
+- hard checks for preregistered rosters, mechanism evidence, protected slices,
+  policy violations, regressions, and resource budgets.
+
+The immediate plan is:
+
+1. exercise the kernel with a deterministic controlled-fault fixture;
+2. connect one reproducible benchmark and a fixed-model runner;
+3. compare targeted evolution with static, random-mutation, and prompt-only
    baselines under the same evaluation budget;
-5. expand the mutation space only after the core claim is measurable.
+4. expand the mutation space only after the core claim is measurable.
 
 See [the research plan](docs/research-plan.md) and
 [the verification protocol](docs/verification-protocol.md).
