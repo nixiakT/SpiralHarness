@@ -8,6 +8,8 @@ import pytest
 from pydantic import ValidationError
 
 from spiral_harness.core import (
+    PROMOTION_GATE_IMPLEMENTATION_FINGERPRINT,
+    PROTOCOL_MANIFEST_MEDIA_TYPE,
     ArtifactRef,
     BudgetPolicy,
     CandidateManifest,
@@ -23,6 +25,7 @@ from spiral_harness.core import (
     ProtocolPartition,
     ProtocolSplit,
 )
+from spiral_harness.execution import CAPABILITY_POLICY_MEDIA_TYPE, CapabilityPolicy
 from spiral_harness.experiments import (
     ADMISSION_REPORT_MEDIA_TYPE,
     GATE_EVALUATION_MANIFEST_MEDIA_TYPE,
@@ -36,13 +39,21 @@ from spiral_harness.experiments import (
 from spiral_harness.harness import HarnessRegistry
 from spiral_harness.storage import ArtifactStore
 from spiral_harness.verification import (
+    ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE,
+    GATE_TRIAL_BATCH_MEDIA_TYPE,
+    AttestedMechanismEvidence,
     Decision,
     GateConfig,
     GateDecision,
+    GateTrialArm,
+    GateTrialBatch,
+    GateTrialBatchContent,
     MechanismCheck,
     MechanismEvidence,
     PromotionGate,
     TrialObservation,
+    TrustedGateBatchService,
+    TrustedMechanismEvidenceService,
 )
 
 _STATE_BY_DECISION = {
@@ -55,7 +66,11 @@ _STATE_BY_DECISION = {
 @dataclass(frozen=True)
 class DecisionGraph:
     store: ArtifactStore
+    gate_batch_service: TrustedGateBatchService
+    mechanism_evidence_service: TrustedMechanismEvidenceService
     service: TerminalDecisionService
+    protocol: ProtocolManifest
+    protocol_ref: ArtifactRef
     candidate: CandidateManifest
     candidate_ref: ArtifactRef
     experiment_ref: ArtifactRef
@@ -64,9 +79,11 @@ class DecisionGraph:
     gate_split_ref: ArtifactRef
     admission_report_ref: ArtifactRef
     parent_trials: tuple[TrialObservation, ...]
-    parent_trials_ref: ArtifactRef
+    parent_batch: GateTrialBatch
+    parent_batch_ref: ArtifactRef
     candidate_trials: tuple[TrialObservation, ...]
-    candidate_trials_ref: ArtifactRef
+    candidate_batch: GateTrialBatch
+    candidate_batch_ref: ArtifactRef
     mechanism_evidence: MechanismEvidence
     mechanism_evidence_ref: ArtifactRef
     evaluation: GateEvaluationManifest
@@ -119,8 +136,15 @@ def _deltas_for(decision: Decision) -> tuple[float, ...]:
     return (0.2, -0.1, 0.2, -0.1, 0.2, -0.1)
 
 
-def build_graph(tmp_path: Path, expected_decision: Decision = Decision.PROMOTE) -> DecisionGraph:
+def build_graph(
+    tmp_path: Path,
+    expected_decision: Decision = Decision.PROMOTE,
+    *,
+    gate_implementation_fingerprint: str = PROMOTION_GATE_IMPLEMENTATION_FINGERPRINT,
+) -> DecisionGraph:
     store = ArtifactStore(tmp_path / "artifacts")
+    gate_batch_service = TrustedGateBatchService()
+    mechanism_evidence_service = TrustedMechanismEvidenceService()
     exploration_ref = put_json(store, {"tasks": ["exploration"]})
     gate_split_ref = put_json(store, {"tasks": ["gate"]})
     gate_config = GateConfig(
@@ -132,6 +156,11 @@ def build_graph(tmp_path: Path, expected_decision: Decision = Decision.PROMOTE) 
         required_mechanism_checks=("activation",),
     )
     gate_config_ref = put_json(store, gate_config)
+    capability_policy_ref = put_json(
+        store,
+        CapabilityPolicy(),
+        media_type=CAPABILITY_POLICY_MEDIA_TYPE,
+    )
 
     protocol = ProtocolManifest(
         benchmark_fingerprint="benchmark-v1",
@@ -146,12 +175,16 @@ def build_graph(tmp_path: Path, expected_decision: Decision = Decision.PROMOTE) 
         inference_fingerprint="inference-v1",
         runtime_fingerprint="runtime-v1",
         sandbox_fingerprint="sandbox-v1",
+        capability_policy_ref=capability_policy_ref,
         grader_fingerprint="grader-v1",
+        gate_batch_attestor_id=gate_batch_service.attestor_id,
+        mechanism_evidence_attestor_id=mechanism_evidence_service.attestor_id,
         gate_config_ref=gate_config_ref,
+        gate_implementation_fingerprint=gate_implementation_fingerprint,
         trusted_plane_version="trusted-plane-v1",
         budget=BudgetPolicy(max_evaluations=20),
     )
-    protocol_ref = put_json(store, protocol)
+    protocol_ref = put_json(store, protocol, media_type=PROTOCOL_MANIFEST_MEDIA_TYPE)
     before_artifact_ref = store.put_bytes(b"old prompt", media_type="text/plain")
     after_artifact_ref = store.put_bytes(b"new prompt", media_type="text/plain")
     before = HarnessComponentRef(
@@ -204,7 +237,7 @@ def build_graph(tmp_path: Path, expected_decision: Decision = Decision.PROMOTE) 
         objective="maximize gate score",
         baselines=("static",),
         stopping=("budget exhausted",),
-        search_budget=BudgetPolicy(max_evaluations=10),
+        search_budget=BudgetPolicy(max_evaluations=20),
     )
     experiment_ref = put_json(store, experiment)
     child_harness = HarnessRegistry(mutation_policy).apply_mutation(
@@ -259,26 +292,80 @@ def build_graph(tmp_path: Path, expected_decision: Decision = Decision.PROMOTE) 
         )
     frozen_parent_trials = tuple(parent_trials)
     frozen_candidate_trials = tuple(candidate_trials)
-    parent_trials_ref = put_json(store, frozen_parent_trials)
-    candidate_trials_ref = put_json(store, frozen_candidate_trials)
+    mechanism_source_ref = put_json(store, {"probe": "trusted activation trace"})
     mechanism_evidence = MechanismEvidence(
         candidate_harness_id=child_harness_ref.sha256,
         checks=(
             MechanismCheck(
                 name="activation",
                 passed=True,
-                evidence_refs=("trajectory-span:activation",),
+                evidence_refs=(mechanism_source_ref.sha256,),
             ),
         ),
     )
-    mechanism_evidence_ref = put_json(store, mechanism_evidence)
+    attested_mechanism_evidence = mechanism_evidence_service.create(
+        protocol_ref=protocol_ref,
+        protocol=protocol,
+        candidate_ref=candidate_ref,
+        candidate_harness_ref=child_harness_ref,
+        source_refs=(mechanism_source_ref,),
+        evidence=mechanism_evidence,
+    )
+    mechanism_evidence_ref = put_json(
+        store,
+        attested_mechanism_evidence,
+        media_type=ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE,
+    )
+    parent_source_ref = put_json(
+        store,
+        frozen_parent_trials,
+        media_type="application/vnd.spiral-harness.test-parent-trials+json",
+    )
+    candidate_source_ref = put_json(
+        store,
+        frozen_candidate_trials,
+        media_type="application/vnd.spiral-harness.test-candidate-trials+json",
+    )
+    parent_batch = gate_batch_service.create(
+        protocol_ref=protocol_ref,
+        protocol=protocol,
+        candidate_ref=candidate_ref,
+        arm=GateTrialArm.PARENT,
+        harness_ref=parent_harness_ref,
+        gate_split_ref=gate_split_ref,
+        mechanism_evidence_ref=mechanism_evidence_ref,
+        source_refs=(parent_source_ref,),
+        observations=frozen_parent_trials,
+    )
+    parent_batch_ref = put_json(
+        store,
+        parent_batch,
+        media_type=GATE_TRIAL_BATCH_MEDIA_TYPE,
+    )
+    candidate_batch = gate_batch_service.create(
+        protocol_ref=protocol_ref,
+        protocol=protocol,
+        candidate_ref=candidate_ref,
+        arm=GateTrialArm.CANDIDATE,
+        harness_ref=child_harness_ref,
+        gate_split_ref=gate_split_ref,
+        mechanism_evidence_ref=mechanism_evidence_ref,
+        source_refs=(candidate_source_ref,),
+        observations=frozen_candidate_trials,
+    )
+    candidate_batch_ref = put_json(
+        store,
+        candidate_batch,
+        media_type=GATE_TRIAL_BATCH_MEDIA_TYPE,
+    )
     evaluation = GateEvaluationManifest(
         candidate_ref=candidate_ref,
         admission_report_ref=admission_report_ref,
         gate_config_ref=gate_config_ref,
         gate_split_ref=gate_split_ref,
-        parent_trials_ref=parent_trials_ref,
-        candidate_trials_ref=candidate_trials_ref,
+        gate_implementation_fingerprint=gate_implementation_fingerprint,
+        parent_batch_ref=parent_batch_ref,
+        candidate_batch_ref=candidate_batch_ref,
         mechanism_evidence_ref=mechanism_evidence_ref,
     )
     evaluation_ref = put_json(
@@ -297,7 +384,15 @@ def build_graph(tmp_path: Path, expected_decision: Decision = Decision.PROMOTE) 
     decision_ref = put_json(store, decision)
     return DecisionGraph(
         store=store,
-        service=TerminalDecisionService(store),
+        gate_batch_service=gate_batch_service,
+        service=TerminalDecisionService(
+            store,
+            gate_batch_verifier=gate_batch_service.verification_capability,
+            mechanism_evidence_verifier=(mechanism_evidence_service.verification_capability),
+        ),
+        mechanism_evidence_service=mechanism_evidence_service,
+        protocol=protocol,
+        protocol_ref=protocol_ref,
         candidate=candidate,
         candidate_ref=candidate_ref,
         experiment_ref=experiment_ref,
@@ -306,9 +401,11 @@ def build_graph(tmp_path: Path, expected_decision: Decision = Decision.PROMOTE) 
         gate_split_ref=gate_split_ref,
         admission_report_ref=admission_report_ref,
         parent_trials=frozen_parent_trials,
-        parent_trials_ref=parent_trials_ref,
+        parent_batch=parent_batch,
+        parent_batch_ref=parent_batch_ref,
         candidate_trials=frozen_candidate_trials,
-        candidate_trials_ref=candidate_trials_ref,
+        candidate_batch=candidate_batch,
+        candidate_batch_ref=candidate_batch_ref,
         mechanism_evidence=mechanism_evidence,
         mechanism_evidence_ref=mechanism_evidence_ref,
         evaluation=evaluation,
@@ -324,6 +421,69 @@ def store_evaluation(graph: DecisionGraph, **updates: object) -> ArtifactRef:
         graph.evaluation.model_copy(update=updates),
         media_type=GATE_EVALUATION_MANIFEST_MEDIA_TYPE,
     )
+
+
+def store_batch(
+    graph: DecisionGraph,
+    batch: object,
+    *,
+    media_type: str = GATE_TRIAL_BATCH_MEDIA_TYPE,
+) -> ArtifactRef:
+    return put_json(graph.store, batch, media_type=media_type)
+
+
+def reissue_batch(
+    graph: DecisionGraph,
+    batch: GateTrialBatch,
+    **updates: object,
+) -> GateTrialBatch:
+    """Apply trusted-fixture updates and issue a fresh valid attestation."""
+
+    return graph.gate_batch_service.issue(batch.content.model_copy(update=updates))
+
+
+def store_forged_score_attack(
+    graph: DecisionGraph,
+    *,
+    signer: TrustedGateBatchService | None,
+) -> tuple[ArtifactRef, ArtifactRef]:
+    """Persist a matching forged PROMOTE from observations that originally reject."""
+
+    parent_trials = tuple(
+        observation.model_copy(update={"score": 0.0}) for observation in graph.parent_trials
+    )
+    candidate_trials = tuple(
+        observation.model_copy(update={"score": 1.0}) for observation in graph.candidate_trials
+    )
+    if signer is None:
+        parent_batch = graph.parent_batch.model_copy(update={"observations": parent_trials})
+        candidate_batch = graph.candidate_batch.model_copy(
+            update={"observations": candidate_trials}
+        )
+    else:
+        parent_batch = signer.issue(
+            graph.parent_batch.content.model_copy(update={"observations": parent_trials})
+        )
+        candidate_batch = signer.issue(
+            graph.candidate_batch.content.model_copy(update={"observations": candidate_trials})
+        )
+    parent_batch_ref = store_batch(graph, parent_batch)
+    candidate_batch_ref = store_batch(graph, candidate_batch)
+    evaluation_ref = store_evaluation(
+        graph,
+        parent_batch_ref=parent_batch_ref,
+        candidate_batch_ref=candidate_batch_ref,
+    )
+    forged_decision = PromotionGate(graph.gate_config).evaluate(
+        parent_trials,
+        candidate_trials,
+        graph.mechanism_evidence,
+        parent_harness_id=graph.candidate.parent_harness_ref.sha256,
+        candidate_harness_id=graph.candidate.child_harness_ref.sha256,
+    )
+    assert graph.decision.decision is Decision.REJECT
+    assert forged_decision.decision is Decision.PROMOTE
+    return evaluation_ref, put_json(graph.store, forged_decision)
 
 
 @pytest.mark.parametrize(
@@ -358,6 +518,8 @@ def test_validate_recomputes_real_gate_outcomes_and_verify_replays_report(
     assert report.admission_report_ref == graph.admission_report_ref
     assert report.gate_config_ref == graph.gate_config_ref
     assert report.gate_split_ref == graph.gate_split_ref
+    assert report.gate_implementation_fingerprint == PROMOTION_GATE_IMPLEMENTATION_FINGERPRINT
+    assert report.gate_batch_attestor_id == graph.gate_batch_service.attestor_id
     assert report.decision is decision
     assert report.terminal_state is terminal_state
     assert (
@@ -369,6 +531,283 @@ def test_validate_recomputes_real_gate_outcomes_and_verify_replays_report(
         )
         == report
     )
+
+
+def test_gate_trial_batch_binds_attestor_protocol_context_sources_and_observations(
+    tmp_path: Path,
+) -> None:
+    graph = build_graph(tmp_path)
+
+    assert graph.parent_batch.schema_version == "2"
+    assert graph.parent_batch.protocol_ref == graph.protocol_ref
+    assert graph.parent_batch.candidate_ref == graph.candidate_ref
+    assert graph.parent_batch.arm is GateTrialArm.PARENT
+    assert graph.parent_batch.harness_ref == graph.candidate.parent_harness_ref
+    assert graph.parent_batch.gate_split_ref == graph.gate_split_ref
+    assert graph.parent_batch.task_set_fingerprint == graph.gate_split_ref.sha256
+    assert graph.parent_batch.mechanism_evidence_ref == graph.mechanism_evidence_ref
+    assert graph.parent_batch.execution_context.grader_fingerprint == "grader-v1"
+    assert graph.parent_batch.source_refs
+    assert graph.parent_batch.observations == graph.parent_trials
+    assert graph.parent_batch.attestor_id == graph.gate_batch_service.attestor_id
+    assert (
+        graph.gate_batch_service.verification_capability.verify(graph.parent_batch)
+        == graph.parent_batch
+    )
+    assert graph.parent_batch_ref.media_type == GATE_TRIAL_BATCH_MEDIA_TYPE
+
+
+def test_gate_trial_batch_rejects_empty_duplicate_or_wrong_harness_observations(
+    tmp_path: Path,
+) -> None:
+    graph = build_graph(tmp_path)
+    values = graph.parent_batch.content.model_dump(mode="python", exclude={"observations"})
+
+    with pytest.raises(ValidationError):
+        GateTrialBatchContent(**values, observations=())
+    with pytest.raises(ValidationError, match="unique task_id/seed pairs"):
+        GateTrialBatchContent(
+            **values,
+            observations=(graph.parent_trials[0], graph.parent_trials[0]),
+        )
+    with pytest.raises(ValidationError, match="must belong to harness_ref"):
+        GateTrialBatchContent(
+            **values,
+            observations=(
+                graph.parent_trials[0].model_copy(update={"harness_id": "forged-harness"}),
+            ),
+        )
+
+
+def test_raw_trial_tuple_cannot_masquerade_as_a_gate_batch(tmp_path: Path) -> None:
+    graph = build_graph(tmp_path)
+    raw_tuple_ref = store_batch(graph, graph.parent_trials)
+    evaluation_ref = store_evaluation(graph, parent_batch_ref=raw_tuple_ref)
+
+    with pytest.raises(TerminalDecisionError, match="parent gate trial batch"):
+        graph.service.validate(
+            candidate_ref=graph.candidate_ref,
+            experiment_ref=graph.experiment_ref,
+            evaluation_ref=evaluation_ref,
+            decision_ref=graph.decision_ref,
+            terminal_state=CandidateState.PROMOTED,
+        )
+
+
+def test_gate_batch_and_terminal_services_require_explicit_capabilities(tmp_path: Path) -> None:
+    graph = build_graph(tmp_path)
+    unsigned = graph.parent_batch.content.model_dump(mode="python")
+
+    with pytest.raises(ValidationError, match=r"attestor_id|attestation_sha256"):
+        GateTrialBatch.model_validate(unsigned)
+    with pytest.raises(TypeError, match="gate_batch_verifier"):
+        TerminalDecisionService(graph.store)
+    with pytest.raises(TypeError, match="mechanism_evidence_verifier"):
+        TerminalDecisionService(
+            graph.store,
+            gate_batch_verifier=graph.gate_batch_service.verification_capability,
+        )
+
+
+@pytest.mark.parametrize("attack", ["old-signature", "rogue-signer"])
+def test_forged_scores_and_matching_promote_decision_fail_attestation(
+    tmp_path: Path,
+    attack: str,
+) -> None:
+    graph = build_graph(tmp_path, Decision.REJECT)
+    rogue = TrustedGateBatchService() if attack == "rogue-signer" else None
+    evaluation_ref, decision_ref = store_forged_score_attack(graph, signer=rogue)
+
+    with pytest.raises(TerminalDecisionError, match=r"attestation|attestor"):
+        graph.service.validate(
+            candidate_ref=graph.candidate_ref,
+            experiment_ref=graph.experiment_ref,
+            evaluation_ref=evaluation_ref,
+            decision_ref=decision_ref,
+            terminal_state=CandidateState.PROMOTED,
+        )
+
+    if rogue is not None:
+        rogue_verifier = TerminalDecisionService(
+            graph.store,
+            gate_batch_verifier=rogue.verification_capability,
+            mechanism_evidence_verifier=(graph.mechanism_evidence_service.verification_capability),
+        )
+        with pytest.raises(TerminalDecisionError, match="protocol-frozen attestor"):
+            rogue_verifier.validate(
+                candidate_ref=graph.candidate_ref,
+                experiment_ref=graph.experiment_ref,
+                evaluation_ref=evaluation_ref,
+                decision_ref=decision_ref,
+                terminal_state=CandidateState.PROMOTED,
+            )
+
+
+def test_signed_execution_context_cannot_override_the_frozen_protocol(tmp_path: Path) -> None:
+    graph = build_graph(tmp_path)
+    attacker_context = graph.parent_batch.execution_context.model_copy(
+        update={"grader_fingerprint": "attacker-grader"}
+    )
+    batch_ref = store_batch(
+        graph,
+        reissue_batch(graph, graph.parent_batch, execution_context=attacker_context),
+    )
+    evaluation_ref = store_evaluation(graph, parent_batch_ref=batch_ref)
+
+    with pytest.raises(TerminalDecisionError, match="execution context"):
+        graph.service.validate(
+            candidate_ref=graph.candidate_ref,
+            experiment_ref=graph.experiment_ref,
+            evaluation_ref=evaluation_ref,
+            decision_ref=graph.decision_ref,
+            terminal_state=CandidateState.PROMOTED,
+        )
+
+
+def test_parent_and_candidate_gate_batch_refs_cannot_be_swapped(tmp_path: Path) -> None:
+    graph = build_graph(tmp_path)
+    evaluation_ref = store_evaluation(
+        graph,
+        parent_batch_ref=graph.candidate_batch_ref,
+        candidate_batch_ref=graph.parent_batch_ref,
+    )
+
+    with pytest.raises(TerminalDecisionError, match=r"arm 'candidate'.*expected 'parent'"):
+        graph.service.validate(
+            candidate_ref=graph.candidate_ref,
+            experiment_ref=graph.experiment_ref,
+            evaluation_ref=evaluation_ref,
+            decision_ref=graph.decision_ref,
+            terminal_state=CandidateState.PROMOTED,
+        )
+
+
+def test_gate_batches_cannot_cross_candidate_or_gate_split_boundaries(
+    tmp_path: Path,
+) -> None:
+    graph = build_graph(tmp_path)
+    another_candidate_ref = put_json(graph.store, {"candidate": "other"})
+    cross_candidate_ref = store_batch(
+        graph,
+        reissue_batch(graph, graph.parent_batch, candidate_ref=another_candidate_ref),
+    )
+    cross_candidate_evaluation_ref = store_evaluation(
+        graph,
+        parent_batch_ref=cross_candidate_ref,
+    )
+    with pytest.raises(TerminalDecisionError, match="batch belongs to another candidate"):
+        graph.service.validate(
+            candidate_ref=graph.candidate_ref,
+            experiment_ref=graph.experiment_ref,
+            evaluation_ref=cross_candidate_evaluation_ref,
+            decision_ref=graph.decision_ref,
+            terminal_state=CandidateState.PROMOTED,
+        )
+
+    another_split_ref = put_json(graph.store, {"tasks": ["another-gate"]})
+    wrong_split_batch_ref = store_batch(
+        graph,
+        reissue_batch(
+            graph,
+            graph.parent_batch,
+            gate_split_ref=another_split_ref,
+            task_set_fingerprint=another_split_ref.sha256,
+        ),
+    )
+    wrong_split_evaluation_ref = store_evaluation(
+        graph,
+        parent_batch_ref=wrong_split_batch_ref,
+    )
+    with pytest.raises(TerminalDecisionError, match="gate split"):
+        graph.service.validate(
+            candidate_ref=graph.candidate_ref,
+            experiment_ref=graph.experiment_ref,
+            evaluation_ref=wrong_split_evaluation_ref,
+            decision_ref=graph.decision_ref,
+            terminal_state=CandidateState.PROMOTED,
+        )
+
+
+def test_gate_batch_harness_ref_must_match_the_frozen_candidate_arm(tmp_path: Path) -> None:
+    graph = build_graph(tmp_path)
+    another_harness_ref = put_json(graph.store, {"harness": "other"})
+    observations = tuple(
+        observation.model_copy(update={"harness_id": another_harness_ref.sha256})
+        for observation in graph.parent_trials
+    )
+    wrong_harness_batch_ref = store_batch(
+        graph,
+        reissue_batch(
+            graph,
+            graph.parent_batch,
+            harness_ref=another_harness_ref,
+            observations=observations,
+        ),
+    )
+    evaluation_ref = store_evaluation(
+        graph,
+        parent_batch_ref=wrong_harness_batch_ref,
+    )
+
+    with pytest.raises(TerminalDecisionError, match=r"parent.*wrong harness"):
+        graph.service.validate(
+            candidate_ref=graph.candidate_ref,
+            experiment_ref=graph.experiment_ref,
+            evaluation_ref=evaluation_ref,
+            decision_ref=graph.decision_ref,
+            terminal_state=CandidateState.PROMOTED,
+        )
+
+
+def test_gate_batch_refs_require_the_exact_media_type(tmp_path: Path) -> None:
+    graph = build_graph(tmp_path)
+    payload = graph.evaluation.model_dump(mode="json")
+    payload["parent_batch_ref"]["media_type"] = "application/json"
+    evaluation_ref = put_json(
+        graph.store,
+        payload,
+        media_type=GATE_EVALUATION_MANIFEST_MEDIA_TYPE,
+    )
+
+    with pytest.raises(TerminalDecisionError, match="exact gate trial batch media type"):
+        graph.service.validate(
+            candidate_ref=graph.candidate_ref,
+            experiment_ref=graph.experiment_ref,
+            evaluation_ref=evaluation_ref,
+            decision_ref=graph.decision_ref,
+            terminal_state=CandidateState.PROMOTED,
+        )
+
+
+def test_gate_implementation_is_bound_to_protocol_and_running_verifier(
+    tmp_path: Path,
+) -> None:
+    graph = build_graph(tmp_path)
+    mismatched_evaluation_ref = store_evaluation(
+        graph,
+        gate_implementation_fingerprint="attacker-selected-gate",
+    )
+    with pytest.raises(TerminalDecisionError, match="does not match the protocol implementation"):
+        graph.service.validate(
+            candidate_ref=graph.candidate_ref,
+            experiment_ref=graph.experiment_ref,
+            evaluation_ref=mismatched_evaluation_ref,
+            decision_ref=graph.decision_ref,
+            terminal_state=CandidateState.PROMOTED,
+        )
+
+    unsupported = build_graph(
+        tmp_path / "unsupported",
+        gate_implementation_fingerprint="untrusted-gate-implementation",
+    )
+    with pytest.raises(TerminalDecisionError, match="not supported by this verifier"):
+        unsupported.service.validate(
+            candidate_ref=unsupported.candidate_ref,
+            experiment_ref=unsupported.experiment_ref,
+            evaluation_ref=unsupported.evaluation_ref,
+            decision_ref=unsupported.decision_ref,
+            terminal_state=CandidateState.PROMOTED,
+        )
 
 
 def test_hand_forged_promote_cannot_override_recomputed_reject(tmp_path: Path) -> None:
@@ -515,13 +954,139 @@ def test_mechanism_evidence_from_another_candidate_changes_recomputed_result(
     wrong_evidence_ref = put_json(
         graph.store,
         graph.mechanism_evidence.model_copy(update={"candidate_harness_id": "another-candidate"}),
+        media_type=ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE,
     )
     evaluation_ref = store_evaluation(
         graph,
         mechanism_evidence_ref=wrong_evidence_ref,
     )
 
-    with pytest.raises(TerminalDecisionError, match="trusted recomputation"):
+    with pytest.raises(TerminalDecisionError, match="mechanism evidence"):
+        graph.service.validate(
+            candidate_ref=graph.candidate_ref,
+            experiment_ref=graph.experiment_ref,
+            evaluation_ref=evaluation_ref,
+            decision_ref=graph.decision_ref,
+            terminal_state=CandidateState.PROMOTED,
+        )
+
+
+def test_required_mechanism_check_cannot_be_swapped_after_batch_attestation(
+    tmp_path: Path,
+) -> None:
+    graph = build_graph(tmp_path)
+    failed_evidence = MechanismEvidence(
+        candidate_harness_id=graph.candidate.child_harness_ref.sha256,
+        checks=(MechanismCheck(name="activation", passed=False),),
+    )
+    original_envelope = graph.store.get_json(
+        graph.mechanism_evidence_ref,
+        AttestedMechanismEvidence,
+    )
+    failed_envelope = graph.mechanism_evidence_service.create(
+        protocol_ref=graph.protocol_ref,
+        protocol=graph.protocol,
+        candidate_ref=graph.candidate_ref,
+        candidate_harness_ref=graph.candidate.child_harness_ref,
+        source_refs=original_envelope.source_refs,
+        evidence=failed_evidence,
+    )
+    failed_evidence_ref = put_json(
+        graph.store,
+        failed_envelope,
+        media_type=ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE,
+    )
+    parent_batch_ref = store_batch(
+        graph,
+        reissue_batch(
+            graph,
+            graph.parent_batch,
+            mechanism_evidence_ref=failed_evidence_ref,
+        ),
+    )
+    candidate_batch_ref = store_batch(
+        graph,
+        reissue_batch(
+            graph,
+            graph.candidate_batch,
+            mechanism_evidence_ref=failed_evidence_ref,
+        ),
+    )
+    rejected = PromotionGate(graph.gate_config).evaluate(
+        graph.parent_trials,
+        graph.candidate_trials,
+        failed_evidence,
+        parent_harness_id=graph.candidate.parent_harness_ref.sha256,
+        candidate_harness_id=graph.candidate.child_harness_ref.sha256,
+    )
+    assert rejected.decision is Decision.REJECT
+
+    # The attacker swaps in the original passing evidence and a matching
+    # PROMOTE decision, but both signed batches still bind the failed evidence.
+    evaluation_ref = store_evaluation(
+        graph,
+        parent_batch_ref=parent_batch_ref,
+        candidate_batch_ref=candidate_batch_ref,
+        mechanism_evidence_ref=graph.mechanism_evidence_ref,
+    )
+    with pytest.raises(TerminalDecisionError, match="mechanism evidence"):
+        graph.service.validate(
+            candidate_ref=graph.candidate_ref,
+            experiment_ref=graph.experiment_ref,
+            evaluation_ref=evaluation_ref,
+            decision_ref=graph.decision_ref,
+            terminal_state=CandidateState.PROMOTED,
+        )
+
+
+@pytest.mark.parametrize("attack", ["old-signature", "rogue-signer"])
+def test_terminal_replay_rejects_forged_mechanism_evidence_even_when_gate_batches_bind_it(
+    tmp_path: Path,
+    attack: str,
+) -> None:
+    graph = build_graph(tmp_path)
+    original = graph.store.get_json(
+        graph.mechanism_evidence_ref,
+        AttestedMechanismEvidence,
+    )
+    if attack == "old-signature":
+        changed = original.evidence.checks[0].model_copy(
+            update={"details": "optimizer-authored passed result"}
+        )
+        attacked = original.model_copy(
+            update={"evidence": original.evidence.model_copy(update={"checks": (changed,)})}
+        )
+    else:
+        attacked = TrustedMechanismEvidenceService().issue(original.content)
+    attacked_ref = put_json(
+        graph.store,
+        attacked,
+        media_type=ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE,
+    )
+    parent_batch_ref = store_batch(
+        graph,
+        reissue_batch(
+            graph,
+            graph.parent_batch,
+            mechanism_evidence_ref=attacked_ref,
+        ),
+    )
+    candidate_batch_ref = store_batch(
+        graph,
+        reissue_batch(
+            graph,
+            graph.candidate_batch,
+            mechanism_evidence_ref=attacked_ref,
+        ),
+    )
+    evaluation_ref = store_evaluation(
+        graph,
+        parent_batch_ref=parent_batch_ref,
+        candidate_batch_ref=candidate_batch_ref,
+        mechanism_evidence_ref=attacked_ref,
+    )
+
+    with pytest.raises(TerminalDecisionError, match=r"attestation|attestor"):
         graph.service.validate(
             candidate_ref=graph.candidate_ref,
             experiment_ref=graph.experiment_ref,
@@ -601,8 +1166,6 @@ def test_evaluation_and_report_require_exact_media_types(tmp_path: Path) -> None
         "admission_report_ref",
         "gate_config_ref",
         "gate_split_ref",
-        "parent_trials_ref",
-        "candidate_trials_ref",
         "mechanism_evidence_ref",
     ],
 )
@@ -693,12 +1256,18 @@ def test_service_does_not_trust_repository_typed_decode_without_bytes_match(
     graph = build_graph(tmp_path)
     repository = SubstitutingRepository(
         graph.store,
-        target_ref=graph.parent_trials_ref,
-        replacement=graph.parent_trials[:-1],
+        target_ref=graph.parent_batch_ref,
+        replacement=graph.parent_batch.model_copy(
+            update={"observations": graph.parent_trials[:-1]}
+        ),
     )
 
     with pytest.raises(TerminalDecisionError, match="typed representation is not canonical"):
-        TerminalDecisionService(repository).validate(  # type: ignore[arg-type]
+        TerminalDecisionService(  # type: ignore[arg-type]
+            repository,
+            gate_batch_verifier=graph.gate_batch_service.verification_capability,
+            mechanism_evidence_verifier=(graph.mechanism_evidence_service.verification_capability),
+        ).validate(
             candidate_ref=graph.candidate_ref,
             experiment_ref=graph.experiment_ref,
             evaluation_ref=graph.evaluation_ref,
@@ -719,3 +1288,6 @@ def test_terminal_report_model_records_the_evaluation_reference(tmp_path: Path) 
 
     assert isinstance(report, TerminalDecisionReport)
     assert report.evaluation_ref == graph.evaluation_ref
+    assert report.mechanism_evidence_ref == graph.mechanism_evidence_ref
+    assert report.mechanism_evidence_attestor_id == graph.mechanism_evidence_service.attestor_id
+    assert "mechanism_evidence_attestation_verified" in report.checks

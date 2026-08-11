@@ -17,10 +17,24 @@ The proposer cannot edit benchmark data, split membership, graders, the gate,
 or historical artifacts during an experiment. Artifacts exchanged across these
 roles are content-addressed and record their provenance.
 
-Together, the split loader, grader, sandbox/permissions, resource accounting,
-statistics, gate, artifact ledger, and sealed-set controls form a trusted
-verification plane. Its version is frozen for an experiment and is outside the
-candidate's mutable surface. Changing it starts a new protocol lineage.
+In the target architecture, the split loader, grader, worker
+sandbox/permissions, resource accounting, statistics, gate, artifact ledger,
+and sealed-set controls form a trusted verification plane. Its version is
+frozen for an experiment and is outside the candidate's mutable surface.
+Changing it starts a new protocol lineage.
+
+M0.2 implements the typed, in-process portion of that boundary. Candidate
+traces contain output and runner-captured telemetry but cannot contain scores;
+the trusted grader alone holds sealed answers and creates gate observations.
+Parent-held capabilities authenticate captures, mechanism-probe results, and
+complete gate batches, and the protocol freezes independent accepted
+mechanism-evidence and gate-batch attestor IDs. The grader, signers, and
+symmetric verification capabilities nevertheless run in the same process as
+the controlled fixture. A deny-by-default capability schema is bound into the
+protocol and checked at admission, but it is not OS enforcement. M0.2 has no
+enforced network, filesystem, or process isolation and no worker sandbox.
+The expanded protocol schema is version 2 and is accepted only under its exact
+v2 media type; a v2 payload mislabeled as v1 fails closed.
 
 ## 2. Data boundaries
 
@@ -46,6 +60,19 @@ consumes a declared gate/query budget, and receives only the configured summary
 or `promote`/`reject`/`inconclusive` decision. Per-task gate trajectories are not
 returned to the proposer. A viewed sealed set is no longer sealed.
 
+The M0.2 semantic controller records each gate query in an immutable
+experiment-wide usage ledger. It recomputes evaluation, token, tool-call,
+wall-time, and cost usage from the referenced parent/candidate batches; rejects
+duplicate candidate or evaluation claims, stale usage tails, and budget
+overruns; and binds selection closure and sealed-run authorization to the exact
+usage and lifecycle branches. These are logical one-way controls inside one
+trusted process, not OS-level capability separation.
+
+This ledger accounts for persisted signed batches after execution. It cannot
+detect a runner attempt, retry, or failure that was never submitted. The fixed
+runner stage must reserve a single-use attempt before launch and settle or burn
+that reservation afterward.
+
 ## 3. Candidate preregistration
 
 Before seeing candidate results, persist a manifest containing:
@@ -60,6 +87,12 @@ Before seeing candidate results, persist a manifest containing:
 
 This prevents post-hoc changes to the claimed target or acceptance criterion.
 
+The frozen M0.2 protocol also references an exact capability policy. Its empty
+grant set denies every declared capability by default, and candidate admission
+rejoins that reference with the experiment and protocol. A future trusted
+worker launcher must enforce those grants; the current schema does not itself
+restrict network, filesystem, secrets, subprocesses, or tools.
+
 ## 4. Matched evaluation
 
 Evaluate the candidate and its exact parent on the same task instances, seeds,
@@ -70,6 +103,30 @@ fingerprint matches.
 For stochastic agents, use repeated runs or a predeclared seed set. Preserve
 per-task paired outcomes; aggregate means alone erase the evidence needed for a
 reliable comparison.
+
+M0.2 closes the gate inputs before a decision is accepted. Each v2 gate trial
+batch is signed by a process-local HMAC capability. The signed content binds
+the protocol, candidate, arm, harness, gate split and task-set hash, full
+observations and resources, model/inference/runtime/sandbox/grader/capability
+context, source artifacts, and exact mechanism-evidence reference. The protocol
+freezes the accepted attestor ID. The controller verifies the batch before
+charging it, and terminal validation verifies it again before recomputing the
+decision. The gate evaluation manifest additionally binds admission, the
+frozen gate config and split, both batches, mechanism evidence, and the gate
+implementation fingerprint also frozen in the protocol.
+
+HMAC here is an in-process capability, not a durable signature. The so-called
+verify-only object still contains symmetric key material; arbitrary code in
+that interpreter can inspect memory. Losing the ephemeral capability prevents
+cryptographic replay in a later process. A production runner therefore needs
+protected versioned keys or asymmetric/KMS attestation and must keep signing
+authority outside the candidate worker.
+
+The gate-batch HMAC authenticates the trusted producer's assertion. M0.2 checks
+that each referenced source artifact exists at its declared hash, but it does
+not replay those sources to re-derive the signed observations. End-to-end
+grading replay requires typed capture/source bundles and trusted regrading in a
+later runner stage.
 
 The task (or a predeclared task group), not each stochastic rollout, is the
 independent statistical unit. Multiple rollouts within one task must not be used
@@ -94,6 +151,19 @@ Disable, revert, and placebo interventions can distinguish a real mechanism
 from coincidental score movement. Not every behavior is perfectly observable;
 missing mechanism evidence must be surfaced as uncertainty, never silently
 replaced by the proposer's explanation.
+
+M0.2 does not accept a raw `MechanismEvidence` object as lifecycle authority.
+The trusted probe producer signs an exact-media envelope covering the protocol,
+candidate and child harness, exploration split/task set, frozen execution
+context, complete checks, and concrete CAS source refs. Every cited check ref
+must name one of those sources. The controller verifies the protocol-pinned
+producer, all context joins, and source availability before publishing either a
+gate-entry or probe-rejection transition; history and terminal replay repeat
+the same verification. This closes the caller-authored `passed=true` path.
+
+As with gate batches, this HMAC authenticates the trusted producer's complete
+assertion but does not re-execute its sources to derive each check boolean.
+Typed capture bundles and trusted probe replay remain runner-stage hardening.
 
 ## 6. Promotion gate
 
@@ -155,10 +225,38 @@ Use staged evidence to control cost and risk:
 Every promotion is reversible because its parent, patch, evidence, environment,
 and decision are immutable. Rejected candidates remain useful negative evidence.
 
+The M0.2 controller implements the experiment path `FROZEN` → `SEARCHING` →
+`SELECTION_CLOSED` → `SEALED_RUNNING` → `COMPLETE`; proved integrity or leakage
+violations can instead move any eligible nonterminal state to `INVALIDATED`.
+Typed `SelectionClosure`, `SealedRunAuthorization`,
+`ExperimentCompletionReport`, and `ExperimentInvalidationReport` artifacts bind
+the champion, analysis plan, sealed split, usage tail, final report, or
+violation evidence to the exact lifecycle branch.
+
+This controller uses caller-held content-addressed tails and one in-process
+single writer. Stale tails are rejected within that process, but there is no
+cross-process durable compare-and-swap, lease, or transaction. Multi-worker
+coordination remains future work. A new M0.2 controller rejects every supplied
+experiment lifecycle tail, including a genuine one, because the structural
+journal alone cannot prove that prior semantic transitions were controller
+authorized. Usage-ledger replay remains read-only and requires the original
+gate-batch verification capability.
+
+When two siblings both pass against the same parent, only the first may advance
+the champion. A later local promotion is retained in a typed supersession proof
+and resolved to `INCONCLUSIVE`, so it neither replaces the current champion nor
+leaves an active candidate that prevents selection closure.
+
 Before trusting an evolver, test the verifier with adversarial fixtures: no-op
-patches, lucky random candidates, hard-coded search answers, hidden-file reads,
-grader tampering, forged score output, cross-task answer caches, budget overruns,
-and regressions confined to a small protected slice.
+patches, wrong-target mutations, inactive or non-adherent changes, placebo
+interventions, protected-slice regressions, timeouts, malformed traces, capture
+tampering, budget overruns, and forbidden-resource leakage. The M0.2 controlled
+fixture covers all eleven cases and prevents each from being promoted.
+Separate control-path regressions also start from a genuine `REJECT`, tamper
+both signed score arms, recompute a matching `PROMOTE`, and confirm that both an
+old signature and an attacker-controlled signer fail before accounting or
+terminal authorization. Mechanism-evidence swaps, resource-field tampering,
+and lifecycle-resume injection likewise fail closed.
 
 ## 9. Threats this protocol must test
 
@@ -180,5 +278,13 @@ and regressions confined to a small protected slice.
 
 No score without a run record; no comparison without matched fingerprints; no
 promotion unless the versioned decision can be deterministically recomputed
-from its frozen gate config, paired observations, and mechanism evidence; no
-final claim without a test set that did not participate in search.
+from producer-attested paired observations, its frozen gate config, and
+separately producer-attested mechanism evidence; no final claim without a test
+set that did not participate in search. The current typed sealed report proves
+branch consistency, not the identity of an external sealed evaluator;
+production completion must add an authenticated evaluator producer.
+
+M0.2 validates this protocol against deterministic synthetic tasks only. A real
+benchmark and a fixed-model production runner are the next implementation
+stage; until they exist, the fixture is evidence about verifier plumbing and
+fail-closed behavior, not evidence of agent capability improvement.

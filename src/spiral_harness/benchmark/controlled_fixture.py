@@ -204,6 +204,7 @@ class DeterministicExecutor:
             tokens=self.tokens_per_trial,
             latency_ms=self.latency_ms_per_trial,
             tool_calls=self.tool_calls_per_trial,
+            cost_usd=0.0,
             execution_fingerprint=execution_fingerprint,
         )
         return DeterministicExecution(

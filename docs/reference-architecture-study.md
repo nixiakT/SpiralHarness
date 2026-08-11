@@ -399,7 +399,7 @@ mechanism works.
 | Optimization signal | Benchmark/ground-truth reward anchors search | Reflection and self-consistency are sometimes treated as correctness | Benchmark score is the initial primary objective; surrogate signals allocate exploration only. |
 | Diagnosis | AHE evidence compression; Self-Harness causal clustering | Summaries lose source provenance | Typed evidence packets cite immutable trajectory spans. |
 | Proposal | Multiple targeted atomic proposals | Best-of-N always returns something; actual diff can escape declared scope | Candidate batch supports decline; registry verifies the actual before/after mutation. |
-| Execution | Meta-Harness child staging; Raven sandbox governance | Candidate code and grader often share a process | Trusted controller, ephemeral untrusted worker, out-of-process grader. |
+| Execution | Meta-Harness child staging; Raven sandbox governance | Candidate code and grader often share a process | Target: trusted controller, ephemeral untrusted worker, out-of-process grader. M0.2 has only an in-process trusted-grading boundary and semantic controller. |
 | Verification | Held-out acceptance and regression anchors | Mean-only rules, adaptive reuse, no uncertainty or cost parity | Paired task/seed gate, three outcomes, protected slices, policy/cost constraints. |
 | Mechanism | AHE predicted impact; Harness-benefit distinction | A patch can exist without being used | Require applied/activated/adhered/behavior/benefit/generalization evidence. |
 | Lineage | Git branches, histories, rollback commits | Mutable files and path identity | CAS blobs plus append-only typed event chains; SQLite is an index, not authority. |
@@ -413,12 +413,13 @@ mechanism works.
 | --- | --- | --- |
 | Typed component state | Implemented for prompt, skill, memory, tool, middleware, control flow refs | Enforce per-kind contracts and actual-diff mutation policy. |
 | Immutable artifacts | Local SHA-256 CAS, canonical typed reads, and linked lifecycle events implemented | Add a query index without making it authoritative. |
-| Candidate hypothesis | Atomic mutation, falsifiable hypothesis, candidate manifest, and trusted lineage admission implemented | Add batch diversity, decline, and champion-controller eligibility. |
-| Evaluation integrity | Exact task/seed roster, fingerprint audit, status handling implemented | Freeze full protocol manifest before any arm runs. |
-| Statistics | Task-level paired bootstrap and regression/cost checks implemented | Add adaptive-query ledger, multiple-candidate correction, winner replication, sequential policy. |
-| Mechanism evidence | Typed trajectories/spans and required candidate-bound checks implemented | Add reusable trusted probes and disable/revert/placebo interventions. |
-| Benchmark support | Synthetic controlled-fault fixture only | Build one real deterministic/replayable adapter plus static/random/prompt-only baselines. |
-| Isolation | Logical exploration/gate separation only | Short-lived worker sandbox, no network, read-only materialization, grader separation. |
+| Candidate hypothesis | Atomic mutation, falsifiable hypothesis, candidate manifest, trusted lineage admission, and controller-owned candidate transitions implemented | Add generated batch diversity, explicit decline, and search-strategy nomination. |
+| Evaluation integrity | Protocol freezes independent process-local mechanism and batch attestors; signed envelopes bind protocol context, sources, candidate/harness/splits, checks, scores, and resources before terminal recomputation | Replace ephemeral symmetric capabilities with grader-integrated, durable asymmetric/KMS provenance and typed source replay in a real runner. |
+| Statistics and accounting | Task-level paired bootstrap, regression/cost checks, and an experiment-wide query/resource ledger implemented | Add multiple-candidate correction, winner replication, and a preregistered sequential policy. |
+| Mechanism evidence | Typed trajectories/spans plus a protocol-pinned producer envelope prevent caller-authored probe booleans; adversarial inactive/non-adherent/placebo fixtures are implemented | Add reusable trusted probes, typed source re-execution, and stronger disable/revert interventions on a real runtime. |
+| Experiment control | Single-process semantic controller owns admission, probes, gate completion, terminal decisions, budgets, sibling supersession, experiment lifecycle, and typed selection/sealed/invalidation closure; lifecycle resume fails closed | Replace caller-held tails with authenticated recovery plus durable cross-process compare-and-swap/leases/transactions before concurrent writers. |
+| Benchmark support | Synthetic controlled adversarial fixture only; no production fixed-model runner | Build one real deterministic/replayable adapter plus a fixed-model runner and static/random/prompt-only baselines. |
+| Isolation | Trusted grading is logically separate but in-process; deny-by-default capability policy exists as a schema/admission constraint | Add short-lived worker sandbox, no network, read-only materialization, credential isolation, and an out-of-process grader. |
 | Evolution engine | Hand-authored controlled candidate only | Evidence packet -> diagnosis -> candidate batch -> nomination. |
 | Skills | Component kind reserved only | Immutable package, progressive loader, selection/adherence probes. |
 | Continual routing | Not implemented | Defer until single-lineage experiments pass. |
@@ -470,26 +471,61 @@ closed.
 
 ### M0.2 — make the controlled fixture adversarial
 
-1. Move scoring into a trusted grader distinct from the candidate executor.
-2. Add no-op, wrong-target, inactive, non-adherent, placebo, regression,
-   timeout, malformed-event, tamper, budget, and leakage fixtures.
-3. Add property/fuzz tests for schemas, mutation application, journal replay,
-   pairing, and gate determinism.
-4. Add process-level isolation and a deny-by-default capability policy.
+1. **Implemented:** scoring is owned by a trusted grader distinct from the
+   candidate-output path. The boundary is testable but remains in-process.
+2. **Implemented:** no-op, wrong-target, inactive, non-adherent, placebo,
+   regression, timeout, malformed-event, tamper, budget, and leakage fixtures
+   fail closed.
+3. **Implemented:** `AttestedMechanismEvidence` uses an independent,
+   protocol-pinned HMAC producer to bind the candidate/child harness,
+   exploration split/task set, execution context, complete checks, and concrete
+   CAS sources. The controller verifies it before either gate entry or probe
+   rejection, and terminal replay verifies it again. Raw `passed=true`, old
+   signatures, rogue signers, context/candidate substitution, and missing
+   sources fail closed.
+4. **Implemented:** v2 `GateTrialBatch` HMAC attests protocol context, complete
+   score/resource observations, source refs, candidate/arm/harness/split/task
+   set, and mechanism evidence. The protocol pins its attestor ID, and the
+   controller and terminal verifier both fail closed on tampering or a rogue
+   signer. `GateEvaluationManifest` and protocol artifacts separately pin the
+   gate implementation before terminal recomputation.
+5. **Implemented as a logical contract:** `CapabilityPolicy` defaults to no
+   grants, uses exact resource allowlists, and is bound by protocol and
+   admission. No launcher or OS layer enforces it yet.
+6. **Implemented for one process:** the semantic controller owns candidate and
+   experiment transitions, recomputed query/resource accounting, stale-tail and
+   duplicate-charge checks, sibling supersession, and typed selection, sealed,
+   completion, and invalidation artifacts. Experiment lifecycle resume is
+   rejected until recovered semantic heads can be authenticated.
+7. **Still open:** add broader property/fuzz coverage for schemas, mutation
+   application, journal replay, pairing, and gate determinism.
+8. **Still open:** add process-level isolation, network/filesystem/process
+   controls, credential containment, and an out-of-process grader.
 
-Exit criterion: injected failures cannot produce `PROMOTE`; identical inputs
-replay to identical logical artifacts and decisions.
+The logical exit criterion is now covered by the controlled adversarial tests:
+injected failures cannot produce `PROMOTE`, including a caller-authored
+mechanism `passed=true` and a forged-score attack that changes a genuine
+`REJECT` into a matching recomputed `PROMOTE`. Frozen evidence replays to the
+same decision while the original HMAC verification capabilities remain
+available. The HMACs authenticate producer assertions and source hashes but do
+not yet re-execute those sources. This does not establish malicious-code
+containment or durable independent replay; typed source replay, process
+isolation, protected or asymmetric keys, authenticated recovery, and
+cross-process coordination remain open.
 
-### M1 — one real benchmark and prompt evolution
+### M1 — one real benchmark, fixed-model runner, and prompt evolution
 
 1. Select a deterministic or replayable benchmark with a clear data licence.
-2. Freeze exploration/gate/sealed hashes, grader, model settings, runtime image,
+2. Implement a production runner that keeps the model and inference settings
+   fixed, captures score-free candidate output, and hands it to the trusted
+   grading interface.
+3. Freeze exploration/gate/sealed hashes, grader, model settings, runtime image,
    budgets, primary metric, constraints, and stopping rule.
-3. Implement evidence extraction, failure signatures, diagnostic clusters, and
+4. Implement evidence extraction, failure signatures, diagnostic clusters, and
    mechanism-diverse atomic prompt candidates.
-4. Compare static, random-valid, prompt-only, and evidence-targeted strategies
+5. Compare static, random-valid, prompt-only, and evidence-targeted strategies
    across independent search runs under the same total budget.
-5. Add holdout-burn accounting, candidate-family correction, winner
+6. Add holdout-burn accounting, candidate-family correction, winner
    replication, and exactly one sealed final evaluation.
 
 Exit criterion: report held-out gain with uncertainty, evaluation cost,
@@ -525,20 +561,34 @@ packages around the stable research kernel.
 
 ## 8. Verification backlog beyond the current gate
 
-The existing paired gate is necessary but not sufficient for adaptive search.
-The following controls are required before making strong benchmark claims:
+The existing paired gate and semantic controller now provide a replayed
+experiment-wide gate query/resource ledger, exact evidence-complete branches,
+typed selection closure, and one-way sealed-run authorization. They are still
+necessary rather than sufficient for adaptive search. The following controls
+are required before making strong real-benchmark claims:
 
-- a ledger counting every gate or holdout query, including failures and retries;
+- extend accounting from synthetic gate batches to every production gate and
+  holdout attempt, including pre-execution reservations for runner failures and
+  retries that never emit a batch;
 - family-wise or false-discovery control for multiple candidates;
 - independent re-evaluation of the selected winner to reduce winner's curse;
 - a preregistered sequential rule for spending more trials on `INCONCLUSIVE`;
 - cluster-aware or hierarchical intervals when benchmark tasks are related;
 - explicit minimum detectable effect and power simulation;
 - temporal or source-group splits to expose memorization and contamination;
-- one sealed final batch that cannot cause another mutation in the experiment;
+- execute exactly one sealed final batch through the typed authorization path
+  with an authenticated sealed-evaluator producer and without allowing its
+  result to cause another mutation;
 - disable/revert/placebo interventions for mechanism claims;
 - separate reporting for statistical evidence, mechanism evidence, safety,
   policy, and resource constraints.
+
+Before concurrent or adversarial workers are in scope, the caller-held
+single-writer tails must also be replaced or wrapped by durable cross-process
+compare-and-swap, leases, or transactions, and the capability policy must be
+enforced by an OS-level worker boundary. Ephemeral HMAC capabilities must be
+replaced by protected versioned keys or asymmetric/KMS signatures so historical
+evidence can be verified without retaining a signing secret in the verifier.
 
 ## 9. Supply-chain policy for a large project
 

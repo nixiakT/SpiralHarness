@@ -1,6 +1,24 @@
 """Independent statistics and promotion gate for SpiralHarness."""
 
+from spiral_harness.verification.artifacts import (
+    GATE_TRIAL_BATCH_MEDIA_TYPE,
+    GateBatchAttestationError,
+    GateBatchExecutionContext,
+    GateBatchVerificationCapability,
+    GateTrialArm,
+    GateTrialBatch,
+    GateTrialBatchContent,
+    TrustedGateBatchService,
+)
 from spiral_harness.verification.gate import PromotionGate, evaluate_gate
+from spiral_harness.verification.mechanism import (
+    ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE,
+    AttestedMechanismEvidence,
+    MechanismEvidenceAttestationError,
+    MechanismEvidenceContent,
+    MechanismEvidenceVerificationCapability,
+    TrustedMechanismEvidenceService,
+)
 from spiral_harness.verification.models import (
     ComparisonMetrics,
     ComparisonResult,
@@ -27,23 +45,37 @@ from spiral_harness.verification.statistics import (
 )
 
 __all__ = [
+    "ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE",
+    "GATE_TRIAL_BATCH_MEDIA_TYPE",
+    "AttestedMechanismEvidence",
     "CandidateVerifier",
     "ComparisonMetrics",
     "ComparisonResult",
     "ConfidenceInterval",
     "Decision",
+    "GateBatchAttestationError",
+    "GateBatchExecutionContext",
+    "GateBatchVerificationCapability",
     "GateCheck",
     "GateCheckOutcome",
     "GateConfig",
     "GateDecision",
+    "GateTrialArm",
+    "GateTrialBatch",
+    "GateTrialBatchContent",
     "MechanismCheck",
     "MechanismEvidence",
+    "MechanismEvidenceAttestationError",
+    "MechanismEvidenceContent",
+    "MechanismEvidenceVerificationCapability",
     "PairingAudit",
     "PromotionGate",
     "SliceMetrics",
     "TaskComparison",
     "TrialObservation",
     "TrialStatus",
+    "TrustedGateBatchService",
+    "TrustedMechanismEvidenceService",
     "compare_trials",
     "compute_paired_statistics",
     "evaluate_gate",

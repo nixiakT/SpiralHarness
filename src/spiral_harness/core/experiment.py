@@ -14,10 +14,19 @@ from spiral_harness.core.models import (
     ComponentKind,
     ImmutableModel,
     NonEmptyStr,
+    Sha256,
 )
 
 _MIME_TOKEN = r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+"
 _MEDIA_TYPE_RE = re.compile(rf"^{_MIME_TOKEN}/{_MIME_TOKEN}$")
+
+# The M0.2 trusted terminal-decision service implements exactly this gate.
+# Protocol artifacts persist the value even when a Python caller accepts the
+# schema default, so an older artifact that omits it is not canonical.
+PROMOTION_GATE_IMPLEMENTATION_FINGERPRINT = (
+    "spiral-harness.verification.promotion-gate:paired-bootstrap:v1"
+)
+PROTOCOL_MANIFEST_MEDIA_TYPE = "application/vnd.spiral-harness.protocol-manifest.v2+json"
 
 
 def _require_json_ref(ref: ArtifactRef, *, field_name: str) -> None:
@@ -135,7 +144,7 @@ class MutationPolicy(ImmutableModel):
 class ProtocolManifest(ImmutableModel):
     """Freeze every trusted input that can affect an evaluation result."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     benchmark_fingerprint: NonEmptyStr = Field(
         validation_alias=AliasChoices("benchmark_fingerprint", "benchmark")
     )
@@ -154,12 +163,28 @@ class ProtocolManifest(ImmutableModel):
     sandbox_fingerprint: NonEmptyStr = Field(
         validation_alias=AliasChoices("sandbox_fingerprint", "sandbox")
     )
+    capability_policy_ref: ArtifactRef = Field(
+        validation_alias=AliasChoices("capability_policy_ref", "capability_policy")
+    )
     grader_fingerprint: NonEmptyStr = Field(
         validation_alias=AliasChoices("grader_fingerprint", "grader")
+    )
+    gate_batch_attestor_id: Sha256 = Field(
+        validation_alias=AliasChoices(
+            "gate_batch_attestor_id",
+            "gate_batch_attestor_fingerprint",
+        )
+    )
+    mechanism_evidence_attestor_id: Sha256 = Field(
+        validation_alias=AliasChoices(
+            "mechanism_evidence_attestor_id",
+            "mechanism_evidence_attestor_fingerprint",
+        )
     )
     gate_config_ref: ArtifactRef = Field(
         validation_alias=AliasChoices("gate_config_ref", "gate_config")
     )
+    gate_implementation_fingerprint: NonEmptyStr = PROMOTION_GATE_IMPLEMENTATION_FINGERPRINT
     trusted_plane_version: NonEmptyStr = Field(
         validation_alias=AliasChoices(
             "trusted_plane_version",
@@ -193,6 +218,7 @@ class ProtocolManifest(ImmutableModel):
         if len(split_hashes) != len(set(split_hashes)):
             raise ValueError("split partitions must refer to distinct manifests")
         _require_json_ref(self.gate_config_ref, field_name="gate_config_ref")
+        _require_json_ref(self.capability_policy_ref, field_name="capability_policy_ref")
         if self.budget.max_evaluations is None:
             raise ValueError("protocol budget must cap max_evaluations")
         return self
@@ -227,7 +253,8 @@ class ExperimentManifest(ImmutableModel):
                 raise ValueError(f"{field_name} must not contain duplicate entries")
         if self.search_budget.max_evaluations is None:
             raise ValueError("search_budget must cap max_evaluations")
-        _require_json_ref(self.protocol_ref, field_name="protocol_ref")
+        if self.protocol_ref.media_type != PROTOCOL_MANIFEST_MEDIA_TYPE:
+            raise ValueError("protocol_ref must declare the exact protocol manifest v2 media type")
         _require_json_ref(self.seed_harness_ref, field_name="seed_harness_ref")
         return self
 
@@ -270,6 +297,8 @@ class CandidateManifest(ImmutableModel):
 
 
 __all__ = [
+    "PROMOTION_GATE_IMPLEMENTATION_FINGERPRINT",
+    "PROTOCOL_MANIFEST_MEDIA_TYPE",
     "CandidateManifest",
     "ExperimentManifest",
     "MutationPolicy",

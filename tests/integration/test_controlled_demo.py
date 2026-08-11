@@ -30,20 +30,42 @@ from spiral_harness.experiments import (
     AdmissionReport,
     GateEvaluationManifest,
     TerminalDecisionReport,
+    TerminalDecisionService,
 )
-from spiral_harness.storage import ArtifactStore, CandidateJournal
+from spiral_harness.experiments.controller import (
+    ExperimentController,
+    ExperimentUsageClaim,
+    ExperimentUsageEntry,
+    TerminalTransitionAuthorization,
+)
+from spiral_harness.experiments.lifecycle import (
+    ExperimentJournal,
+    ExperimentState,
+    SelectionClosure,
+    SelectionReason,
+)
+from spiral_harness.storage import ArtifactStore, CandidateJournal, JournalEntry
 from spiral_harness.verification import (
+    AttestedMechanismEvidence,
     Decision,
     GateConfig,
     GateDecision,
-    MechanismEvidence,
+    GateTrialBatch,
     TrialObservation,
+    TrustedGateBatchService,
+    TrustedMechanismEvidenceService,
 )
 
 
 def test_controlled_fault_demo_promotes_with_replayable_lineage(tmp_path) -> None:
     ledger = tmp_path / "controlled-ledger"
-    first = run_controlled_demo(ledger)
+    gate_batch_service = TrustedGateBatchService()
+    mechanism_evidence_service = TrustedMechanismEvidenceService()
+    first = run_controlled_demo(
+        ledger,
+        gate_batch_service=gate_batch_service,
+        mechanism_evidence_service=mechanism_evidence_service,
+    )
     store = ArtifactStore(ledger)
 
     assert first.decision.decision is Decision.PROMOTE
@@ -104,18 +126,33 @@ def test_controlled_fault_demo_promotes_with_replayable_lineage(tmp_path) -> Non
     candidate_executions = store.get_json(
         refs.candidate_gate_execution_ref, tuple[DeterministicExecution, ...]
     )
-    mechanism = store.get_json(refs.mechanism_evidence_ref, MechanismEvidence)
+    mechanism_envelope = store.get_json(
+        refs.mechanism_evidence_ref,
+        AttestedMechanismEvidence,
+    )
+    mechanism = mechanism_envelope.evidence
     gate_evaluation = store.get_json(
         refs.gate_evaluation_ref,
         GateEvaluationManifest,
     )
+    seed_gate_batch = store.get_json(refs.seed_gate_batch_ref, GateTrialBatch)
+    candidate_gate_batch = store.get_json(refs.candidate_gate_batch_ref, GateTrialBatch)
     admission = store.get_json(refs.admission_report_ref, AdmissionReport)
     stored_decision = store.get_json(refs.gate_decision_ref, GateDecision)
     terminal_report = store.get_json(
         refs.terminal_decision_report_ref,
         TerminalDecisionReport,
     )
+    usage_claim = store.get_json(refs.experiment_usage_claim_ref, ExperimentUsageClaim)
+    usage_entry = store.get_json(refs.experiment_usage_tail_ref, ExperimentUsageEntry)
+    authorization = store.get_json(
+        refs.terminal_authorization_ref,
+        TerminalTransitionAuthorization,
+    )
+    final_entry = store.get_json(refs.candidate_journal_tail_ref, JournalEntry)
     lifecycle_events = CandidateJournal(store).replay(refs.candidate_journal_tail_ref)
+    experiment_events = ExperimentJournal(store).replay(refs.experiment_journal_tail_ref)
+    selection_closure = store.get_json(experiment_events[-1].evidence_refs[0], SelectionClosure)
 
     assert exploration_tasks == EXPLORATION_TASKS
     assert gate_tasks == GATE_TASKS == CONTROLLED_TASKS
@@ -149,6 +186,11 @@ def test_controlled_fault_demo_promotes_with_replayable_lineage(tmp_path) -> Non
         ProtocolPartition.GATE: refs.gate_suite_ref,
     }
     assert protocol_manifest.gate_config_ref == refs.gate_config_ref
+    assert protocol_manifest.capability_policy_ref == refs.capability_policy_ref
+    assert protocol_manifest.gate_batch_attestor_id == gate_batch_service.attestor_id
+    assert (
+        protocol_manifest.mechanism_evidence_attestor_id == mechanism_evidence_service.attestor_id
+    )
     assert protocol_manifest.budget.max_evaluations == (
         2 * len(EXPLORATION_TASKS) + 2 * len(GATE_TASKS)
     )
@@ -184,9 +226,54 @@ def test_controlled_fault_demo_promotes_with_replayable_lineage(tmp_path) -> Non
     assert gate_evaluation.admission_report_ref == refs.admission_report_ref
     assert gate_evaluation.gate_config_ref == refs.gate_config_ref
     assert gate_evaluation.gate_split_ref == refs.gate_suite_ref
-    assert gate_evaluation.parent_trials_ref == refs.seed_gate_trials_ref
-    assert gate_evaluation.candidate_trials_ref == refs.candidate_gate_trials_ref
+    assert gate_evaluation.parent_batch_ref == refs.seed_gate_batch_ref
+    assert gate_evaluation.candidate_batch_ref == refs.candidate_gate_batch_ref
     assert gate_evaluation.mechanism_evidence_ref == refs.mechanism_evidence_ref
+    assert seed_gate_batch.observations == seed_trials
+    assert candidate_gate_batch.observations == candidate_trials
+    assert seed_gate_batch.gate_split_ref == refs.gate_suite_ref
+    assert candidate_gate_batch.gate_split_ref == refs.gate_suite_ref
+    assert seed_gate_batch.protocol_ref == refs.protocol_manifest_ref
+    assert candidate_gate_batch.protocol_ref == refs.protocol_manifest_ref
+    assert seed_gate_batch.task_set_fingerprint == refs.gate_suite_ref.sha256
+    assert candidate_gate_batch.task_set_fingerprint == refs.gate_suite_ref.sha256
+    assert seed_gate_batch.mechanism_evidence_ref == refs.mechanism_evidence_ref
+    assert candidate_gate_batch.mechanism_evidence_ref == refs.mechanism_evidence_ref
+    assert seed_gate_batch.execution_context.grader_fingerprint == (
+        protocol_manifest.grader_fingerprint
+    )
+    assert candidate_gate_batch.execution_context.capability_policy_ref == (
+        refs.capability_policy_ref
+    )
+    assert {ref.sha256 for ref in seed_gate_batch.source_refs} == {
+        refs.seed_gate_execution_ref.sha256,
+        refs.seed_gate_trials_ref.sha256,
+    }
+    assert {ref.sha256 for ref in candidate_gate_batch.source_refs} == {
+        refs.candidate_gate_execution_ref.sha256,
+        refs.candidate_gate_trials_ref.sha256,
+    }
+    assert gate_batch_service.verification_capability.verify(seed_gate_batch) == seed_gate_batch
+    assert (
+        gate_batch_service.verification_capability.verify(candidate_gate_batch)
+        == candidate_gate_batch
+    )
+    assert (
+        mechanism_evidence_service.verification_capability.verify(mechanism_envelope)
+        == mechanism_envelope
+    )
+    assert mechanism_envelope.protocol_ref == refs.protocol_manifest_ref
+    assert mechanism_envelope.candidate_ref == refs.candidate_record_ref
+    assert mechanism_envelope.candidate_harness_ref == refs.candidate_manifest_ref
+    assert mechanism_envelope.exploration_split_ref == refs.exploration_suite_ref
+    assert {ref.sha256 for ref in mechanism_envelope.source_refs} == {
+        refs.candidate_exploration_execution_ref.sha256,
+        refs.candidate_exploration_trials_ref.sha256,
+        refs.candidate_manifest_ref.sha256,
+        refs.candidate_mutation_ref.sha256,
+        refs.exploration_trials_ref.sha256,
+        refs.seed_manifest_ref.sha256,
+    }
     assert fault_evidence.exploration_suite_ref == refs.exploration_suite_ref
     assert fault_evidence.exploration_trials_ref == refs.exploration_trials_ref
     assert len(fault_evidence.failed_normalization_task_ids) == 4
@@ -232,7 +319,73 @@ def test_controlled_fault_demo_promotes_with_replayable_lineage(tmp_path) -> Non
     assert terminal_report.evaluation_ref == refs.gate_evaluation_ref
     assert terminal_report.decision_ref == refs.gate_decision_ref
     assert terminal_report.gate_config_ref == refs.gate_config_ref
+    assert terminal_report.gate_batch_attestor_id == gate_batch_service.attestor_id
+    assert terminal_report.mechanism_evidence_attestor_id == mechanism_evidence_service.attestor_id
+    assert terminal_report.mechanism_evidence_ref == refs.mechanism_evidence_ref
     assert terminal_report.terminal_state is CandidateState.PROMOTED
+    assert (
+        TerminalDecisionService(
+            store,
+            gate_batch_verifier=gate_batch_service.verification_capability,
+            mechanism_evidence_verifier=(mechanism_evidence_service.verification_capability),
+        ).verify_report(
+            refs.terminal_decision_report_ref,
+            candidate_ref=refs.candidate_record_ref,
+            experiment_ref=refs.experiment_manifest_ref,
+            evaluation_ref=refs.gate_evaluation_ref,
+        )
+        == terminal_report
+    )
+    assert usage_claim.candidate_ref == refs.candidate_record_ref
+    assert usage_claim.evaluation_ref == refs.gate_evaluation_ref
+    assert usage_claim.evaluation_units == 2 * len(GATE_TASKS)
+    expected_tokens = sum(trial.tokens for trial in (*seed_trials, *candidate_trials))
+    expected_tool_calls = sum(trial.tool_calls for trial in (*seed_trials, *candidate_trials))
+    expected_wall_time_seconds = (
+        sum(trial.latency_ms for trial in (*seed_trials, *candidate_trials)) / 1_000
+    )
+    expected_cost = sum(trial.cost_usd or 0.0 for trial in (*seed_trials, *candidate_trials))
+    assert usage_claim.tokens == expected_tokens
+    assert usage_claim.tool_calls == expected_tool_calls == 0
+    assert usage_claim.wall_time_seconds == expected_wall_time_seconds
+    assert usage_claim.cost_usd == expected_cost == 0.0
+    assert usage_entry.claim_ref == refs.experiment_usage_claim_ref
+    assert usage_entry.cumulative_evaluations == 2 * len(GATE_TASKS)
+    assert usage_entry.cumulative_tokens == expected_tokens
+    assert usage_entry.cumulative_tool_calls == expected_tool_calls
+    assert usage_entry.cumulative_wall_time_seconds == expected_wall_time_seconds
+    assert usage_entry.cumulative_cost_usd == expected_cost
+    usage = ExperimentController(
+        store,
+        experiment_ref=refs.experiment_manifest_ref,
+        gate_batch_verifier=gate_batch_service.verification_capability,
+        mechanism_evidence_verifier=(mechanism_evidence_service.verification_capability),
+        usage_tail_ref=refs.experiment_usage_tail_ref,
+    ).current_usage()
+    assert usage.query_count == 1
+    assert usage.total_evaluations == 2 * len(GATE_TASKS)
+    assert usage.total_tokens == expected_tokens
+    assert usage.total_tool_calls == expected_tool_calls
+    assert usage.total_wall_time_seconds == expected_wall_time_seconds
+    assert usage.total_cost_usd == expected_cost
+    assert final_entry.previous_entry_ref is not None
+    assert authorization.evidence_complete_tail_ref == final_entry.previous_entry_ref
+    assert authorization.usage_entry_ref == refs.experiment_usage_tail_ref
+    assert authorization.evaluation_ref == refs.gate_evaluation_ref
+    assert authorization.terminal_decision_report_ref == refs.terminal_decision_report_ref
+    assert authorization.decision_ref == refs.gate_decision_ref
+    assert tuple(event.to_state for event in experiment_events) == (
+        ExperimentState.FROZEN,
+        ExperimentState.SEARCHING,
+        ExperimentState.SELECTION_CLOSED,
+    )
+    assert selection_closure.champion_candidate_ref == refs.candidate_record_ref
+    assert selection_closure.champion_candidate_tail_ref == refs.candidate_journal_tail_ref
+    assert selection_closure.champion_harness_ref == refs.candidate_manifest_ref
+    assert selection_closure.analysis_plan_ref == refs.analysis_plan_ref
+    assert selection_closure.usage_tail_ref == refs.experiment_usage_tail_ref
+    assert selection_closure.selection_reason is SelectionReason.PROMOTED_CHAMPION
+    assert selection_closure.stopping_criteria == experiment_manifest.stopping
     assert tuple(event.to_state for event in lifecycle_events) == (
         CandidateState.REGISTERED,
         CandidateState.VALID,
@@ -244,10 +397,19 @@ def test_controlled_fault_demo_promotes_with_replayable_lineage(tmp_path) -> Non
     assert all(event.candidate_ref == refs.candidate_record_ref for event in lifecycle_events)
     assert lifecycle_events[1].evidence_refs == (refs.admission_report_ref,)
     assert lifecycle_events[3].evidence_refs == (refs.mechanism_evidence_ref,)
-    assert refs.gate_evaluation_ref in lifecycle_events[4].evidence_refs
+    assert lifecycle_events[4].evidence_refs == tuple(
+        sorted(
+            (refs.gate_evaluation_ref, refs.experiment_usage_tail_ref),
+            key=lambda ref: (ref.sha256, ref.size, ref.media_type),
+        )
+    )
     assert lifecycle_events[-1].evidence_refs == tuple(
         sorted(
-            (refs.gate_decision_ref, refs.terminal_decision_report_ref),
+            (
+                refs.gate_decision_ref,
+                refs.terminal_decision_report_ref,
+                refs.terminal_authorization_ref,
+            ),
             key=lambda ref: (ref.sha256, ref.size, ref.media_type),
         )
     )
@@ -255,7 +417,11 @@ def test_controlled_fault_demo_promotes_with_replayable_lineage(tmp_path) -> Non
     object_paths_before = tuple(
         sorted(path for path in store.objects_dir.rglob("*") if path.is_file())
     )
-    second = run_controlled_demo(ledger)
+    second = run_controlled_demo(
+        ledger,
+        gate_batch_service=gate_batch_service,
+        mechanism_evidence_service=mechanism_evidence_service,
+    )
     object_paths_after = tuple(
         sorted(path for path in store.objects_dir.rglob("*") if path.is_file())
     )

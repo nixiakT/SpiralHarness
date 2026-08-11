@@ -7,6 +7,7 @@ import pytest
 from pydantic import BaseModel
 
 from spiral_harness.core import (
+    PROTOCOL_MANIFEST_MEDIA_TYPE,
     ArtifactRef,
     BudgetPolicy,
     CandidateManifest,
@@ -22,6 +23,7 @@ from spiral_harness.core import (
     ProtocolSplit,
     canonical_sha256,
 )
+from spiral_harness.execution import CAPABILITY_POLICY_MEDIA_TYPE, CapabilityPolicy
 from spiral_harness.experiments import (
     ADMISSION_REPORT_MEDIA_TYPE,
     AdmissionReport,
@@ -32,7 +34,7 @@ from spiral_harness.harness import HarnessRegistry
 from spiral_harness.storage import ArtifactStore
 from spiral_harness.verification import GateConfig
 
-_PROTOCOL_MEDIA_TYPE = "application/vnd.spiral-harness.protocol-manifest.v1+json"
+_PROTOCOL_MEDIA_TYPE = PROTOCOL_MANIFEST_MEDIA_TYPE
 _EXPERIMENT_MEDIA_TYPE = "application/vnd.spiral-harness.experiment-manifest.v1+json"
 _HARNESS_MEDIA_TYPE = "application/vnd.spiral-harness.manifest+json"
 _MUTATION_MEDIA_TYPE = "application/vnd.spiral-harness.candidate-mutation+json"
@@ -58,6 +60,7 @@ class AdmissionFixture:
     mutation_ref: ArtifactRef
     evidence_ref: ArtifactRef
     gate_ref: ArtifactRef
+    capability_policy_ref: ArtifactRef
     candidate: CandidateManifest
     candidate_ref: ArtifactRef
 
@@ -100,6 +103,10 @@ def _fixture(root: Path) -> AdmissionFixture:
         GateConfig(min_tasks=1, bootstrap_samples=1_000),
         media_type=_GATE_MEDIA_TYPE,
     )
+    capability_policy_ref = store.put_json(
+        CapabilityPolicy(),
+        media_type=CAPABILITY_POLICY_MEDIA_TYPE,
+    )
     exploration_ref = store.put_json(
         {"task_ids": ["explore-1"]},
         media_type="application/vnd.spiral-harness.split+json",
@@ -124,7 +131,10 @@ def _fixture(root: Path) -> AdmissionFixture:
         inference_fingerprint="inference-v1",
         runtime_fingerprint="runtime-v1",
         sandbox_fingerprint="sandbox-v1",
+        capability_policy_ref=capability_policy_ref,
         grader_fingerprint="grader-v1",
+        gate_batch_attestor_id="f" * 64,
+        mechanism_evidence_attestor_id="e" * 64,
         gate_config_ref=gate_ref,
         trusted_plane_version="trusted-v1",
         budget=BudgetPolicy(max_evaluations=8),
@@ -223,6 +233,7 @@ def _fixture(root: Path) -> AdmissionFixture:
         mutation_ref=mutation_ref,
         evidence_ref=evidence_ref,
         gate_ref=gate_ref,
+        capability_policy_ref=capability_policy_ref,
         candidate=candidate,
         candidate_ref=candidate_ref,
     )
@@ -244,6 +255,7 @@ def test_admission_loads_and_joins_the_complete_frozen_lineage(tmp_path: Path) -
     assert report.mutation_ref == fixture.mutation_ref
     assert report.evaluation_plan_ref == fixture.gate_ref
     assert report.gate_config_ref == fixture.gate_ref
+    assert report.capability_policy_ref == fixture.capability_policy_ref
     assert report.evidence_refs == (fixture.evidence_ref,)
     assert report.mutation_policy_sha256 == canonical_sha256(fixture.policy)
     assert report.checks == (
@@ -254,7 +266,29 @@ def test_admission_loads_and_joins_the_complete_frozen_lineage(tmp_path: Path) -
         "mutation_lineage_recomputed",
         "evidence_joined",
         "evaluation_plan_joined",
+        "capability_policy_joined",
     )
+
+
+def test_admission_rejects_v2_protocol_payload_labeled_as_v1_media(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    mislabeled_ref = fixture.store.put_json(
+        fixture.protocol,
+        media_type="application/vnd.spiral-harness.protocol-manifest.v1+json",
+    )
+    experiment_payload = fixture.experiment.model_dump(mode="python")
+    experiment_payload["protocol_ref"] = mislabeled_ref.model_dump(mode="python")
+    experiment_ref = fixture.store.put_json(
+        experiment_payload,
+        media_type=_EXPERIMENT_MEDIA_TYPE,
+    )
+    candidate_ref = _candidate_ref(fixture, experiment_ref=experiment_ref)
+
+    with pytest.raises(CandidateAdmissionError, match="experiment artifact could not be verified"):
+        CandidateAdmissionService(fixture.store).admit(
+            candidate_ref=candidate_ref,
+            experiment_ref=experiment_ref,
+        )
 
 
 def test_admission_rejects_candidate_from_another_experiment(tmp_path: Path) -> None:

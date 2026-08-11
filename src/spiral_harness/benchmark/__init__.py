@@ -1,6 +1,10 @@
 """Benchmark adapters, including explicitly synthetic infrastructure fixtures."""
 
 from spiral_harness.benchmark.base import BenchmarkAdapter
+from spiral_harness.benchmark.controlled_adversarial import (
+    AdversarialVerificationResult,
+    ControlledAdversarialVerifier,
+)
 from spiral_harness.benchmark.controlled_fixture import (
     CANDIDATE_PROMPT,
     CONTROLLED_TASKS,
@@ -16,6 +20,21 @@ from spiral_harness.benchmark.controlled_fixture import (
     DeterministicExecution,
     DeterministicExecutor,
 )
+from spiral_harness.benchmark.grading import (
+    MECHANISM_CHECK_NAMES,
+    CandidateOutputTrace,
+    CaptureAttestation,
+    CapturedOutputTrace,
+    CaptureVerificationCapability,
+    FixedGraderConfig,
+    FixedOutputGrader,
+    GradedBatch,
+    GradedTrace,
+    GradingTask,
+    SealedTaskRoster,
+    TrustedCaptureService,
+    TrustedGradingError,
+)
 
 __all__ = [
     "CANDIDATE_PROMPT",
@@ -25,11 +44,26 @@ __all__ = [
     "FIXTURE_KIND",
     "FIXTURE_SEED",
     "GATE_TASKS",
+    "MECHANISM_CHECK_NAMES",
     "NORMALIZATION_SLICE",
     "PROTECTED_CANONICAL_SLICE",
     "SEED_PROMPT",
+    "AdversarialVerificationResult",
     "BenchmarkAdapter",
     "BenchmarkTask",
+    "CandidateOutputTrace",
+    "CaptureAttestation",
+    "CaptureVerificationCapability",
+    "CapturedOutputTrace",
+    "ControlledAdversarialVerifier",
     "DeterministicExecution",
     "DeterministicExecutor",
+    "FixedGraderConfig",
+    "FixedOutputGrader",
+    "GradedBatch",
+    "GradedTrace",
+    "GradingTask",
+    "SealedTaskRoster",
+    "TrustedCaptureService",
+    "TrustedGradingError",
 ]

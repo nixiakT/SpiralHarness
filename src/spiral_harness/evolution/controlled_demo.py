@@ -26,9 +26,9 @@ from spiral_harness.benchmark import (
     DeterministicExecutor,
 )
 from spiral_harness.core import (
+    PROTOCOL_MANIFEST_MEDIA_TYPE,
     ArtifactRef,
     BudgetPolicy,
-    CandidateLifecycleEvent,
     CandidateManifest,
     CandidateMutation,
     CandidateState,
@@ -42,6 +42,7 @@ from spiral_harness.core import (
     ProtocolPartition,
     ProtocolSplit,
 )
+from spiral_harness.execution import CAPABILITY_POLICY_MEDIA_TYPE, CapabilityPolicy
 from spiral_harness.experiments import (
     ADMISSION_REPORT_MEDIA_TYPE,
     GATE_EVALUATION_MANIFEST_MEDIA_TYPE,
@@ -50,22 +51,29 @@ from spiral_harness.experiments import (
     GateEvaluationManifest,
     TerminalDecisionService,
 )
+from spiral_harness.experiments.controller import ExperimentController
 from spiral_harness.harness import HarnessRegistry
-from spiral_harness.storage import ArtifactStore, CandidateJournal
+from spiral_harness.storage import ArtifactStore
 from spiral_harness.verification import (
+    ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE,
+    GATE_TRIAL_BATCH_MEDIA_TYPE,
     Decision,
     GateConfig,
     GateDecision,
+    GateTrialArm,
     MechanismCheck,
     MechanismEvidence,
     PromotionGate,
     TrialObservation,
+    TrustedGateBatchService,
+    TrustedMechanismEvidenceService,
 )
 
 SYNTHETIC_DISCLAIMER = (
     "Synthetic controlled-fault fixture only; scores are pipeline checks, "
     "not real benchmark results. Exploration and gate rosters are logically "
-    "disjoint but are not securely sealed."
+    "disjoint but are not securely sealed. Gate batches use a process-local "
+    "HMAC capability, not OS isolation."
 )
 _PROMPT_MEDIA_TYPE = "text/plain; charset=utf-8"
 
@@ -95,6 +103,8 @@ class ControlledDemoRefs(_FrozenArtifactModel):
     exploration_suite_ref: ArtifactRef
     gate_suite_ref: ArtifactRef
     gate_config_ref: ArtifactRef
+    capability_policy_ref: ArtifactRef
+    analysis_plan_ref: ArtifactRef
     protocol_manifest_ref: ArtifactRef
     experiment_manifest_ref: ArtifactRef
     seed_prompt_ref: ArtifactRef
@@ -114,10 +124,16 @@ class ControlledDemoRefs(_FrozenArtifactModel):
     candidate_mutation_ref: ArtifactRef
     admission_report_ref: ArtifactRef
     mechanism_evidence_ref: ArtifactRef
+    seed_gate_batch_ref: ArtifactRef
+    candidate_gate_batch_ref: ArtifactRef
     gate_evaluation_ref: ArtifactRef
     gate_decision_ref: ArtifactRef
     terminal_decision_report_ref: ArtifactRef
+    experiment_usage_claim_ref: ArtifactRef
+    experiment_usage_tail_ref: ArtifactRef
+    terminal_authorization_ref: ArtifactRef
     candidate_journal_tail_ref: ArtifactRef
+    experiment_journal_tail_ref: ArtifactRef
 
     @property
     def benchmark_suite_ref(self) -> ArtifactRef:
@@ -325,9 +341,16 @@ def _mechanism_evidence(
     )
 
 
-def run_controlled_demo(root: str | Path) -> ControlledDemoResult:
+def run_controlled_demo(
+    root: str | Path,
+    *,
+    gate_batch_service: TrustedGateBatchService | None = None,
+    mechanism_evidence_service: TrustedMechanismEvidenceService | None = None,
+) -> ControlledDemoResult:
     """Run and durably record the deterministic synthetic M0 vertical slice."""
 
+    trusted_gate_batches = gate_batch_service or TrustedGateBatchService()
+    trusted_mechanism_evidence = mechanism_evidence_service or TrustedMechanismEvidenceService()
     store = ArtifactStore(root)
     seed_prompt_ref = store.put_bytes(SEED_PROMPT.encode(), media_type=_PROMPT_MEDIA_TYPE)
     exploration_suite_ref = _put_models(
@@ -345,6 +368,10 @@ def run_controlled_demo(root: str | Path) -> ControlledDemoResult:
     gate_config_ref = store.put_json(
         gate_config,
         media_type="application/vnd.spiral-harness.gate-config+json",
+    )
+    capability_policy_ref = store.put_json(
+        CapabilityPolicy(),
+        media_type=CAPABILITY_POLICY_MEDIA_TYPE,
     )
 
     seed_component = HarnessComponentRef(
@@ -381,7 +408,10 @@ def run_controlled_demo(root: str | Path) -> ControlledDemoResult:
         inference_fingerprint="synthetic-deterministic:no-inference-settings",
         runtime_fingerprint=seed_manifest.runtime_fingerprint,
         sandbox_fingerprint="logical-fixture-isolation:no-security-claim",
+        capability_policy_ref=capability_policy_ref,
         grader_fingerprint="synthetic-match-label-grader-v1",
+        gate_batch_attestor_id=trusted_gate_batches.attestor_id,
+        mechanism_evidence_attestor_id=trusted_mechanism_evidence.attestor_id,
         gate_config_ref=gate_config_ref,
         trusted_plane_version=seed_manifest.trusted_plane_version,
         budget=BudgetPolicy(
@@ -394,7 +424,7 @@ def run_controlled_demo(root: str | Path) -> ControlledDemoResult:
     )
     protocol_manifest_ref = store.put_json(
         protocol_manifest,
-        media_type="application/vnd.spiral-harness.protocol-manifest.v1+json",
+        media_type=PROTOCOL_MANIFEST_MEDIA_TYPE,
     )
 
     # Execution consumes only inputs reloaded through the persisted protocol.
@@ -432,6 +462,16 @@ def run_controlled_demo(root: str | Path) -> ControlledDemoResult:
     experiment_manifest_ref = store.put_json(
         experiment_manifest,
         media_type="application/vnd.spiral-harness.experiment-manifest.v1+json",
+    )
+    analysis_plan_ref = store.put_json(
+        {
+            "schema_version": "1",
+            "fixture_kind": FIXTURE_KIND,
+            "primary_metric": "paired exact-match accuracy",
+            "protected_slices": [PROTECTED_CANONICAL_SLICE],
+            "sealed_evaluation": "not available in the controlled two-split fixture",
+        },
+        media_type="application/vnd.spiral-harness.synthetic-analysis-plan.v1+json",
     )
 
     exploration_executions = executor.execute_suite(
@@ -547,37 +587,25 @@ def run_controlled_demo(root: str | Path) -> ControlledDemoResult:
         report_ref=admission_report_ref,
     )
 
-    journal = CandidateJournal(store)
-    candidate_stream_id = f"candidate/{candidate_record_ref.sha256}"
-    candidate_journal_tail_ref = journal.append(
-        stream_id=candidate_stream_id,
-        event=CandidateLifecycleEvent(
-            candidate_ref=candidate_record_ref,
-            from_state=None,
-            to_state=CandidateState.REGISTERED,
-            reason="candidate manifest and atomic mutation were frozen",
-        ),
+    controller = ExperimentController(
+        store,
+        experiment_ref=experiment_manifest_ref,
+        gate_batch_verifier=trusted_gate_batches.verification_capability,
+        mechanism_evidence_verifier=trusted_mechanism_evidence.verification_capability,
     )
-    candidate_journal_tail_ref = journal.append(
-        stream_id=candidate_stream_id,
-        previous_entry_ref=candidate_journal_tail_ref,
-        event=CandidateLifecycleEvent(
-            candidate_ref=candidate_record_ref,
-            from_state=CandidateState.REGISTERED,
-            to_state=CandidateState.VALID,
-            evidence_refs=(admission_report_ref,),
-            reason="trusted registry admitted the prompt-only mutation",
-        ),
+    experiment_journal_tail_ref = controller.freeze_experiment()
+    experiment_journal_tail_ref = controller.start_search(
+        previous_tail_ref=experiment_journal_tail_ref
     )
-    candidate_journal_tail_ref = journal.append(
-        stream_id=candidate_stream_id,
-        previous_entry_ref=candidate_journal_tail_ref,
-        event=CandidateLifecycleEvent(
-            candidate_ref=candidate_record_ref,
-            from_state=CandidateState.VALID,
-            to_state=CandidateState.RUNNING_PROBES,
-            reason="candidate entered preregistered exploration probes",
-        ),
+    candidate_journal_tail_ref = controller.register_candidate(candidate_ref=candidate_record_ref)
+    candidate_journal_tail_ref = controller.admit_candidate(
+        candidate_ref=candidate_record_ref,
+        previous_tail_ref=candidate_journal_tail_ref,
+        admission_report_ref=admission_report_ref,
+    )
+    candidate_journal_tail_ref = controller.start_probes(
+        candidate_ref=candidate_record_ref,
+        previous_tail_ref=candidate_journal_tail_ref,
     )
 
     candidate_exploration_executions = executor.execute_suite(
@@ -614,20 +642,29 @@ def run_controlled_demo(root: str | Path) -> ControlledDemoResult:
         candidate_execution_ref=candidate_exploration_execution_ref,
         exploration_tasks=exploration_tasks,
     )
-    mechanism_evidence_ref = store.put_json(
-        mechanism_evidence,
-        media_type="application/vnd.spiral-harness.mechanism-evidence+json",
-    )
-    candidate_journal_tail_ref = journal.append(
-        stream_id=candidate_stream_id,
-        previous_entry_ref=candidate_journal_tail_ref,
-        event=CandidateLifecycleEvent(
-            candidate_ref=candidate_record_ref,
-            from_state=CandidateState.RUNNING_PROBES,
-            to_state=CandidateState.RUNNING_GATE,
-            evidence_refs=(mechanism_evidence_ref,),
-            reason="all required mechanism probes passed on exploration tasks",
+    attested_mechanism_evidence = trusted_mechanism_evidence.create(
+        protocol_ref=protocol_manifest_ref,
+        protocol=frozen_protocol,
+        candidate_ref=candidate_record_ref,
+        candidate_harness_ref=candidate_manifest_ref,
+        source_refs=(
+            candidate_exploration_execution_ref,
+            candidate_exploration_trials_ref,
+            candidate_manifest_ref,
+            candidate_mutation_ref,
+            exploration_trials_ref,
+            seed_manifest_ref,
         ),
+        evidence=mechanism_evidence,
+    )
+    mechanism_evidence_ref = store.put_json(
+        attested_mechanism_evidence,
+        media_type=ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE,
+    )
+    candidate_journal_tail_ref = controller.start_gate(
+        candidate_ref=candidate_record_ref,
+        previous_tail_ref=candidate_journal_tail_ref,
+        mechanism_evidence_ref=mechanism_evidence_ref,
     )
 
     # Gate measurements use task IDs and strings that never appeared in the
@@ -669,13 +706,44 @@ def run_controlled_demo(root: str | Path) -> ControlledDemoResult:
         media_type="application/vnd.spiral-harness.gate-trial-observations+json",
     )
 
+    seed_gate_batch = trusted_gate_batches.create(
+        protocol_ref=protocol_manifest_ref,
+        protocol=frozen_protocol,
+        candidate_ref=candidate_record_ref,
+        arm=GateTrialArm.PARENT,
+        harness_ref=seed_manifest_ref,
+        gate_split_ref=split_refs[ProtocolPartition.GATE],
+        mechanism_evidence_ref=mechanism_evidence_ref,
+        source_refs=(seed_gate_execution_ref, seed_gate_trials_ref),
+        observations=seed_gate_trials,
+    )
+    seed_gate_batch_ref = store.put_json(
+        seed_gate_batch,
+        media_type=GATE_TRIAL_BATCH_MEDIA_TYPE,
+    )
+    candidate_gate_batch = trusted_gate_batches.create(
+        protocol_ref=protocol_manifest_ref,
+        protocol=frozen_protocol,
+        candidate_ref=candidate_record_ref,
+        arm=GateTrialArm.CANDIDATE,
+        harness_ref=candidate_manifest_ref,
+        gate_split_ref=split_refs[ProtocolPartition.GATE],
+        mechanism_evidence_ref=mechanism_evidence_ref,
+        source_refs=(candidate_gate_execution_ref, candidate_gate_trials_ref),
+        observations=candidate_gate_trials,
+    )
+    candidate_gate_batch_ref = store.put_json(
+        candidate_gate_batch,
+        media_type=GATE_TRIAL_BATCH_MEDIA_TYPE,
+    )
+
     gate_evaluation = GateEvaluationManifest(
         candidate_ref=candidate_record_ref,
         admission_report_ref=admission_report_ref,
         gate_config_ref=frozen_protocol.gate_config_ref,
         gate_split_ref=split_refs[ProtocolPartition.GATE],
-        parent_trials_ref=seed_gate_trials_ref,
-        candidate_trials_ref=candidate_gate_trials_ref,
+        parent_batch_ref=seed_gate_batch_ref,
+        candidate_batch_ref=candidate_gate_batch_ref,
         mechanism_evidence_ref=mechanism_evidence_ref,
     )
     gate_evaluation_ref = store.put_json(
@@ -683,24 +751,15 @@ def run_controlled_demo(root: str | Path) -> ControlledDemoResult:
         media_type=GATE_EVALUATION_MANIFEST_MEDIA_TYPE,
     )
 
-    candidate_journal_tail_ref = journal.append(
-        stream_id=candidate_stream_id,
-        previous_entry_ref=candidate_journal_tail_ref,
-        event=CandidateLifecycleEvent(
-            candidate_ref=candidate_record_ref,
-            from_state=CandidateState.RUNNING_GATE,
-            to_state=CandidateState.EVIDENCE_COMPLETE,
-            evidence_refs=(
-                mechanism_evidence_ref,
-                seed_gate_trials_ref,
-                candidate_gate_trials_ref,
-                seed_gate_execution_ref,
-                candidate_gate_execution_ref,
-                gate_evaluation_ref,
-            ),
-            reason="the complete matched gate roster and mechanism evidence were persisted",
-        ),
+    evidence_completion = controller.complete_evidence(
+        candidate_ref=candidate_record_ref,
+        previous_tail_ref=candidate_journal_tail_ref,
+        evaluation_ref=gate_evaluation_ref,
+        previous_usage_tail_ref=None,
     )
+    candidate_journal_tail_ref = evidence_completion.candidate_tail_ref
+    experiment_usage_claim_ref = evidence_completion.usage_claim_ref
+    experiment_usage_tail_ref = evidence_completion.usage_tail_ref
     decision = PromotionGate(frozen_gate_config).evaluate(
         seed_gate_trials,
         candidate_gate_trials,
@@ -717,7 +776,11 @@ def run_controlled_demo(root: str | Path) -> ControlledDemoResult:
         Decision.REJECT: CandidateState.REJECTED,
         Decision.INCONCLUSIVE: CandidateState.INCONCLUSIVE,
     }[decision.decision]
-    terminal_decision_service = TerminalDecisionService(store)
+    terminal_decision_service = TerminalDecisionService(
+        store,
+        gate_batch_verifier=trusted_gate_batches.verification_capability,
+        mechanism_evidence_verifier=trusted_mechanism_evidence.verification_capability,
+    )
     terminal_decision_report = terminal_decision_service.validate(
         candidate_ref=candidate_record_ref,
         experiment_ref=experiment_manifest_ref,
@@ -735,22 +798,28 @@ def run_controlled_demo(root: str | Path) -> ControlledDemoResult:
         experiment_ref=experiment_manifest_ref,
         evaluation_ref=gate_evaluation_ref,
     )
-    candidate_journal_tail_ref = journal.append(
-        stream_id=candidate_stream_id,
-        previous_entry_ref=candidate_journal_tail_ref,
-        event=CandidateLifecycleEvent(
-            candidate_ref=candidate_record_ref,
-            from_state=CandidateState.EVIDENCE_COMPLETE,
-            to_state=terminal_state,
-            evidence_refs=(gate_decision_ref, terminal_decision_report_ref),
-            reason=f"independent promotion gate returned {decision.decision.value}",
-        ),
+    terminal_completion = controller.finalize_candidate(
+        candidate_ref=candidate_record_ref,
+        previous_tail_ref=candidate_journal_tail_ref,
+        terminal_decision_report_ref=terminal_decision_report_ref,
+    )
+    candidate_journal_tail_ref = terminal_completion.candidate_tail_ref
+    terminal_authorization_ref = terminal_completion.authorization_ref
+    experiment_journal_tail_ref = controller.close_selection(
+        previous_tail_ref=experiment_journal_tail_ref,
+        previous_usage_tail_ref=experiment_usage_tail_ref,
+        champion_candidate_ref=candidate_record_ref,
+        champion_candidate_tail_ref=candidate_journal_tail_ref,
+        champion_harness_ref=candidate_manifest_ref,
+        analysis_plan_ref=analysis_plan_ref,
     )
 
     refs = ControlledDemoRefs(
         exploration_suite_ref=exploration_suite_ref,
         gate_suite_ref=gate_suite_ref,
         gate_config_ref=gate_config_ref,
+        capability_policy_ref=capability_policy_ref,
+        analysis_plan_ref=analysis_plan_ref,
         protocol_manifest_ref=protocol_manifest_ref,
         experiment_manifest_ref=experiment_manifest_ref,
         seed_prompt_ref=seed_prompt_ref,
@@ -770,10 +839,16 @@ def run_controlled_demo(root: str | Path) -> ControlledDemoResult:
         candidate_mutation_ref=candidate_mutation_ref,
         admission_report_ref=admission_report_ref,
         mechanism_evidence_ref=mechanism_evidence_ref,
+        seed_gate_batch_ref=seed_gate_batch_ref,
+        candidate_gate_batch_ref=candidate_gate_batch_ref,
         gate_evaluation_ref=gate_evaluation_ref,
         gate_decision_ref=gate_decision_ref,
         terminal_decision_report_ref=terminal_decision_report_ref,
+        experiment_usage_claim_ref=experiment_usage_claim_ref,
+        experiment_usage_tail_ref=experiment_usage_tail_ref,
+        terminal_authorization_ref=terminal_authorization_ref,
         candidate_journal_tail_ref=candidate_journal_tail_ref,
+        experiment_journal_tail_ref=experiment_journal_tail_ref,
     )
     run_manifest_ref = store.put_json(
         refs,

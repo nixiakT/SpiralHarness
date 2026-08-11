@@ -7,6 +7,8 @@ from spiral_harness.core.canonical import (
     sha256_bytes,
 )
 from spiral_harness.core.experiment import (
+    PROMOTION_GATE_IMPLEMENTATION_FINGERPRINT,
+    PROTOCOL_MANIFEST_MEDIA_TYPE,
     CandidateManifest,
     ExperimentManifest,
     MutationPolicy,
@@ -34,6 +36,8 @@ from spiral_harness.core.models import (
 )
 
 __all__ = [
+    "PROMOTION_GATE_IMPLEMENTATION_FINGERPRINT",
+    "PROTOCOL_MANIFEST_MEDIA_TYPE",
     "TERMINAL_CANDIDATE_STATES",
     "ArtifactRef",
     "BudgetPolicy",

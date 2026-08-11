@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.experiment import (
+    PROTOCOL_MANIFEST_MEDIA_TYPE,
     CandidateManifest,
     ExperimentManifest,
     MutationPolicy,
@@ -33,7 +34,10 @@ def protocol(*splits: ProtocolSplit) -> ProtocolManifest:
         inference_fingerprint="temperature=0;seeded=true",
         runtime_fingerprint="runner@sha256:fixed",
         sandbox_fingerprint="sandbox@sha256:fixed",
+        capability_policy_ref=artifact("e"),
         grader_fingerprint="grader@sha256:fixed",
+        gate_batch_attestor_id="f" * 64,
+        mechanism_evidence_attestor_id="e" * 64,
         gate_config_ref=artifact("d"),
         trusted_plane_version="trusted-plane-v1",
         budget=BudgetPolicy(max_evaluations=40, max_cost_usd=10.0),
@@ -47,6 +51,7 @@ def test_protocol_requires_exploration_and_gate_and_canonicalizes_splits() -> No
         split(ProtocolPartition.EXPLORATION, "a"),
     )
 
+    assert manifest.schema_version == "2"
     assert [item.partition for item in manifest.splits] == [
         ProtocolPartition.EXPLORATION,
         ProtocolPartition.GATE,
@@ -97,6 +102,11 @@ def test_protocol_is_strict_frozen_and_forbids_unregistered_fields() -> None:
     )
     with pytest.raises((ValidationError, FrozenInstanceError)):
         manifest.gate_config_ref = artifact("e")
+
+    missing_attestor = manifest.model_dump()
+    missing_attestor.pop("mechanism_evidence_attestor_id")
+    with pytest.raises(ValidationError, match="mechanism_evidence_attestor_id"):
+        ProtocolManifest.model_validate(missing_attestor)
 
 
 def test_mutation_policy_defaults_to_prompt_only_and_canonicalizes_allowlists() -> None:
@@ -157,7 +167,7 @@ def test_mutation_policy_rejects_empty_and_duplicate_allowlists(
 
 def test_experiment_binds_search_contract_and_canonicalizes_set_like_fields() -> None:
     values = {
-        "protocol_ref": artifact("a"),
+        "protocol_ref": artifact("a", media_type=PROTOCOL_MANIFEST_MEDIA_TYPE),
         "seed_harness_ref": artifact("b"),
         "objective": "maximize paired benchmark score subject to frozen constraints",
         "search_budget": BudgetPolicy(max_evaluations=24, max_cost_usd=5.0),
@@ -183,7 +193,7 @@ def test_experiment_binds_search_contract_and_canonicalizes_set_like_fields() ->
 @pytest.mark.parametrize("field_name", ["baselines", "stopping"])
 def test_experiment_rejects_empty_or_duplicate_set_like_fields(field_name: str) -> None:
     values = {
-        "protocol_ref": artifact("a"),
+        "protocol_ref": artifact("a", media_type=PROTOCOL_MANIFEST_MEDIA_TYPE),
         "seed_harness_ref": artifact("b"),
         "objective": "score",
         "baselines": ("static",),
@@ -206,7 +216,7 @@ def test_protocol_and_search_require_an_explicit_evaluation_ceiling() -> None:
 
     with pytest.raises(ValidationError, match="search_budget"):
         ExperimentManifest(
-            protocol_ref=artifact("a"),
+            protocol_ref=artifact("a", media_type=PROTOCOL_MANIFEST_MEDIA_TYPE),
             seed_harness_ref=artifact("b"),
             objective="score",
             baselines=("static",),

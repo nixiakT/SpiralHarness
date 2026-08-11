@@ -58,6 +58,7 @@ class TrialObservation(VerificationModel):
     tokens: int = Field(default=0, ge=0)
     latency_ms: float = Field(default=0.0, ge=0, allow_inf_nan=False)
     tool_calls: int = Field(default=0, ge=0)
+    cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     violations: tuple[str, ...] = ()
     execution_fingerprint: str
 

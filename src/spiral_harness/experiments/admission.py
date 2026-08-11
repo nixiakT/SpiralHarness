@@ -7,7 +7,12 @@ from typing import Literal, TypeVar
 from pydantic import BaseModel
 
 from spiral_harness.core.canonical import canonical_json_bytes, canonical_sha256
-from spiral_harness.core.experiment import CandidateManifest, ExperimentManifest, ProtocolManifest
+from spiral_harness.core.experiment import (
+    PROTOCOL_MANIFEST_MEDIA_TYPE,
+    CandidateManifest,
+    ExperimentManifest,
+    ProtocolManifest,
+)
 from spiral_harness.core.models import (
     ArtifactRef,
     CandidateMutation,
@@ -15,6 +20,7 @@ from spiral_harness.core.models import (
     ImmutableModel,
     Sha256,
 )
+from spiral_harness.execution import CapabilityPolicy
 from spiral_harness.harness import HarnessRegistry, HarnessRegistryError
 from spiral_harness.storage import ArtifactRepository
 from spiral_harness.verification import GateConfig
@@ -31,6 +37,7 @@ _ADMISSION_CHECKS = (
     "mutation_lineage_recomputed",
     "evidence_joined",
     "evaluation_plan_joined",
+    "capability_policy_joined",
 )
 
 
@@ -52,6 +59,7 @@ class AdmissionReport(ImmutableModel):
     evidence_refs: tuple[ArtifactRef, ...]
     evaluation_plan_ref: ArtifactRef
     gate_config_ref: ArtifactRef
+    capability_policy_ref: ArtifactRef
     mutation_policy_sha256: Sha256
     checks: tuple[
         Literal["canonical_artifacts_verified"],
@@ -61,6 +69,7 @@ class AdmissionReport(ImmutableModel):
         Literal["mutation_lineage_recomputed"],
         Literal["evidence_joined"],
         Literal["evaluation_plan_joined"],
+        Literal["capability_policy_joined"],
     ] = _ADMISSION_CHECKS
 
 
@@ -90,6 +99,8 @@ class CandidateAdmissionService:
             )
 
         experiment = self._load_canonical(experiment_ref, ExperimentManifest, "experiment")
+        if experiment.protocol_ref.media_type != PROTOCOL_MANIFEST_MEDIA_TYPE:
+            raise CandidateAdmissionError("protocol artifact declares the wrong media type")
         protocol = self._load_canonical(
             experiment.protocol_ref,
             ProtocolManifest,
@@ -128,6 +139,11 @@ class CandidateAdmissionService:
             candidate.evaluation_plan_ref,
             GateConfig,
             "gate configuration",
+        )
+        self._load_canonical(
+            protocol.capability_policy_ref,
+            CapabilityPolicy,
+            "capability policy",
         )
 
         if candidate.evidence_refs != mutation.hypothesis.evidence_refs:
@@ -182,6 +198,7 @@ class CandidateAdmissionService:
             evidence_refs=candidate.evidence_refs,
             evaluation_plan_ref=candidate.evaluation_plan_ref,
             gate_config_ref=protocol.gate_config_ref,
+            capability_policy_ref=protocol.capability_policy_ref,
             mutation_policy_sha256=canonical_sha256(experiment.mutation_policy),
         )
 

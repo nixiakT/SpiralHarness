@@ -1,11 +1,15 @@
 # M0–M1 architecture
 
-> **Status:** target architecture. M0 currently implements immutable core and
-> experiment schemas, content-addressed local artifacts and linked lifecycle
-> journals, trusted cross-artifact prompt mutation admission, typed trajectory/evidence
-> contracts, paired statistics, a promotion gate, and a synthetic
-> controlled-fault vertical slice. Process isolation and the other guarantees
-> below remain planned until explicitly marked otherwise.
+> **Status:** target architecture with an implemented M0.2 logical control
+> plane. M0/M0.2 provides immutable schemas and local content-addressed
+> artifacts, linked lifecycle journals, trusted mutation admission, typed
+> trajectory and mechanism evidence, paired statistics, an adversarial
+> controlled fixture, producer-attested mechanism/gate-evidence closure, and a
+> semantic experiment controller with budget accounting and typed
+> selection/sealed closure. These trust boundaries are currently in-process:
+> there is no OS sandbox, network/filesystem/process isolation, cross-process
+> durable compare-and-swap or lease, real benchmark adapter, or fixed-model
+> production runner yet.
 
 This document turns the contracts in the [research plan](research-plan.md) and
 [verification protocol](verification-protocol.md) into implementable module and
@@ -24,7 +28,7 @@ and promotion policy.
              +-------------------------------------------------------+
                                   |
                      untrusted candidate runtime
-                    (ephemeral sandbox per trial)
+              (target: ephemeral sandbox per trial)
 ```
 
 The **mutable evolution plane** may construct new harness component artifacts
@@ -35,22 +39,35 @@ experiment so that they do not become an unrecorded confound. This plane never
 writes trial results, scores, decisions, split manifests, or historical
 artifacts.
 
-The **trusted verification plane** owns protocol manifests, split loading,
-artifact persistence, the execution controller, sandbox policy, graders,
-resource accounting, paired statistics, promotion rules, access views, and the
-sealed-set controller. Its version and configuration are frozen when an
-experiment starts. A change creates a new protocol lineage; it does not update
-an experiment in place. “Immutable” here means frozen inputs plus append-only
-outputs: the plane creates evidence and transition events but never rewrites an
-existing artifact.
+In the target architecture, the **trusted verification plane** owns protocol
+manifests, split loading, artifact persistence, the execution controller,
+sandbox policy, graders, resource accounting, paired statistics, promotion
+rules, access views, and the sealed-set controller. Its version and
+configuration are frozen when an experiment starts. A change creates a new
+protocol lineage; it does not update an experiment in place. “Immutable” here
+means frozen inputs plus append-only outputs: the plane creates evidence and
+transition events but never rewrites an existing artifact.
 
-Execution deliberately straddles the boundary. A trusted controller resolves a
-snapshot, constructs a run fingerprint, provisions an isolated worker, and
-captures events. The harness and any model-produced output inside that worker
-are untrusted. They receive only the task inputs and component artifacts needed
-for that trial and cannot write the artifact ledger or invoke a grader.
+Target execution deliberately straddles the boundary. A trusted controller
+resolves a snapshot, constructs a run fingerprint, provisions an isolated
+worker, and captures events. The harness and any model-produced output inside
+that worker are untrusted. They receive only the task inputs and component
+artifacts needed for that trial and cannot write the artifact ledger or invoke
+a grader.
+
+M0.2 implements the typed logical boundary that this execution design will
+consume. Candidate traces contain output and capture-owned telemetry but no
+score or sealed answer; a distinct trusted grader turns those traces into
+observations. A separate trusted capability signs complete gate batches, and
+the protocol freezes the accepted signer identity. The grader, signer, and
+verifiers still run in the same process. Likewise, the current semantic
+controller authorizes state transitions and replays artifact joins, but it does
+not launch or isolate candidate workers.
 
 ## 2. Module ownership and interfaces
+
+The table describes target ownership. The implemented M0.2 subset and its
+limits are stated immediately below it.
 
 | Module | Plane | Owns | May emit |
 | --- | --- | --- | --- |
@@ -65,20 +82,30 @@ for that trial and cannot write the artifact ledger or invoke a grader.
 | Experiment controller | Trusted | lifecycle, budgets, query counts, champion pointer | state-transition events |
 | Access view | Trusted | role- and partition-specific disclosure | exploration evidence or redacted decision |
 
-Cross-plane calls use schema-versioned artifact references rather than shared
-mutable Python objects. The evolution engine submits a frozen
+Target cross-plane calls use schema-versioned artifact references rather than
+shared mutable Python objects. The evolution engine submits a frozen
 `CandidateManifest`; the verifier returns a `DecisionArtifact` through an
 access view. Benchmark adapters do not import evolution code, and graders do
 not execute inside candidate workers.
 
-M0 now provides the domain, repository, atomic harness registry, lifecycle
-projection/journal, verifier, frozen experiment contracts, trusted candidate
-admission and terminal-decision joins, interface protocols, typed evidence
-schemas, and a deterministic controlled-fault adapter. The journal is a
-structural ledger, not semantic authorization by itself. A complete secure
-experiment controller that owns all transitions and budgets remains planned.
-M1 is scoped to a fixed-model runtime, one real benchmark adapter,
-trajectory-driven evolution, and static, random-valid, and prompt-only
+M0/M0.2 now provides the domain, repository, atomic harness registry, lifecycle
+projection/journals, verifier, frozen experiment contracts, trusted candidate
+admission, gate and terminal-decision joins, interface protocols, typed
+evidence schemas, trusted in-process grading, and a deterministic adversarial
+controlled-fault adapter. The `ExperimentController` is the semantic owner of
+candidate admission, probe, gate, evidence-complete, and terminal transitions;
+it also owns experiment lifecycle transitions and an experiment-wide
+query/resource ledger. The journals remain structural storage, while the
+controller performs the semantic authorization.
+
+This controller is a single-process, single-writer implementation with
+caller-held content-addressed tails. It rejects stale tails and duplicate
+charges inside that process, but it is not a durable cross-process
+compare-and-swap, lease, or transaction protocol. It deliberately rejects any
+experiment-lifecycle tail supplied to a new controller: structural journal
+replay is not semantic authorization. The next integration stage is a
+fixed-model production runner and one real benchmark adapter, followed by
+trajectory-driven evolution and static, random-valid, and prompt-only
 experiment strategies.
 
 ## 3. Artifact model and lineage
@@ -94,16 +121,26 @@ Core artifacts are:
 
 | Artifact | Required references |
 | --- | --- |
-| `ProtocolManifest` | split-manifest refs, gate-config ref, grader/runtime policy, model settings, budgets |
+| `ProtocolManifest` v2 | split refs, gate-config and capability-policy refs, gate implementation and mechanism/batch-attestor identities, grader/runtime/model settings, budgets |
 | `ExperimentManifest` | protocol hash, seed harness, objectives, baselines, stopping rule |
 | `HarnessSnapshot` | typed component name → component artifact hash |
 | `HarnessPatch` | parent snapshot, changed component(s), canonical before/after hashes |
 | `CandidateManifest` | parent and child snapshots, patch, evidence IDs, hypothesis, risks, evaluation plan |
+| `CapabilityPolicy` | default-deny policy and exact per-capability resource grants |
 | `RunRecord` | task reference, snapshot, seed, execution fingerprint, resource usage, status |
 | `Trajectory` | run ID and ordered, typed runtime events |
 | `Measurement` | run ID, frozen grader, metric values and error status |
+| `AttestedMechanismEvidence` | signed protocol/candidate/child-harness/exploration context, source artifacts, complete mechanism checks, producer and HMAC |
+| `GateTrialBatch` | signed protocol/candidate/arm/harness/split context, task-set and mechanism refs, producer sources, non-empty observations, attestor and HMAC |
+| `GateEvaluationManifest` | admission, gate config and implementation, gate split, both trial batches, mechanism evidence |
 | `DecisionArtifact` | candidate, parent and release anchor, evidence set, gate version, decision and reasons |
-| `FinalReport` | frozen champion, analysis plan, one sealed evaluation batch |
+| `ExperimentUsageEntry` | exact evaluated candidate/batches and cumulative query/resource charges |
+| `SupersededCandidateReport` | stale local promotion, current champion, superseding candidate, and resolved outcome |
+| `SelectionClosure` | frozen champion, candidate tail, analysis plan, and usage tail |
+| `SealedRunAuthorization` | exact selection branch, champion, sealed split, analysis plan, and usage tail |
+| `SealedEvaluationReport` | frozen execution planes, authorization, final result, and evaluator evidence |
+| `ExperimentCompletionReport` | sealed authorization and immutable final report |
+| `ExperimentInvalidationReport` | integrity/leakage evidence and invalidated source branch |
 
 `HarnessSnapshot` is a manifest, not a copied directory. Applying a patch
 creates new component blobs and a new snapshot; unchanged component hashes are
@@ -127,9 +164,10 @@ The catalog records relation type and producer identity. At minimum it supports
 events; changing a mutable database row is not sufficient evidence. Cache reuse
 is legal only for an exact execution fingerprint match.
 
-Artifact hashes are identifiers, not access tokens. Mutable workers have no
-general `list` or `get` access to the repository; the trusted controller
-materializes an explicit read-only view for each run.
+Artifact hashes are identifiers, not access tokens. In the target runtime,
+mutable workers have no general `list` or `get` access to the repository; the
+trusted controller materializes an explicit read-only view for each run. M0.2
+does not yet enforce that worker view at a process or filesystem boundary.
 
 ## 4. Lifecycle state machines
 
@@ -156,25 +194,50 @@ sequential policy permits it; otherwise further work is a new candidate or
 experiment. Promotion atomically appends a decision and advances the champion
 pointer while retaining the previous champion for rollback.
 
+Multiple siblings may finish against the same parent. If one sibling advances
+the champion first, a later valid local `PROMOTE` is preserved in a typed
+`SupersededCandidateReport` but resolves to terminal `INCONCLUSIVE`; it cannot
+replace the new champion, and it no longer leaves selection blocked by a
+nonterminal candidate.
+
 The current `CandidateJournal` enforces immutable links, sequence, stream,
-candidate identity, and the legal transition graph. Trusted admission and
-terminal-decision services separately replay the referenced semantic joins
-before `VALID` and terminal events. The future experiment controller will own
-those calls so an untrusted caller cannot bypass them by invoking the
-structural journal directly.
+candidate identity, and the legal transition graph. The implemented semantic
+`ExperimentController` owns trusted admission, required-probe outcomes, gate
+accounting, evidence completion, and terminal authorization. It replays the
+referenced semantic joins before publishing `VALID`, `REJECTED`,
+`EVIDENCE_COMPLETE`, `PROMOTED`, or `INCONCLUSIVE` events rather than treating
+the structural journal as authority.
 
-The current terminal replay closes the deterministic score path over typed
-trial tuples and mechanism evidence. Candidate/arm/split-bound trial-batch
-envelopes, an independently pinned gate-implementation fingerprint, exact
-media types for every domain artifact, and binding to a specific
-`EVIDENCE_COMPLETE` journal tail remain M0.2 controller work.
+Probe results are stored as `AttestedMechanismEvidence`. A separately
+domain-separated producer capability signs the protocol, candidate and child
+harness, exploration split/task set, frozen execution context, complete checks,
+and concrete source-artifact refs. The protocol pins that producer ID. The
+controller verifies the envelope and source availability before a probe can
+produce either `RUNNING_GATE` or `REJECTED`, and repeats the verification when
+replaying candidate history. A raw caller-authored `passed=true` artifact has
+the wrong media/schema and no accepted attestation.
 
-Experiment transitions are:
+`GateTrialBatch` v2 is an HMAC-attested envelope. Its signed content includes
+the protocol, candidate, parent/candidate arm, harness, gate split and task-set
+identity, complete observations and resource fields, frozen execution context,
+source artifacts, and exact mechanism-evidence reference. The protocol freezes
+the accepted attestor ID. Both the controller and terminal verifier require the
+matching verification capability and recheck every join before scores or
+resource claims are consumed. `GateEvaluationManifest` then closes the gate
+input set over the verified admission report, frozen gate config, protocol gate
+split, both arm batches, and mechanism evidence. The protocol, evaluation
+manifest, and decision report also bind the promotion-gate implementation
+fingerprint. Terminal authorization recomputes the decision from those frozen
+inputs and binds it, the charged usage entry, and the exact
+`EVIDENCE_COMPLETE` journal tail before a terminal event can be appended.
+
+Implemented experiment transitions are:
 
 ```text
-DRAFT -> FROZEN -> SEARCHING -> SELECTION_CLOSED
-                                  -> SEALED_RUNNING -> COMPLETE
-       \---------------- integrity or leakage ----------------> INVALIDATED
+FROZEN -> SEARCHING -> SELECTION_CLOSED -> SEALED_RUNNING -> COMPLETE
+   \          \                \                 \
+    +----------+----------------+-----------------+--> INVALIDATED
+                         integrity or leakage
 ```
 
 `FROZEN` binds the protocol, splits, budgets, seed harness, and stopping rule.
@@ -182,33 +245,48 @@ DRAFT -> FROZEN -> SEARCHING -> SELECTION_CLOSED
 task is opened. A protocol modification forks a new experiment. Cancellation
 may stop work, but it cannot erase completed records.
 
+The lifecycle is recorded as typed linked events. `SelectionClosure`,
+`SealedRunAuthorization`, and `ExperimentCompletionReport` close the normal
+one-way path; `ExperimentInvalidationReport` records the evidence for an
+integrity- or leakage-triggered transition to `INVALIDATED`. These are logical
+artifact and state boundaries, not OS capability boundaries.
+
 ## 5. Exploration, gate, and sealed information flow
 
-The three partitions are enforced as capabilities exposed by `AccessView`, not
-as naming conventions:
+The target architecture enforces the three partitions as capabilities exposed
+by `AccessView`, not as naming conventions:
 
 1. **Exploration:** the split loader sends tasks to isolated runs. Full allowed
    feedback and trajectories may be released to the evolution engine and cited
    by candidates.
 2. **Gate:** the engine can only nominate a registered candidate. The trusted
-   controller privately runs candidate/parent pairs, and the verifier records
-   per-task evidence. The engine receives only the configured aggregate summary
-   or `promote` / `reject` / `inconclusive`; task bodies and per-task gate
-   trajectories never cross back. Every nomination consumes the frozen query
-   budget.
+   execution service privately runs candidate/parent pairs, and the verifier
+   records per-task evidence. The engine receives only the configured aggregate
+   summary or `promote` / `reject` / `inconclusive`; task bodies and per-task
+   gate trajectories never cross back. Every nomination consumes the frozen
+   query budget.
 3. **Sealed:** no search process receives a handle to this view. After
    `SELECTION_CLOSED`, a separate controller evaluates exactly the frozen
    champion and emits the final report. Its result cannot trigger another
    candidate in the same experiment lineage.
 
-Gate and sealed workers have no network egress or persistent candidate-owned
-state. Otherwise a harness could copy private tasks into memory and expose them
-on a later exploration run. Trial order and public identifiers must also avoid
-revealing split membership.
+M0.2 enforces the logical portion of this flow. Gate use is charged from the
+referenced parent and candidate batches; selection freezes the champion,
+analysis plan, and usage tail; sealed access requires an authorization bound to
+that exact closed branch and frozen sealed split. The current controller does
+not load benchmark tasks, launch workers, or prevent a caller process from
+holding additional references. `AccessView` and the worker capability boundary
+remain to be implemented.
+
+In the target runtime, gate and sealed workers must have no network egress or
+persistent candidate-owned state. Otherwise a harness could copy private tasks
+into memory and expose them on a later exploration run. Trial order and public
+identifiers must also avoid revealing split membership.
 
 ## 6. Security and integrity boundary
 
-For M0–M1 the following are invariants, not optimizer preferences:
+For the target M0–M1 runtime, the following are invariants, not optimizer
+preferences:
 
 - Candidate patches cannot target split manifests, task data, graders, gate
   code/configuration, sandbox policy, accounting, the artifact repository, or
@@ -218,8 +296,8 @@ For M0–M1 the following are invariants, not optimizer preferences:
   trusted wrapper and are never persisted in trajectories.
 - Network, filesystem, subprocess, tool, token, time, and monetary access are
   denied by default and granted through versioned allowlists and hard limits.
-- The grader consumes captured output out of process. Candidate output is data;
-  it cannot request grading actions or write a score.
+- The grader consumes captured output outside the candidate process. Candidate
+  output is data; it cannot request grading actions or write a score.
 - Every run fingerprint binds the snapshot, task/version, seed, model and
   inference settings, tool/runtime image, limits, and grader-facing output
   schema. Missing or mismatched fields fail closed.
@@ -227,9 +305,50 @@ For M0–M1 the following are invariants, not optimizer preferences:
   incomplete pairs, budget overruns, leakage, or integrity failures cannot be
   converted into a promotion by the evolution engine.
 
-The controlled-fault suite should exercise these boundaries before a real
-benchmark is used. The concrete adversarial cases and statistical requirements
-remain specified in the verification protocol.
+M0.2 currently enforces a narrower, typed logical subset:
+
+- `CapabilityPolicy` is deny-by-default, supports only exact resource grants,
+  and is bound through the protocol and candidate admission report. It is a
+  schema/admission contract for a future trusted launcher, not an OS-enforced
+  sandbox or system-call policy.
+- Candidate-facing traces contain no score, sealed answer, or grader action.
+  The trusted fixed-output grader validates captured digests, roster/task
+  identity, policy limits, and mechanism telemetry before producing an
+  observation. This separation is in-process, not out-of-process.
+- Mechanism evidence is signed by its own protocol-pinned producer capability.
+  Its HMAC covers the candidate, child harness, exploration split, execution
+  context, complete checks, and their concrete CAS sources; the controller
+  verifies it before the lifecycle can enter the gate and terminal replay
+  verifies it again before promotion.
+- Gate batches are signed by a process-local capability whose ID is frozen in
+  the protocol. The HMAC covers observations, resource use, execution context,
+  sources, and mechanism evidence; the controller verifies it before
+  accounting, and the terminal service verifies it again before promotion.
+- The evaluation manifest, gate implementation fingerprint, terminal
+  recomputation, exact journal tails, and cumulative budget/query entries close
+  the remaining evidence path used for promotion.
+- The semantic controller rejects stale caller-held tails, duplicate charging,
+  forged evidence branches, wrong signers, budget overruns, and illegal
+  candidate or experiment lifecycle transitions within one process. A new
+  controller rejects every supplied experiment lifecycle tail rather than
+  mistaking structural replay for semantic recovery.
+
+M0.2 does **not** provide fresh OS workspaces, process reset, network or
+filesystem isolation, subprocess controls, credential isolation, or an
+out-of-process grader. Its symmetric verifiers contain HMAC secrets, and
+ephemeral key loss makes historical evidence unverifiable outside the original
+process. Producer attestations authenticate complete assertions and source
+hashes, but M0.2 does not replay those sources to re-derive mechanism booleans
+or scores. It also has no durable multi-process compare-and-swap, lease,
+transactional head update, pre-execution attempt reservation, or authenticated
+sealed-evaluator producer. Those controls must be implemented and tested before
+the target isolation and durable-replay claims apply.
+
+The controlled adversarial suite now covers no-op, wrong-target, inactive,
+non-adherent, placebo, regression, timeout, malformed, tamper, budget, and
+leakage cases, all of which fail closed instead of producing `PROMOTE`. These
+fixtures validate logical grading and control-path integrity; they are not
+sandbox-escape tests.
 
 ## 7. Mutation rollout order
 
@@ -260,12 +379,12 @@ src/spiral_harness/
   core/            # implemented: immutable state, experiment and lifecycle schemas
   storage/         # implemented: CAS objects and content-addressed linked journal
   evidence/        # implemented: trajectory, span, packet and diagnosis contracts
-  verification/    # implemented: pairing, statistics, constraints, promotion gate
-  benchmark/       # adapter protocol + controlled fixture; real adapter planned
+  verification/    # implemented: paired gate, bound trial batches, closure artifacts
+  benchmark/       # controlled fixture + in-process trusted grader; real adapter planned
   harness/         # implemented: atomic policy validation/snapshot application
-  execution/       # executor protocol; controller, sandbox and capture planned
+  execution/       # executor protocol + capability-policy schema; launcher/sandbox planned
   evolution/       # controlled flow implemented; automatic search/baselines planned
-  experiments/     # implemented: trusted admission and decision replay; controller planned
+  experiments/     # implemented: semantic controller, usage/lifecycle ledgers, gate replay
   access/          # planned: exploration/gate/sealed views and disclosure policy
 ```
 
@@ -275,8 +394,9 @@ adapters do not own storage or gate policy; `experiments` composes services but
 contains no scoring logic. The CLI invokes experiment use cases and never
 bypasses state transitions.
 
-The first end-to-end vertical slice should be deliberately small: a controlled
-prompt fault, one typed repair, paired deterministic trials, an immutable
-decision, and complete replay from artifact hashes. The real benchmark and
-automated search are added only after that slice can detect no-op, regression,
-tampering, and inconclusive candidates correctly.
+The controlled end-to-end vertical slice now exercises a prompt fault, one
+typed repair, paired deterministic trials, trusted grading, immutable gate and
+lifecycle closure, and replay from artifact hashes. The immediate next stage is
+one real deterministic or replayable benchmark plus a fixed-model production
+runner. Automated search follows that integration, while OS isolation and
+durable multi-process coordination remain parallel hardening work.
