@@ -26,7 +26,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/spiral_harness"]
+packages = ["spiral_harness"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"

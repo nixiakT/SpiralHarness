@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SOURCE_ROOT = PROJECT_ROOT / "src" / "spiral_harness"
+SOURCE_ROOT = PROJECT_ROOT / "spiral_harness"
 TEST_ROOT = PROJECT_ROOT / "tests"
 
 DEFAULT_MODULE_LINE_LIMIT = 700
@@ -46,7 +46,7 @@ FORBIDDEN_EAGER_IMPORT_PREFIXES = (
 
 @dataclass(frozen=True, slots=True)
 class SourceModule:
-    """One concrete Python module in the src-layout package."""
+    """One concrete Python module in the repository-root package."""
 
     name: str
     path: Path
@@ -375,10 +375,10 @@ def test_non_package_modules_are_not_import_only_forwarders() -> None:
     assert not violations, "import-only forwarding modules:\n" + "\n".join(violations)
 
 
-def test_src_layout_has_no_flat_layout_shadow_package() -> None:
-    shadow_package = PROJECT_ROOT / "spiral_harness"
-    assert not shadow_package.exists(), (
-        "repository-root spiral_harness/ would shadow the src-layout package"
+def test_flat_layout_has_no_legacy_src_package() -> None:
+    legacy_package = PROJECT_ROOT / "src" / "spiral_harness"
+    assert not legacy_package.exists(), (
+        "legacy src/spiral_harness/ would duplicate the repository-root package"
     )
 
 

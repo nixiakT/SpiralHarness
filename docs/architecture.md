@@ -451,7 +451,7 @@ interaction experiment can attribute their joint effect.
 ## 8. Python package layout
 
 ```text
-src/spiral_harness/
+spiral_harness/
   cli.py
   core/            # implemented: immutable state, experiment and lifecycle schemas
   storage/         # implemented: CAS objects and content-addressed linked journal
@@ -465,13 +465,17 @@ src/spiral_harness/
   experiments/     # experiment/search/study controllers, gate replay, four-condition protocol
 ```
 
-`src/spiral_harness` is one package path, not two nested application layers:
-`src` is the distribution build root and `spiral_harness` is the Python import
-namespace. GitHub and VS Code compact single-child directories into the label
-`src/spiral_harness`; that display does not indicate an empty directory. Keeping
-the build root prevents a checkout-local package from masking a broken wheel.
-Every domain directory above contains implemented code; future memory, tool,
-service, and UI directories are added only with their first real module.
+`spiral_harness/` is intentionally visible at the repository root. This flat
+layout follows the pinned HarnessX and Raven repositories and makes the import
+namespace easier to find while browsing the project. Its main tradeoff is that
+a checkout-local import can mask packaging mistakes, so CI builds the wheel and
+verifies it from an isolated installation. Every domain directory above contains
+implemented code; future memory, tool, service, and UI directories are added only
+with their first real module.
+
+GitHub Actions is different: workflow files must remain under the platform-owned
+`.github/workflows/` path. GitHub and VS Code may compact that single-child chain
+into one label, but neither directory is an empty application layer.
 
 Domain `__init__.py` files do not aggregate implementation symbols. Internal
 and test code imports each symbol from its owning leaf module, so importing a

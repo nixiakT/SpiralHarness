@@ -392,6 +392,13 @@ Do not copy the whole product surface before the evolution experiment is
 credible. Otherwise infrastructure complexity will hide whether the research
 mechanism works.
 
+The pinned HarnessX and Raven snapshots both expose their Python import package
+at the repository root (`harnessx/` and `raven/`). SpiralHarness follows that
+flat layout with `spiral_harness/` for direct navigation. Because flat layouts
+can let checkout-local imports hide a broken distribution, the project keeps an
+isolated wheel-install verification in CI rather than adding a second source
+tree or a forwarding package.
+
 ## 4. Cross-project architecture matrix
 
 | Concern | Strong reference pattern | Common gap | SpiralHarness decision |
