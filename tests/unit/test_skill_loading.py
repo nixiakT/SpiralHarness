@@ -396,6 +396,13 @@ def test_disclosure_rejects_skill_id_outside_package_slug_schema(
         ("metadata", "applicability_tags", ["t" * 257], "applicability tag"),
         ("procedure", None, "p" * 65_537, "procedure"),
     ],
+    ids=[
+        "metadata-name",
+        "metadata-summary",
+        "metadata-activation-guidance",
+        "metadata-applicability-tag",
+        "procedure",
+    ],
 )
 def test_disclosure_rejects_text_beyond_package_schema_boundaries(
     tmp_path: Path,

@@ -378,14 +378,17 @@ def test_prompt_payload_must_be_nonempty_exact_utf8_text(
 @pytest.mark.parametrize("with_skill", [False, True])
 @pytest.mark.parametrize(
     "delimiter",
-    [SKILL_CONTEXT_START_DELIMITER, SKILL_CONTEXT_END_DELIMITER],
+    [
+        pytest.param(SKILL_CONTEXT_START_DELIMITER, id="start"),
+        pytest.param(SKILL_CONTEXT_END_DELIMITER, id="end"),
+    ],
 )
 def test_base_prompt_cannot_forge_skill_context_boundaries(
     tmp_path: Path,
     with_skill: bool,
     delimiter: str,
 ) -> None:
-    store = ArtifactStore(tmp_path / f"{with_skill}-{delimiter[-8:]}")
+    store = ArtifactStore(tmp_path)
     spec = fixed_spec()
     components = [prompt_component(store, prompt=f"base {delimiter}".encode())]
     if with_skill:
