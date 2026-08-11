@@ -41,17 +41,39 @@ The M0 verification kernel now includes:
 - a three-state promotion gate (`promote`, `reject`, `inconclusive`);
 - hard checks for preregistered rosters, mechanism evidence, protected slices,
   policy violations, regressions, and resource budgets.
+- a deterministic controlled-fault vertical slice with logically disjoint
+  exploration and gate rosters and replayable artifact lineage.
 
 The immediate plan is:
 
-1. exercise the kernel with a deterministic controlled-fault fixture;
-2. connect one reproducible benchmark and a fixed-model runner;
+1. connect one reproducible benchmark and a fixed-model runner;
+2. implement bounded diagnosis/proposal strategies over prompt mutations;
 3. compare targeted evolution with static, random-mutation, and prompt-only
    baselines under the same evaluation budget;
 4. expand the mutation space only after the core claim is measurable.
 
 See [the research plan](docs/research-plan.md) and
 [the verification protocol](docs/verification-protocol.md).
+
+## Run the M0 vertical slice
+
+Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv sync --locked --all-groups
+uv run spiral demo --output runs/controlled-demo
+uv run pytest
+```
+
+The demo injects a known prompt fault into a deterministic synthetic executor,
+diagnoses it on an exploration roster, applies one atomic prompt repair, and
+evaluates parent/candidate pairs on a disjoint gate roster. It prints the root
+SHA-256 of a replay manifest; all prompts, manifests, trials, mechanism checks,
+gate configuration, and the decision are stored beneath the output directory.
+
+The fixture validates plumbing and adversarial gate behavior only. It is not a
+real benchmark, does not call an LLM, and is not evidence of model or agent
+capability improvement.
 
 ## Core principle
 

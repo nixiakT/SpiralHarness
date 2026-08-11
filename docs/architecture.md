@@ -1,9 +1,9 @@
 # M0–M1 architecture
 
 > **Status:** target architecture. M0 currently implements immutable core
-> schemas, content-addressed local artifacts, paired statistics, and a promotion
-> gate. Other modules and isolation guarantees below remain planned until they
-> are explicitly marked as implemented.
+> schemas, content-addressed local artifacts, paired statistics, a promotion
+> gate, and a synthetic controlled-fault vertical slice. Other modules and
+> isolation guarantees below remain planned until explicitly marked otherwise.
 
 This document turns the contracts in the [research plan](research-plan.md) and
 [verification protocol](verification-protocol.md) into implementable module and
@@ -240,10 +240,10 @@ src/spiral_harness/
   core/            # implemented: immutable schemas and canonical hashing
   storage/         # implemented: content-addressed local artifact objects
   verification/    # implemented: pairing, statistics, constraints, promotion gate
-  benchmark/       # planned: adapter protocol, controlled fixture, M1 adapter
+  benchmark/       # controlled fixture implemented; adapter protocol/M1 adapter planned
   harness/         # planned: snapshots, patch application, component validators
   execution/       # planned: controller, sandbox, fingerprints, event capture
-  evolution/       # planned: diagnosis, proposal, search strategies, baselines
+  evolution/       # controlled flow implemented; automatic search/baselines planned
   experiments/     # planned: budgets, state-machine controller, orchestration
   access/          # planned: exploration/gate/sealed views and disclosure policy
 ```
