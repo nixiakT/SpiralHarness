@@ -664,9 +664,11 @@ def test_execute_record_returns_atomic_refs_under_concurrent_calls(tmp_path) -> 
     assert len({record.execution_ref.sha256 for record in records}) == 2
     assert len({record.outcome_ref.sha256 for record in records}) == 2
     for record in records:
+        assert record.schema_version == "3"
         assert store.get_json(record.execution_ref, ModelExecution) == record.execution
         outcome = store.get_json(record.outcome_ref, AttemptOutcome)
         reservation = store.get_json(outcome.reservation_ref, AttemptReservation)
+        assert outcome.writer_epoch_id == reservation.writer_epoch_id
         assert outcome.execution_ref == record.execution_ref
         assert reservation.request_sha256 == record.execution.request_sha256
         assert reservation.execution_fingerprint == record.execution.execution_fingerprint

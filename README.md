@@ -31,6 +31,18 @@ SpiralHarness initially focuses on:
 Model training, open-ended personalization, and unsupervised self-preference
 are later extensions, not part of the initial claim.
 
+## Repository layout
+
+- `spiral_harness/`: the single importable package, grouped by domain; there is
+  no duplicate `src/spiral_harness/` tree or forwarding package.
+- `tests/`: unit, integration, and architecture contracts at one visible level.
+- `docs/`: research protocols, architecture decisions, and the pinned
+  open-source architecture study.
+- `tools/`: small repository verification utilities.
+- `.github/workflows/`: CI only; GitHub Actions requires this exact path.
+
+The repository does not track placeholder directories or `.gitkeep` files.
+
 ## Status
 
 The M0.2 verification and experiment-control kernel includes:
@@ -108,12 +120,14 @@ The first M1 benchmark/runner foundation now also includes:
 - a provider-neutral fixed-model specification and score-free runner whose
   paired fingerprint separates treatment-arm request identity from the shared
   model/task/seed context;
-- a preflight certificate that freezes the exact model specification and
-  ledger boundary before a paired batch, with receipt replay recomputing that
-  fingerprint and requiring both arms to share the same task bytes;
-- an immutable attempt reservation/outcome ledger that reserves before a
-  backend call, settles successes, burns uncertain failures, poisons known
-  token overruns, and rejects restart under a different budget fingerprint;
+- a v3 preflight certificate that freezes the exact model specification,
+  ledger boundary, and process-local writer epoch before a paired batch, with
+  receipt replay rejecting reconstructed historical writers, recomputing the
+  model fingerprint, and requiring both arms to share the same task bytes;
+- an immutable v3 attempt reservation/outcome ledger whose records bind the
+  originating writer epoch, reserve before a backend call, settle successes,
+  burn uncertain failures, poison known token overruns, and make reopened tails
+  audit-only;
 - an exact four-condition protocol for static, random-valid, prompt-only, and
   evidence-targeted studies, including independent search-run seeds, paired
   rollout seeds, identical ceilings, information boundaries, and structural
@@ -206,18 +220,22 @@ artifacts are strictly parsed and bound to reservations, but are assertions of
 the trusted in-process runner rather than cryptographic producer attestations.
 
 The skill slice establishes package integrity, direct/existence-only reference
-closure, immediate revision admission, and exact request activation plumbing
-only. The automatic strategy grammar, finite catalogue, and proposal contracts
-remain prompt-only; there is no
-general skill router or skill search proposal. No trusted skill-specific
-adherence, behavior, revert, or placebo result enters the promotion gate yet.
+closure, immediate revision admission, and exact settled skill request
+inclusion/replay as a prerequisite only. On a settled attempt, replay rejoins
+the exact rules disclosure and canonical request to the completed execution,
+attempt outcome, receipt, and ledger. It does not prove delivery to a remote
+provider, model attention or activation, adherence, behavior change, downstream
+benefit, or generalization, and it produces no skill promotion authority. The
+automatic strategy grammar, finite catalogue, and proposal contracts remain
+prompt-only; there is no general skill router or skill search proposal.
 Consequently this repository does not yet demonstrate a skill gain.
 
 The next implementation stages are:
 
-1. turn execution/request replay into trusted skill-activation evidence, then
-   add independent adherence and behavior probes plus parent-revert and placebo
-   interventions before allowing a skill candidate to reach the gate;
+1. use exact settled skill request inclusion/replay only as a prerequisite for
+   independent provider-delivery and runtime-activation evidence, then add
+   adherence and behavior probes plus parent-revert and placebo interventions
+   before allowing a skill candidate to reach the gate;
 2. extend the bounded search grammar to skill proposals only after that
    verification path is fail-closed, then connect the replayable conditions to
    a credentialed fixed-model provider and preregistered reportable study;

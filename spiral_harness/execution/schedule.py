@@ -17,7 +17,7 @@ from pydantic import Field, field_validator, model_validator
 
 from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.models import ArtifactRef, ImmutableModel, NonEmptyStr, Sha256
-from spiral_harness.execution.attempts import AttemptBudgetExceeded
+from spiral_harness.execution.attempts import AttemptBudgetExceeded, AttemptLedger
 from spiral_harness.execution.contracts import (
     ATTEMPT_OUTCOME_MEDIA_TYPE,
     AttemptBudget,
@@ -33,7 +33,7 @@ _SEED_SCHEMA = "spiral-harness/deterministic-seed/v2"
 _CELL_SCHEMA = "spiral-harness/evaluation-cell/v2"
 _PAIRED_CELL_SCHEMA = "spiral-harness/paired-evaluation-cell/v2"
 SCHEDULE_PREFLIGHT_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.schedule-preflight-certificate.v2+json"
+    "application/vnd.spiral-harness.schedule-preflight-certificate.v3+json"
 )
 
 
@@ -346,11 +346,12 @@ class ScheduleBudgetExceeded(AttemptBudgetExceeded):
 class SchedulePreflightCertificate(ImmutableModel):
     """Immutable proof of the exact capacity checked before batch execution."""
 
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     schedule_fingerprint: Sha256
     model_spec: FrozenModelSpec
     budget_fingerprint: Sha256
     ledger_id: NonEmptyStr | None
+    writer_epoch_id: Sha256 | None
     ledger_tail_ref: ArtifactRef | None
     cell_count: Annotated[int, Field(ge=1, strict=True)]
     max_attempts_per_cell: Annotated[int, Field(ge=1, strict=True)]
@@ -369,6 +370,8 @@ class SchedulePreflightCertificate(ImmutableModel):
             raise ValueError("ledger_tail_ref declares the wrong media type")
         if self.ledger_tail_ref is not None and self.ledger_id is None:
             raise ValueError("a non-empty ledger boundary requires ledger_id")
+        if (self.ledger_id is None) != (self.writer_epoch_id is None):
+            raise ValueError("ledger_id and writer_epoch_id must be declared together")
         if self.required_attempts != self.cell_count * self.max_attempts_per_cell:
             raise ValueError("required_attempts does not match the frozen schedule shape")
         if self.required_tokens != self.required_attempts * self.token_ceiling_per_attempt:
@@ -382,6 +385,41 @@ class SchedulePreflightCertificate(ImmutableModel):
     @property
     def fingerprint(self) -> str:
         return canonical_sha256(self)
+
+    def binds_schedule(self, schedule: EvaluationBatchSchedule) -> bool:
+        """Return whether all duplicated shape fields match one exact schedule."""
+
+        checked = EvaluationBatchSchedule.model_validate(schedule, strict=True)
+        return (
+            self.schedule_fingerprint,
+            self.cell_count,
+            self.max_attempts_per_cell,
+            self.token_ceiling_per_attempt,
+            self.required_attempts,
+            self.required_tokens,
+        ) == (
+            checked.fingerprint,
+            checked.cell_count,
+            checked.max_attempts_per_cell,
+            checked.token_ceiling_per_attempt,
+            checked.required_attempts,
+            checked.required_tokens,
+        )
+
+    def binds_ledger_state(self, state: AttemptLedgerState) -> bool:
+        """Return whether capacity came from the exact preflight writer boundary."""
+
+        checked = AttemptLedgerState.model_validate(state, strict=True)
+        return (
+            self.ledger_id == checked.ledger_id
+            and self.writer_epoch_id == checked.writer_epoch_id
+            and self.budget_fingerprint == checked.budget.fingerprint
+            and self.ledger_tail_ref == checked.tail_ref
+            and checked.pending_reservation_ref is None
+            and not checked.poisoned
+            and self.available_attempts == checked.remaining_attempts
+            and self.available_tokens == checked.remaining_tokens
+        )
 
     def binds_execution(self, execution: ModelExecution) -> bool:
         """Return whether an execution exactly satisfies this frozen model boundary."""
@@ -399,14 +437,14 @@ class SchedulePreflightCertificate(ImmutableModel):
 
 def preflight_attempt_budget(
     schedule: EvaluationBatchSchedule,
-    capacity: AttemptBudget | AttemptLedgerState,
+    capacity: AttemptBudget | AttemptLedger,
     model_spec: FrozenModelSpec,
 ) -> SchedulePreflightCertificate:
-    """Atomically decide whether the complete frozen batch can be started.
+    """Decide whether a complete batch fits a real ledger or planning budget.
 
-    This function is pure and performs no repository, backend, or optimizer
-    call.  Controllers must obtain the certificate before the first such call
-    and must discard it if the bound ledger tail changes.
+    A raw budget produces an unbound planning certificate that execution
+    rejects.  A runnable certificate replays an exact ``AttemptLedger``; a
+    caller-authored ``AttemptLedgerState`` is never capacity authority.
     """
 
     checked_schedule = EvaluationBatchSchedule.model_validate(schedule, strict=True)
@@ -414,11 +452,12 @@ def preflight_attempt_budget(
     if isinstance(capacity, AttemptBudget):
         budget = AttemptBudget.model_validate(capacity, strict=True)
         ledger_id = None
+        writer_epoch_id = None
         ledger_tail_ref = None
         available_attempts = budget.max_attempts
         available_tokens = budget.max_total_tokens
-    elif isinstance(capacity, AttemptLedgerState):
-        state = AttemptLedgerState.model_validate(capacity, strict=True)
+    elif type(capacity) is AttemptLedger:
+        state = capacity.state()
         budget = state.budget
         if state.poisoned:
             raise ScheduleBudgetExceeded("attempt ledger is poisoned")
@@ -427,11 +466,12 @@ def preflight_attempt_budget(
                 "all-or-nothing preflight requires a ledger without an open reservation"
             )
         ledger_id = state.ledger_id
+        writer_epoch_id = state.writer_epoch_id
         ledger_tail_ref = state.tail_ref
         available_attempts = state.remaining_attempts
         available_tokens = state.remaining_tokens
     else:
-        raise TypeError("capacity must be an AttemptBudget or AttemptLedgerState")
+        raise TypeError("capacity must be an AttemptBudget or exact AttemptLedger")
 
     if checked_schedule.token_ceiling_per_attempt > budget.max_tokens_per_attempt:
         raise ScheduleBudgetExceeded(
@@ -451,6 +491,7 @@ def preflight_attempt_budget(
         model_spec=checked_model_spec,
         budget_fingerprint=budget.fingerprint,
         ledger_id=ledger_id,
+        writer_epoch_id=writer_epoch_id,
         ledger_tail_ref=ledger_tail_ref,
         cell_count=checked_schedule.cell_count,
         max_attempts_per_cell=checked_schedule.max_attempts_per_cell,

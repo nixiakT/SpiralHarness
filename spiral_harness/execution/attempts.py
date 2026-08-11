@@ -1,14 +1,8 @@
-"""Immutable, conservative accounting for single model attempts.
-
-The ledger deliberately has no mutable, repository-wide head.  One
-``AttemptLedger`` instance is the single writer for its in-memory tail and a
-process-local lock serializes its methods.  A caller may persist and later
-reopen an explicit tail, but concurrent processes need a durable lease/CAS
-service above this module; this class does not claim to provide one.
-"""
+"""Conservative attempt accounting for one process-local writer and audit views."""
 
 from __future__ import annotations
 
+import secrets
 from threading import RLock
 
 import spiral_harness.execution.contracts as _contracts
@@ -35,20 +29,9 @@ class AttemptReservationError(AttemptAccountingError):
 class AttemptLedger:
     """Append-only reservation/outcome accounting for one process-local writer.
 
-    Reservations are persisted before a caller may invoke a backend.  Success
-    settles usage derived from a strictly parsed execution; every uncertain or
-    failed attempt burns the complete reservation.  A reported overrun charges
-    its actual usage and permanently poisons the stream, so later work cannot
-    compound a backend's violation of its reservation.
-
-    The internal ``RLock`` protects threads sharing this exact object only.  It
-    is not an inter-process lock, durable lease, or distributed head compare-and-
-    swap.  Such a coordinator must pass this ledger a uniquely-owned stream.
-
-    Strict ``ModelExecution`` replay establishes semantic integrity between the
-    trusted runner and this ledger; content hashes are not producer signatures.
-    Code holding the ledger/reservation capability remains trusted in this M1
-    boundary and must not be exposed to candidate workers or plugins.
+    Reservations precede backend calls; failures burn their reservation and an
+    overrun poisons the stream. Reopened tails are audit-only. Cross-process
+    writers still require durable coordination around this trusted capability.
     """
 
     def __init__(
@@ -69,17 +52,15 @@ class AttemptLedger:
         self._repository = repository
         self._ledger_id = normalized_id
         self._budget = _contracts.AttemptBudget.model_validate(budget, strict=True)
+        self.__writer_epoch_id = secrets.token_hex(32)
         self._lock = RLock()
         self._tail_ref = (
             None if tail_ref is None else ArtifactRef.model_validate(tail_ref, strict=True)
         )
-        # Refuse a foreign, malformed, or over-budget supplied tail eagerly.
         self._replay(self._tail_ref)
 
     @property
     def repository(self) -> ArtifactRepository:
-        """Repository used for both accounting and execution artifacts."""
-
         return self._repository
 
     @property
@@ -95,10 +76,12 @@ class AttemptLedger:
         return self._tail_ref
 
     def state(self) -> _contracts.AttemptLedgerState:
-        """Re-verify and derive state from the current explicit tail."""
-
         with self._lock:
             return self._replay(self._tail_ref)
+
+    def state_at(self, tail_ref: ArtifactRef | None) -> _contracts.AttemptLedgerState:
+        with self._lock:
+            return self._replay(tail_ref)
 
     def reserve(
         self,
@@ -109,11 +92,15 @@ class AttemptLedger:
         token_ceiling: int | None = None,
     ) -> ArtifactRef:
         """Persist a single-use reservation before any backend call is allowed."""
-
         with self._lock:
             state = self._replay(self._tail_ref)
             if state.pending_reservation_ref is not None:
                 raise AttemptReservationError("the ledger already has an open reservation")
+            if (
+                state.tail_ref is not None
+                and self._load_outcome(state.tail_ref).writer_epoch_id != self.__writer_epoch_id
+            ):
+                raise AttemptReservationError("a reopened ledger is an audit-only view")
             if state.poisoned:
                 raise AttemptBudgetExceeded("attempt ledger is poisoned by a token overrun")
             if state.attempts_used >= self._budget.max_attempts:
@@ -132,6 +119,7 @@ class AttemptLedger:
 
             reservation = _contracts.AttemptReservation(
                 ledger_id=self._ledger_id,
+                writer_epoch_id=self.__writer_epoch_id,
                 budget_fingerprint=self._budget.fingerprint,
                 sequence=state.attempts_used,
                 task_fingerprint=task_fingerprint,
@@ -162,8 +150,6 @@ class AttemptLedger:
         request_sha256: str,
         token_ceiling: int | None = None,
     ) -> ArtifactRef:
-        """Reserve only if the process-local ledger is still at an exact outcome head."""
-
         with self._lock:
             checked_expected = (
                 None
@@ -184,8 +170,6 @@ class AttemptLedger:
                 raise AttemptReservationError(
                     "attempt ledger advanced beyond the expected scheduled boundary"
                 )
-            # ``RLock`` keeps the comparison and the nested reservation atomic
-            # for every writer sharing this exact process-local ledger object.
             return self.reserve(
                 task_fingerprint=task_fingerprint,
                 execution_fingerprint=execution_fingerprint,
@@ -200,7 +184,6 @@ class AttemptLedger:
         execution_ref: ArtifactRef,
     ) -> ArtifactRef:
         """Consume the current reservation using only verified execution usage."""
-
         with self._lock:
             checked_reservation_ref, reservation = self._require_current_reservation(
                 reservation_ref
@@ -239,7 +222,6 @@ class AttemptLedger:
         execution_ref: ArtifactRef | None = None,
     ) -> ArtifactRef:
         """Burn a failed attempt, poisoning the stream on a known overrun."""
-
         with self._lock:
             checked_reservation_ref, reservation = self._require_current_reservation(
                 reservation_ref
@@ -295,6 +277,7 @@ class AttemptLedger:
     ) -> ArtifactRef:
         outcome = _contracts.AttemptOutcome(
             ledger_id=self._ledger_id,
+            writer_epoch_id=self.__writer_epoch_id,
             budget_fingerprint=self._budget.fingerprint,
             sequence=reservation.sequence,
             reservation_ref=reservation_ref,
@@ -332,7 +315,10 @@ class AttemptLedger:
             raise AttemptReservationError(
                 "reservation is stale, foreign, forged, or already consumed"
             )
-        return checked_ref, self._load_reservation(checked_ref)
+        reservation = self._load_reservation(checked_ref)
+        if reservation.writer_epoch_id != self.__writer_epoch_id:
+            raise AttemptReservationError("a reopened ledger is an audit-only view")
+        return checked_ref, reservation
 
     def _load_execution(
         self,
@@ -394,6 +380,7 @@ class AttemptLedger:
         if tail_ref is None:
             return _contracts.AttemptLedgerState(
                 ledger_id=self._ledger_id,
+                writer_epoch_id=self.__writer_epoch_id,
                 budget=self._budget,
                 tail_ref=None,
                 pending_reservation_ref=None,
@@ -452,6 +439,7 @@ class AttemptLedger:
 
         pairs = tuple(reversed(backwards))
         previous_outcome_ref: ArtifactRef | None = None
+        chain_writer_epoch_id: str | None = None
         charged_tokens = 0
         poisoned = False
         for sequence, (reservation_ref, reservation, outcome_ref, outcome) in enumerate(pairs):
@@ -466,6 +454,10 @@ class AttemptLedger:
                 raise AttemptLedgerIntegrityError(
                     "attempt ledger link does not match prior outcome"
                 )
+            if chain_writer_epoch_id is None:
+                chain_writer_epoch_id = reservation.writer_epoch_id
+            elif reservation.writer_epoch_id != chain_writer_epoch_id:
+                raise AttemptLedgerIntegrityError("attempt chain crosses writer epochs")
             charged_tokens += outcome.charged_tokens
             poisoned = outcome.disposition is _contracts.AttemptDisposition.POISONED
             previous_outcome_ref = outcome_ref
@@ -481,6 +473,11 @@ class AttemptLedger:
                 raise AttemptLedgerIntegrityError("pending reservation sequence is not contiguous")
             if reservation.previous_outcome_ref != previous_outcome_ref:
                 raise AttemptLedgerIntegrityError("pending reservation link is inconsistent")
+            if (
+                chain_writer_epoch_id is not None
+                and reservation.writer_epoch_id != chain_writer_epoch_id
+            ):
+                raise AttemptLedgerIntegrityError("attempt chain crosses writer epochs")
             pending_tokens = reservation.reserved_tokens
 
         attempts_used = len(pairs) + int(pending is not None)
@@ -492,6 +489,7 @@ class AttemptLedger:
 
         return _contracts.AttemptLedgerState(
             ledger_id=self._ledger_id,
+            writer_epoch_id=self.__writer_epoch_id,
             budget=self._budget,
             tail_ref=checked_tail,
             pending_reservation_ref=None if pending is None else pending[0],
@@ -511,6 +509,8 @@ class AttemptLedger:
     ) -> None:
         if reservation.ledger_id != self._ledger_id or outcome.ledger_id != self._ledger_id:
             raise AttemptLedgerIntegrityError("attempt artifact belongs to another ledger")
+        if reservation.writer_epoch_id != outcome.writer_epoch_id:
+            raise AttemptLedgerIntegrityError("reservation and outcome writer epochs differ")
         if (
             reservation.budget_fingerprint != self._budget.fingerprint
             or outcome.budget_fingerprint != self._budget.fingerprint

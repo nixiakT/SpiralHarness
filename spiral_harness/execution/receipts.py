@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable
+from itertools import pairwise
 from typing import Annotated, Literal, Self
 
 from pydantic import Field, model_validator
@@ -33,7 +34,7 @@ from spiral_harness.execution.schedule import (
 )
 from spiral_harness.storage.protocol import ArtifactRepository
 
-EXECUTION_RECEIPT_MEDIA_TYPE = "application/vnd.spiral-harness.execution-receipt.v2+json"
+EXECUTION_RECEIPT_MEDIA_TYPE = "application/vnd.spiral-harness.execution-receipt.v3+json"
 
 
 class ExecutionReceiptError(RuntimeError):
@@ -45,8 +46,6 @@ class ExecutionReceiptIntegrityError(ExecutionReceiptError):
 
 
 class ExecutionReceiptKey(ImmutableModel):
-    """Unique attempt slot inside one logical evaluation cell."""
-
     schema_version: Literal["1"] = "1"
     cell_fingerprint: Sha256
     attempt_index: Annotated[int, Field(ge=0, strict=True)]
@@ -59,7 +58,7 @@ class ExecutionReceiptKey(ImmutableModel):
 class ExecutionReceipt(ImmutableModel):
     """Content-addressed binding from a scheduled cell to one terminal attempt."""
 
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     schedule_fingerprint: Sha256
     preflight_ref: ArtifactRef
     preflight_fingerprint: Sha256
@@ -104,9 +103,7 @@ class ExecutionReceipt(ImmutableModel):
 
 
 class ScheduledExecutionRecord(ImmutableModel):
-    """Atomic runner result plus every reference needed for receipt replay."""
-
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     schedule_fingerprint: Sha256
     preflight_ref: ArtifactRef
     cell: EvaluationCellKey
@@ -154,9 +151,7 @@ class ScheduledExecutionRecord(ImmutableModel):
 
 
 class TrustedExecutionUsage(ImmutableModel):
-    """Usage and completion counts derived solely by verified receipt replay."""
-
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     schedule_fingerprint: Sha256
     receipt_refs: tuple[ArtifactRef, ...]
     ledger_tail_refs: tuple[ArtifactRef, ...]
@@ -195,7 +190,6 @@ class TrustedExecutionUsage(ImmutableModel):
     @property
     def tokens(self) -> int:
         """Research and hard-budget usage is the conservative charged amount."""
-
         return self.charged_tokens
 
     @property
@@ -215,7 +209,6 @@ def publish_execution_receipt(
     ledger_tail_ref: ArtifactRef,
 ) -> ArtifactRef:
     """Verify one terminal attempt and publish its immutable cell receipt."""
-
     checked_repository = _require_repository(repository)
     checked_schedule = EvaluationBatchSchedule.model_validate(schedule, strict=True)
     checked_cell = EvaluationCellKey.model_validate(cell, strict=True)
@@ -296,17 +289,7 @@ def execute_scheduled_attempt(
     task: object,
     harness_ref: ArtifactRef,
 ) -> ScheduledExecutionRecord:
-    """Materialize an exact harness ref, execute, and bind its accounting refs.
-
-    ``task`` must be a single candidate-facing view containing only the task id
-    and question.  Benchmark adapters, rosters, gold answers, graders, and
-    partition capabilities are rejected by :meth:`CandidateTask.from_task_view`.
-
-    Calls for one batch are deliberately serialized.  The first call binds to
-    the preflight ledger tail.  Every later call must name the immediately
-    preceding outcome and its already-published receipt.
-    """
-
+    """Execute one serialized scheduled attempt and bind its accounting refs."""
     if type(runner) is not FixedModelRunner:
         raise TypeError("runner must be an exact FixedModelRunner")
     checked_schedule = EvaluationBatchSchedule.model_validate(schedule, strict=True)
@@ -351,6 +334,16 @@ def execute_scheduled_attempt(
         raise ExecutionReceiptIntegrityError(
             "scheduled execution requires a ledger-bound preflight certificate"
         )
+    try:
+        boundary_state = runner.attempt_state_at(preflight.ledger_tail_ref)
+    except Exception as exc:
+        raise ExecutionReceiptIntegrityError(
+            "preflight ledger boundary cannot be replayed"
+        ) from exc
+    if boundary_state.writer_epoch_id != preflight.writer_epoch_id:
+        raise ExecutionReceiptIntegrityError("runner ledger writer epoch differs from preflight")
+    if not preflight.binds_ledger_state(boundary_state):
+        raise ExecutionReceiptIntegrityError("preflight capacity differs from its ledger boundary")
     if expected_tail == preflight.ledger_tail_ref:
         if previous_receipt_ref is not None:
             raise ExecutionReceiptIntegrityError(
@@ -419,6 +412,8 @@ def execute_scheduled_attempt(
     state = runner.attempt_state()
     if state.ledger_id != preflight.ledger_id:
         raise ExecutionReceiptIntegrityError("runner ledger differs from preflight ledger")
+    if state.writer_epoch_id != preflight.writer_epoch_id:
+        raise ExecutionReceiptIntegrityError("runner ledger writer epoch differs from preflight")
     if state.budget.fingerprint != preflight.budget_fingerprint:
         raise ExecutionReceiptIntegrityError("runner budget differs from preflight budget")
     if state.pending_reservation_ref is not None:
@@ -500,18 +495,7 @@ def replay_trusted_usage(
     attempt_ledger: AttemptLedger,
     receipt_refs: Iterable[ArtifactRef],
 ) -> TrustedExecutionUsage:
-    """Verify complete scheduled coverage and derive charged usage from outcomes.
-
-    The final tail is derived from the exact live ledger capability rather than
-    accepted as a caller-authored reference; inferring it from receipts would
-    miss an unreceipted trailing burn.  Every logical cell must have a
-    contiguous attempt sequence beginning at zero.  A burned attempt may be
-    followed by a retry; settled and poisoned attempts are terminal.  The
-    maximum sequence is bounded by the schedule's frozen retry ceiling.
-    Duplicate receipt slots, reused accounting records, missing cells, foreign
-    cells, and divergent ledger branches all fail closed.
-    """
-
+    """Replay complete paired usage against an exact ledger writer."""
     checked_repository = _require_repository(repository)
     checked_schedule = EvaluationBatchSchedule.model_validate(schedule, strict=True)
     checked_preflight_ref, preflight = _load_preflight(
@@ -531,8 +515,20 @@ def replay_trusted_usage(
         raise ExecutionReceiptIntegrityError(
             "trusted usage replay requires a ledger-bound preflight certificate"
         )
+    try:
+        boundary_state = attempt_ledger.state_at(preflight.ledger_tail_ref)
+    except Exception as exc:
+        raise ExecutionReceiptIntegrityError(
+            "preflight ledger boundary cannot be replayed"
+        ) from exc
+    if boundary_state.writer_epoch_id != preflight.writer_epoch_id:
+        raise ExecutionReceiptIntegrityError("live ledger writer epoch differs from preflight")
+    if not preflight.binds_ledger_state(boundary_state):
+        raise ExecutionReceiptIntegrityError("preflight capacity differs from its ledger boundary")
     if live_state.ledger_id != preflight.ledger_id:
         raise ExecutionReceiptIntegrityError("live ledger differs from preflight ledger")
+    if live_state.writer_epoch_id != preflight.writer_epoch_id:
+        raise ExecutionReceiptIntegrityError("live ledger writer epoch differs from preflight")
     if live_state.budget.fingerprint != preflight.budget_fingerprint:
         raise ExecutionReceiptIntegrityError("live ledger budget differs from preflight budget")
     if live_state.pending_reservation_ref is not None:
@@ -635,6 +631,11 @@ def replay_trusted_usage(
             raise ExecutionReceiptIntegrityError(
                 "receipt retry indexes must be contiguous and begin at zero"
             )
+        sequences = tuple(linked_by_receipt[item[2].sha256][1].sequence for item in attempts)
+        if any(later <= earlier for earlier, later in pairwise(sequences)):
+            raise ExecutionReceiptIntegrityError(
+                "receipt retry indexes contradict physical ledger order"
+            )
         for _, disposition, _, _ in attempts[:-1]:
             if disposition is not AttemptDisposition.BURNED:
                 raise ExecutionReceiptIntegrityError(
@@ -664,9 +665,6 @@ def replay_trusted_usage(
             "a poisoned attempt invalidates the complete paired evaluation batch"
         )
 
-    # One preflight certificate freezes one ledger boundary.  A future
-    # multi-ledger batch must carry one certificate per ledger rather than let
-    # a caller self-report start offsets after execution.
     ledger_ids = {
         linked_by_receipt[receipt_ref.sha256][1].ledger_id
         for receipt_ref, _ in receipts_by_slot.values()
@@ -731,13 +729,8 @@ def replay_trusted_usage(
     poisoned = sum(
         outcome.disposition is AttemptDisposition.POISONED for outcome in ordered_outcomes
     )
-    # These are intentionally sourced from loaded outcomes, never receipt or
-    # ModelExecution claims supplied by a caller.
     reported_tokens = sum(outcome.reported_tokens for outcome in ordered_outcomes)
     charged_tokens = sum(outcome.charged_tokens for outcome in ordered_outcomes)
-    # Linearize final-tail capture after immutable replay as well.  A writer
-    # sharing this process-local ledger that advanced during verification makes
-    # the result stale and therefore inadmissible.
     try:
         closing_state = attempt_ledger.state()
     except Exception as exc:
@@ -746,6 +739,7 @@ def replay_trusted_usage(
         closing_state.tail_ref != final_tail
         or closing_state.pending_reservation_ref is not None
         or closing_state.ledger_id != preflight.ledger_id
+        or closing_state.writer_epoch_id != preflight.writer_epoch_id
         or closing_state.budget.fingerprint != preflight.budget_fingerprint
     ):
         raise ExecutionReceiptIntegrityError(
@@ -827,8 +821,8 @@ def _load_preflight(
         raise ExecutionReceiptIntegrityError(
             "preflight reference does not match its canonical certificate fingerprint"
         )
-    if preflight.schedule_fingerprint != schedule.fingerprint:
-        raise ExecutionReceiptIntegrityError("preflight belongs to another schedule")
+    if not preflight.binds_schedule(schedule):
+        raise ExecutionReceiptIntegrityError("preflight shape differs from the frozen schedule")
     return checked_ref, preflight
 
 
@@ -849,6 +843,11 @@ def _verify_preflight_attempt_binding(
         reservation.ledger_id != preflight.ledger_id or outcome.ledger_id != preflight.ledger_id
     ):
         raise ExecutionReceiptIntegrityError("attempt ledger differs from preflight ledger")
+    if preflight.writer_epoch_id is not None and (
+        reservation.writer_epoch_id != preflight.writer_epoch_id
+        or outcome.writer_epoch_id != preflight.writer_epoch_id
+    ):
+        raise ExecutionReceiptIntegrityError("attempt writer epoch differs from preflight")
     if reservation.reserved_tokens != preflight.token_ceiling_per_attempt:
         raise ExecutionReceiptIntegrityError(
             "attempt reservation differs from the preflight token ceiling"

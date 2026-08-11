@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from spiral_harness.core.models import ArtifactRef
+from spiral_harness.execution.attempts import AttemptLedger
 from spiral_harness.execution.contracts import (
     ATTEMPT_OUTCOME_MEDIA_TYPE,
     AttemptBudget,
@@ -184,6 +184,7 @@ def test_all_or_nothing_preflight_accepts_exact_capacity_and_rejects_difference_
     assert certificate.required_attempts == certificate.available_attempts == 32
     assert certificate.required_tokens == certificate.available_tokens == 320
     assert certificate.ledger_id is None
+    assert certificate.writer_epoch_id is None
     assert certificate.ledger_tail_ref is None
 
     with pytest.raises(ScheduleBudgetExceeded, match="attempt budget"):
@@ -225,48 +226,56 @@ def test_preflight_binds_exact_clean_ledger_tail_and_is_persisted(tmp_path) -> N
         max_total_tokens=400,
         max_tokens_per_attempt=10,
     )
-    tail = ArtifactRef(
-        sha256="a" * 64,
-        size=123,
-        media_type=ATTEMPT_OUTCOME_MEDIA_TYPE,
-    )
-    state = AttemptLedgerState(
+    store = ArtifactStore(tmp_path / "cas")
+    ledger = AttemptLedger(
+        store,
         ledger_id="study-ledger",
         budget=budget,
-        tail_ref=tail,
-        pending_reservation_ref=None,
-        poisoned=False,
-        attempts_used=8,
-        completed_attempts=8,
-        charged_tokens=80,
-        encumbered_tokens=80,
-        remaining_attempts=32,
-        remaining_tokens=320,
     )
+    for index in range(8):
+        reservation_ref = ledger.reserve(
+            task_fingerprint=f"{index:064x}",
+            execution_fingerprint=f"{index + 8:064x}",
+            request_sha256=f"{index + 16:064x}",
+            token_ceiling=10,
+        )
+        ledger.burn(reservation_ref, error_class="preflight-history")
+    state = ledger.state()
+    assert state.tail_ref is not None
+    assert state.tail_ref.media_type == ATTEMPT_OUTCOME_MEDIA_TYPE
 
-    certificate = preflight_attempt_budget(schedule, state, MODEL_SPEC)
-    assert certificate.schema_version == "2"
+    certificate = preflight_attempt_budget(schedule, ledger, MODEL_SPEC)
+    assert certificate.schema_version == "3"
     assert certificate.ledger_id == "study-ledger"
-    assert certificate.ledger_tail_ref == tail
-    store = ArtifactStore(tmp_path / "cas")
+    assert certificate.writer_epoch_id == state.writer_epoch_id
+    assert certificate.ledger_tail_ref == state.tail_ref
+    assert certificate.available_attempts == schedule.required_attempts
+    assert certificate.available_tokens == schedule.required_tokens
+    assert certificate.binds_ledger_state(state)
+    values = certificate.model_dump(mode="python", round_trip=True, warnings="none")
+    for invalid in (
+        {**values, "writer_epoch_id": None},
+        {**values, "ledger_id": None, "ledger_tail_ref": None},
+    ):
+        with pytest.raises(ValidationError, match="must be declared together"):
+            type(certificate).model_validate(invalid, strict=True)
     ref = publish_schedule_preflight(store, certificate)
     assert ref.media_type == SCHEDULE_PREFLIGHT_MEDIA_TYPE
     assert ref.sha256 == certificate.fingerprint
     assert store.get_json(ref, type(certificate)) == certificate
 
-    pending = state.model_copy(
-        update={
-            "tail_ref": ArtifactRef(
-                sha256="b" * 64,
-                size=1,
-                media_type="application/vnd.spiral-harness.attempt-reservation.v2+json",
-            ),
-            "pending_reservation_ref": ArtifactRef(
-                sha256="b" * 64,
-                size=1,
-                media_type="application/vnd.spiral-harness.attempt-reservation.v2+json",
-            ),
-        }
+    caller_authored_state = AttemptLedgerState.model_validate(
+        state.model_dump(mode="python", round_trip=True, warnings="none"),
+        strict=True,
+    )
+    with pytest.raises(TypeError, match="exact AttemptLedger"):
+        preflight_attempt_budget(schedule, caller_authored_state, MODEL_SPEC)  # type: ignore[arg-type]
+
+    ledger.reserve(
+        task_fingerprint="a" * 64,
+        execution_fingerprint="b" * 64,
+        request_sha256="c" * 64,
+        token_ceiling=10,
     )
     with pytest.raises(ScheduleBudgetExceeded, match="open reservation"):
-        preflight_attempt_budget(schedule, pending, MODEL_SPEC)
+        preflight_attempt_budget(schedule, ledger, MODEL_SPEC)

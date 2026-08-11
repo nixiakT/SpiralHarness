@@ -52,6 +52,7 @@ from spiral_harness.execution.schedule import (
     EvaluationCellKey,
     EvaluationPhase,
     EvaluationSide,
+    SchedulePreflightCertificate,
     preflight_attempt_budget,
     publish_schedule_preflight,
 )
@@ -189,7 +190,7 @@ def persist_preflight(
     schedule: EvaluationBatchSchedule,
     ledger: AttemptLedger,
 ) -> ArtifactRef:
-    certificate = preflight_attempt_budget(schedule, ledger.state(), runner_spec())
+    certificate = preflight_attempt_budget(schedule, ledger, runner_spec())
     return publish_schedule_preflight(store, certificate)
 
 
@@ -317,6 +318,8 @@ def record_attempt(
 
 def complete_paired_retry_run(
     store: ArtifactStore,
+    *,
+    extra_attempts: int = 0,
 ) -> tuple[
     EvaluationBatchSchedule,
     AttemptLedger,
@@ -324,7 +327,7 @@ def complete_paired_retry_run(
     tuple[RecordedAttempt, ...],
 ]:
     schedule, _ = scheduled_batch(store, runner_spec())
-    ledger = ledger_for(store, schedule)
+    ledger = ledger_for(store, schedule, extra_attempts=extra_attempts)
     preflight_ref = persist_preflight(store, schedule, ledger)
     cells = tuple(schedule.iter_cells())
     parent = next(cell for cell in cells if cell.side is EvaluationSide.PARENT)
@@ -374,7 +377,7 @@ def complete_paired_retry_run(
     return schedule, ledger, preflight_ref, records
 
 
-def test_receipt_replay_uses_charged_outcomes_including_timeout_burn(tmp_path) -> None:
+def test_receipt_v3_replay_uses_charged_outcomes_including_timeout_burn(tmp_path) -> None:
     store = ArtifactStore(tmp_path / "cas")
     schedule, ledger, preflight_ref, records = complete_paired_retry_run(store)
 
@@ -386,7 +389,7 @@ def test_receipt_replay_uses_charged_outcomes_including_timeout_burn(tmp_path) -
         receipt_refs=(record.receipt_ref for record in reversed(records)),
     )
 
-    assert usage.schema_version == "2"
+    assert usage.schema_version == "3"
     assert usage.cell_count == 2
     assert usage.attempt_count == 4
     assert usage.settled_attempts == 2
@@ -396,9 +399,10 @@ def test_receipt_replay_uses_charged_outcomes_including_timeout_burn(tmp_path) -
     assert usage.charged_tokens == usage.tokens == 29
     assert usage.ledger_tail_refs == (ledger.tail_ref,)
     assert all(ref.media_type == EXECUTION_RECEIPT_MEDIA_TYPE for ref in usage.receipt_refs)
+    assert EXECUTION_RECEIPT_MEDIA_TYPE.endswith(".v3+json")
 
     first = store.get_json(records[0].receipt_ref, ExecutionReceipt)
-    assert first.schema_version == "2"
+    assert first.schema_version == "3"
     assert first.reported_tokens == 0
     assert first.charged_tokens == schedule.token_ceiling_per_attempt
     assert first.preflight_ref == preflight_ref
@@ -433,6 +437,66 @@ def test_missing_duplicate_and_asymmetric_retry_receipts_fail_closed(tmp_path) -
             preflight_ref=preflight_ref,
             attempt_ledger=ledger,
             receipt_refs=refs[:-1],
+        )
+
+
+def test_replay_rejects_receipt_attempt_indexes_that_reverse_ledger_order(tmp_path) -> None:
+    store = ArtifactStore(tmp_path / "cas")
+    schedule, _ = scheduled_batch(store, runner_spec())
+    ledger = ledger_for(store, schedule)
+    preflight_ref = persist_preflight(store, schedule, ledger)
+    cells = {cell.side: cell for cell in schedule.iter_cells()}
+
+    records = (
+        record_attempt(
+            store,
+            ledger,
+            schedule,
+            preflight_ref,
+            cells[EvaluationSide.PARENT],
+            attempt_index=1,
+            status=ExecutionStatus.COMPLETED,
+            input_tokens=2,
+            output_tokens=1,
+        ),
+        record_attempt(
+            store,
+            ledger,
+            schedule,
+            preflight_ref,
+            cells[EvaluationSide.PARENT],
+            attempt_index=0,
+            status=ExecutionStatus.FAILED,
+        ),
+        record_attempt(
+            store,
+            ledger,
+            schedule,
+            preflight_ref,
+            cells[EvaluationSide.CANDIDATE],
+            attempt_index=0,
+            status=ExecutionStatus.FAILED,
+        ),
+        record_attempt(
+            store,
+            ledger,
+            schedule,
+            preflight_ref,
+            cells[EvaluationSide.CANDIDATE],
+            attempt_index=1,
+            status=ExecutionStatus.COMPLETED,
+            input_tokens=2,
+            output_tokens=1,
+        ),
+    )
+
+    with pytest.raises(ExecutionReceiptIntegrityError, match="physical ledger order"):
+        replay_trusted_usage(
+            store,
+            schedule=schedule,
+            preflight_ref=preflight_ref,
+            attempt_ledger=ledger,
+            receipt_refs=tuple(record.receipt_ref for record in records),
         )
 
 
@@ -737,6 +801,21 @@ def test_unreceipted_trailing_burn_cannot_be_hidden_with_a_stale_receipt_tail(tm
             receipt_refs=tuple(record.receipt_ref for record in records),
         )
 
+    historical = AttemptLedger(
+        store,
+        ledger_id=ledger.ledger_id,
+        budget=ledger.budget,
+        tail_ref=records[-1].outcome_ref,
+    )
+    with pytest.raises(ExecutionReceiptIntegrityError, match="writer epoch"):
+        replay_trusted_usage(
+            store,
+            schedule=schedule,
+            preflight_ref=preflight_ref,
+            attempt_ledger=historical,
+            receipt_refs=tuple(record.receipt_ref for record in records),
+        )
+
 
 def test_preflight_start_tail_excludes_verified_prior_ledger_history(tmp_path) -> None:
     store = ArtifactStore(tmp_path / "cas")
@@ -832,6 +911,8 @@ def test_scheduled_attempts_bind_each_atomic_record_to_serial_receipt_progress(t
     assert len({record.execution_ref.sha256 for record in records}) == 2
     assert len({record.outcome_ref.sha256 for record in records}) == 2
     for record in records:
+        assert record.schema_version == "3"
+        assert record.receipt.schema_version == "3"
         outcome = store.get_json(record.outcome_ref)
         assert outcome["execution_ref"]["sha256"] == record.execution_ref.sha256
         assert record.receipt.execution_ref == record.execution_ref
@@ -892,6 +973,175 @@ def test_scheduled_attempt_rejects_wrong_full_spec_before_reservation_or_backend
 
     assert backend.calls == ()
     assert ledger.state().attempts_used == 0
+
+
+@pytest.mark.parametrize("attack", ("capacity", "shape"))
+def test_forged_preflight_capacity_or_schedule_shape_fails_before_backend_and_replay(
+    tmp_path,
+    attack: str,
+) -> None:
+    store = ArtifactStore(tmp_path / "cas")
+    spec = runner_spec()
+    schedule, harness_refs = scheduled_batch(store, spec, max_attempts_per_cell=1)
+    ledger = AttemptLedger(
+        store,
+        ledger_id="forged-preflight-ledger",
+        budget=AttemptBudget(
+            max_attempts=schedule.required_attempts,
+            max_total_tokens=200,
+            max_tokens_per_attempt=100,
+        ),
+    )
+    legitimate = preflight_attempt_budget(schedule, ledger, spec)
+    values = legitimate.model_dump(mode="python", round_trip=True, warnings="none")
+    if attack == "capacity":
+        values["available_attempts"] = legitimate.available_attempts + 1
+        error = "capacity differs"
+    else:
+        values["token_ceiling_per_attempt"] = 20
+        values["required_tokens"] = legitimate.required_attempts * 20
+        error = "shape differs"
+    forged = SchedulePreflightCertificate.model_validate(values, strict=True)
+    forged_ref = publish_schedule_preflight(store, forged)
+    backend = ReplayBackend(
+        fingerprint=RUNNER_BACKEND_FINGERPRINT,
+        default_response=BackendResponse(
+            output="must not run",
+            usage=BackendTokenUsage(input_tokens=2, output_tokens=1),
+        ),
+    )
+    runner = FixedModelRunner(spec=spec, backend=backend, attempt_ledger=ledger)
+    parent = next(cell for cell in schedule.iter_cells() if cell.side is EvaluationSide.PARENT)
+
+    with pytest.raises(ExecutionReceiptIntegrityError, match=error):
+        execute_scheduled_attempt(
+            runner=runner,
+            schedule=schedule,
+            preflight_ref=forged_ref,
+            expected_previous_ledger_tail_ref=None,
+            cell=parent,
+            attempt_index=0,
+            task=CandidateTask(task_id="task-1", question="What is 2 + 2?"),
+            harness_ref=harness_refs[EvaluationSide.PARENT],
+        )
+    assert backend.calls == ()
+    assert ledger.state().attempts_used == 0
+
+    with pytest.raises(ExecutionReceiptIntegrityError, match=error):
+        replay_trusted_usage(
+            store,
+            schedule=schedule,
+            preflight_ref=forged_ref,
+            attempt_ledger=ledger,
+            receipt_refs=(),
+        )
+
+
+def test_scheduled_attempt_rejects_reconstructed_writer_before_backend_call(tmp_path) -> None:
+    store = ArtifactStore(tmp_path / "cas")
+    spec = runner_spec()
+    schedule, harness_refs = scheduled_batch(store, spec, max_attempts_per_cell=1)
+    original = ledger_for(store, schedule)
+    preflight_ref = persist_preflight(store, schedule, original)
+    reconstructed = AttemptLedger(
+        store,
+        ledger_id=original.ledger_id,
+        budget=original.budget,
+        tail_ref=original.tail_ref,
+    )
+    backend = ReplayBackend(
+        fingerprint=RUNNER_BACKEND_FINGERPRINT,
+        default_response=BackendResponse(
+            output="must not run",
+            usage=BackendTokenUsage(input_tokens=2, output_tokens=1),
+        ),
+    )
+    runner = FixedModelRunner(spec=spec, backend=backend, attempt_ledger=reconstructed)
+    parent = next(cell for cell in schedule.iter_cells() if cell.side is EvaluationSide.PARENT)
+
+    with pytest.raises(ExecutionReceiptIntegrityError, match="writer epoch"):
+        execute_scheduled_attempt(
+            runner=runner,
+            schedule=schedule,
+            preflight_ref=preflight_ref,
+            expected_previous_ledger_tail_ref=None,
+            cell=parent,
+            attempt_index=0,
+            task=CandidateTask(task_id="task-1", question="What is 2 + 2?"),
+            harness_ref=harness_refs[EvaluationSide.PARENT],
+        )
+
+    assert backend.calls == ()
+    assert reconstructed.state().attempts_used == 0
+
+
+def test_reconstructed_writer_cannot_rewrap_prior_attempts_under_a_new_preflight(
+    tmp_path,
+) -> None:
+    store = ArtifactStore(tmp_path / "cas")
+    schedule, ledger, preflight_ref, records = complete_paired_retry_run(
+        store,
+        extra_attempts=1,
+    )
+    batch_tail = records[-1].outcome_ref
+    trailing = ledger.reserve(
+        task_fingerprint="a" * 64,
+        execution_fingerprint="b" * 64,
+        request_sha256="c" * 64,
+        token_ceiling=schedule.token_ceiling_per_attempt,
+    )
+    ledger.burn(trailing, error_class="unreceipted-trailing-attempt")
+    historical = AttemptLedger(
+        store,
+        ledger_id=ledger.ledger_id,
+        budget=ledger.budget,
+        tail_ref=batch_tail,
+    )
+    original = store.get_json(preflight_ref, SchedulePreflightCertificate)
+    forged = SchedulePreflightCertificate.model_validate(
+        {
+            **original.model_dump(mode="python", round_trip=True, warnings="none"),
+            "writer_epoch_id": historical.state().writer_epoch_id,
+        },
+        strict=True,
+    )
+    forged_ref = publish_schedule_preflight(store, forged)
+    first = records[0]
+
+    with pytest.raises(ExecutionReceiptIntegrityError, match="writer epoch"):
+        publish_execution_receipt(
+            store,
+            schedule=schedule,
+            cell=first.cell,
+            attempt_index=first.attempt_index,
+            preflight_ref=forged_ref,
+            reservation_ref=first.reservation_ref,
+            outcome_ref=first.outcome_ref,
+            ledger_tail_ref=first.outcome_ref,
+        )
+
+    repacked_refs = []
+    for record in records:
+        receipt = store.get_json(record.receipt_ref, ExecutionReceipt)
+        repacked_refs.append(
+            store.put_json(
+                receipt.model_copy(
+                    update={
+                        "preflight_ref": forged_ref,
+                        "preflight_fingerprint": forged.fingerprint,
+                    }
+                ),
+                media_type=EXECUTION_RECEIPT_MEDIA_TYPE,
+            )
+        )
+    with pytest.raises(ExecutionReceiptIntegrityError, match="writer epoch"):
+        replay_trusted_usage(
+            store,
+            schedule=schedule,
+            preflight_ref=forged_ref,
+            attempt_ledger=historical,
+            receipt_refs=tuple(repacked_refs),
+        )
 
 
 def test_scheduled_timeout_receipt_charges_full_reservation(tmp_path) -> None:

@@ -249,6 +249,11 @@ class FixedModelRunner:
 
         return self._attempt_ledger.state()
 
+    def attempt_state_at(self, tail_ref: ArtifactRef | None) -> _contracts.AttemptLedgerState:
+        """Replay one preflight boundary under the runner's writer epoch."""
+
+        return self._attempt_ledger.state_at(tail_ref)
+
     def execute(
         self,
         task: object,

@@ -57,6 +57,13 @@ from spiral_harness.skills.package import (
     SkillSourceKind,
 )
 from spiral_harness.storage.artifact_store import ArtifactStore
+from spiral_harness.verification.skill_inclusion import (
+    SETTLED_SKILL_REQUEST_INCLUSION_CLAIM,
+    SETTLED_SKILL_REQUEST_INCLUSION_MEDIA_TYPE,
+    SettledSkillRequestInclusionEvidence,
+    publish_settled_skill_request_inclusion,
+    verify_settled_skill_request_inclusion,
+)
 
 BACKEND_FINGERPRINT = "skill-integration-replay@sha256:fixed-v1"
 BASE_PROMPT = "Solve the problem and return only the final answer."
@@ -162,11 +169,13 @@ def put_harness(
 def paired_schedule(
     prompt_harness_ref: ArtifactRef,
     skill_harness_ref: ArtifactRef,
+    *,
+    phase: EvaluationPhase = EvaluationPhase.GATE,
 ) -> EvaluationBatchSchedule:
     return EvaluationBatchSchedule(
         study="skill-execution-integration",
         kind="skill-vs-prompt",
-        phase=EvaluationPhase.GATE,
+        phase=phase,
         query=0,
         master_seed=20260812,
         parent_harness_id=prompt_harness_ref.sha256,
@@ -197,7 +206,12 @@ class PairRun:
     backend: ReplayBackend
 
 
-def execute_pair(root: Path) -> PairRun:
+def execute_pair(
+    root: Path,
+    *,
+    candidate_output: str = "skill-backed: 42",
+    phase: EvaluationPhase = EvaluationPhase.GATE,
+) -> PairRun:
     store = ArtifactStore(root / "cas")
     spec = fixed_spec()
     skill_ref = put_skill_package(store, spec)
@@ -206,13 +220,17 @@ def execute_pair(root: Path) -> PairRun:
     materializer = HarnessMaterializer(store, spec=spec)
     prompt_harness = materializer.materialize(prompt_harness_ref)
     skill_harness = materializer.materialize(skill_harness_ref)
-    schedule = paired_schedule(prompt_harness_ref, skill_harness_ref)
+    schedule = paired_schedule(
+        prompt_harness_ref,
+        skill_harness_ref,
+        phase=phase,
+    )
     task = CandidateTask(task_id="arithmetic-1", question="What is 20 + 22?")
 
     requests = {}
     outputs = {
         EvaluationSide.PARENT: "prompt-only: 42",
-        EvaluationSide.CANDIDATE: "skill-backed: 42",
+        EvaluationSide.CANDIDATE: candidate_output,
     }
     for cell in schedule.iter_cells():
         harness = prompt_harness if cell.side is EvaluationSide.PARENT else skill_harness
@@ -244,7 +262,7 @@ def execute_pair(root: Path) -> PairRun:
     )
     preflight_ref = publish_schedule_preflight(
         store,
-        preflight_attempt_budget(schedule, ledger.state(), spec),
+        preflight_attempt_budget(schedule, ledger, spec),
     )
     runner = FixedModelRunner(spec=spec, backend=backend, attempt_ledger=ledger)
     expected_tail: ArtifactRef | None = None
@@ -352,6 +370,54 @@ def test_skill_materialization_changes_the_exact_request_but_preserves_pairing(
             skill_record.execution,
         )
         == run.skill_harness
+    )
+
+
+def test_settled_receipts_prove_request_inclusion_not_adherence_or_benefit(
+    tmp_path: Path,
+) -> None:
+    run = execute_pair(
+        tmp_path,
+        candidate_output="I ignored the disclosed rules and returned 42 directly.",
+        phase=EvaluationPhase.PROBE,
+    )
+    candidate_record = record_for(run, EvaluationSide.CANDIDATE)
+
+    evidence_ref = publish_settled_skill_request_inclusion(
+        run.store,
+        schedule=run.schedule,
+        preflight_ref=run.preflight_ref,
+        attempt_ledger=run.ledger,
+        receipt_refs=tuple(record.receipt_ref for record in run.records),
+        candidate_harness_ref=run.skill_harness_ref,
+    )
+    evidence = run.store.get_json(
+        evidence_ref,
+        SettledSkillRequestInclusionEvidence,
+    )
+    verified = verify_settled_skill_request_inclusion(
+        run.store,
+        evidence_ref=evidence_ref,
+        schedule=run.schedule,
+        preflight_ref=run.preflight_ref,
+        attempt_ledger=run.ledger,
+        candidate_harness_ref=run.skill_harness_ref,
+    )
+
+    assert verified == evidence
+    assert evidence_ref.media_type == SETTLED_SKILL_REQUEST_INCLUSION_MEDIA_TYPE
+    assert evidence.claim == SETTLED_SKILL_REQUEST_INCLUSION_CLAIM
+    assert evidence.candidate_harness_ref == run.skill_harness_ref
+    assert evidence.skill_disclosure == run.skill_harness.skill_disclosure
+    assert evidence.skill_disclosure.package_ref == run.skill_ref
+    assert evidence.observations[0].receipt_ref == candidate_record.receipt_ref
+    assert evidence.observations[0].execution_ref == candidate_record.execution_ref
+    assert evidence.observations[0].request_sha256 == candidate_record.execution.request_sha256
+    assert candidate_record.execution.output == (
+        "I ignored the disclosed rules and returned 42 directly."
+    )
+    assert not set(evidence.model_dump()).intersection(
+        {"activated", "adhered", "behavior_changed", "benefited", "passed"}
     )
 
 

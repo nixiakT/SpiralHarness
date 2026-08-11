@@ -1,9 +1,4 @@
-"""Strict admission and automatic orchestration for one search arm/run.
-
-The optimizer-facing protocol receives typed, redacted values and immutable
-references only.  Repository, benchmark-adapter, grader, and champion-update
-authority remain on the trusted orchestration side of this module.
-"""
+"""Strict trusted admission and automatic orchestration for one search arm/run."""
 
 from __future__ import annotations
 
@@ -149,10 +144,10 @@ DIAGNOSTIC_GRADER_VERDICT_MEDIA_TYPE = (
     "application/vnd.spiral-harness.diagnostic-grader-verdict.v1+json"
 )
 TRUSTED_SCREEN_EVALUATION_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.trusted-screen-evaluation.v2+json"
+    "application/vnd.spiral-harness.trusted-screen-evaluation.v3+json"
 )
 TRUSTED_OBJECTIVE_AGGREGATE_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.trusted-objective-aggregate.v2+json"
+    "application/vnd.spiral-harness.trusted-objective-aggregate.v3+json"
 )
 TRUSTED_STRATEGY_FEEDBACK_MEDIA_TYPE = (
     "application/vnd.spiral-harness.trusted-strategy-feedback.v1+json"
@@ -826,7 +821,7 @@ class TrustedStrategyFeedbackService:
 class TrustedObjectiveAggregateContent(ImmutableModel):
     """Trusted grader authorization for screen scores over one receipt batch."""
 
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     search_run_ref: ArtifactRef
     proposal_ref: ArtifactRef
     candidate_ref: ArtifactRef
@@ -870,7 +865,7 @@ class TrustedObjectiveAggregateContent(ImmutableModel):
 class TrustedObjectiveAggregate(ImmutableModel):
     """HMAC-attested score aggregate issued by the independent grader plane."""
 
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     content: TrustedObjectiveAggregateContent
     attestor_id: Sha256
     authentication_tag: Sha256
@@ -889,7 +884,7 @@ class ObjectiveAggregateVerificationCapability:
             raise ValueError("objective aggregate attestor secret must contain at least 32 bytes")
         self.__store = store
         self.__secret = secret
-        attestor_domain = b"spiral-harness/objective-aggregate-attestor/v2\x00"
+        attestor_domain = b"spiral-harness/objective-aggregate-attestor/v3\x00"
         self.__attestor_id = sha256_bytes(attestor_domain + secret)
 
     @property
@@ -905,7 +900,7 @@ class ObjectiveAggregateVerificationCapability:
             raise AutomaticSearchLoopError("objective aggregate artifact is not canonical")
         if aggregate.attestor_id != self.__attestor_id:
             raise AutomaticSearchLoopError("objective aggregate uses another attestor")
-        expected = hmac.new(self.__secret, b"spiral-harness/objective-aggregate/v2\x00", sha256)
+        expected = hmac.new(self.__secret, b"spiral-harness/objective-aggregate/v3\x00", sha256)
         expected.update(self.__attestor_id.encode("ascii") + b"\x00")
         expected.update(canonical_json_bytes(aggregate.content))
         if not hmac.compare_digest(aggregate.authentication_tag, expected.hexdigest()):
@@ -936,7 +931,7 @@ class TrustedObjectiveAggregateService:
             strict=True,
         )
         authentication = hmac.new(
-            self.__secret, b"spiral-harness/objective-aggregate/v2\x00", sha256
+            self.__secret, b"spiral-harness/objective-aggregate/v3\x00", sha256
         )
         authentication.update(self.__capability.attestor_id.encode("ascii") + b"\x00")
         authentication.update(canonical_json_bytes(checked))
@@ -951,7 +946,7 @@ class TrustedObjectiveAggregateService:
 class TrustedScreenEvaluation(ImmutableModel):
     """Receipt-replay proof and trusted aggregate used by a candidate screen."""
 
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     search_run_ref: ArtifactRef
     baseline_kind: BaselineKind
     round_index: Annotated[int, Field(ge=0, strict=True)]
@@ -3589,13 +3584,17 @@ class AutomaticSearchLoop:
         )
         if actual_coordinates != expected_coordinates or actual_schedule != expected_schedule:
             raise AutomaticSearchLoopError("screen evaluation uses foreign schedule coordinates")
+        attempt_ledger = self.runtime.attempt_ledger_for(evaluation_ref)
         replayed_usage = replay_trusted_usage(
             self.store,
             schedule=schedule,
             preflight_ref=evaluation.preflight_ref,
-            attempt_ledger=self.runtime.attempt_ledger_for(evaluation_ref),
+            attempt_ledger=attempt_ledger,
             receipt_refs=evaluation.receipt_refs,
         )
+        verified_ledger_state = attempt_ledger.state()
+        if verified_ledger_state.tail_ref != evaluation.final_ledger_tail_ref:
+            raise AutomaticSearchLoopError("screen ledger changed after usage replay")
         if replayed_usage != evaluation.trusted_usage:
             raise AutomaticSearchLoopError("screen trusted usage differs from receipt replay")
         persisted_envelope = self._load_exact(
@@ -3664,6 +3663,8 @@ class AutomaticSearchLoop:
             raise AutomaticSearchLoopError(
                 "screen scores differ from the trusted grader authorization"
             )
+        if attempt_ledger.state() != verified_ledger_state:
+            raise AutomaticSearchLoopError("screen ledger changed during verification")
         return evaluation
 
     def _call_gate(

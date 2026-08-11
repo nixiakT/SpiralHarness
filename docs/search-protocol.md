@@ -119,8 +119,9 @@ statistics and resource ratios, followed by stable artifact hashes.
 Candidate screening does not trust a runtime-returned score, resource total,
 success flag, or receipt summary. Before execution, the controller freezes the
 complete evaluation-cell schedule and performs an all-or-nothing attempt/token
-preflight against the exact attempt-ledger boundary. Parent and candidate use
-matched task/repeat/retry coordinates and a domain-separated seed derivation.
+preflight against the exact attempt-ledger boundary and process-local writer
+epoch. Parent and candidate use matched task/repeat/retry coordinates and a
+domain-separated seed derivation.
 
 Each scheduled attempt reserves budget before the backend call and atomically
 persists the execution and outcome references. Failures with uncertain usage
@@ -131,17 +132,21 @@ screen then replays the complete receipt set against:
 - parent/candidate harness bindings;
 - task, phase, repeat, side, retry, and derived-seed coordinates;
 - reservation, outcome, execution, and ledger ancestry;
-- exact paired retry coverage and the current final ledger tail.
+- exact paired retry coverage, retry indexes increasing with physical ledger
+  order, the preflight-bound writer epoch, and the current final ledger tail.
 
 Missing cells, asymmetric retries, side swaps, duplicate reservations, foreign
-attempts, stale preflights, poisoned ledgers, or unreceipted outcomes after the
-preflight boundary reject the screen. Usage is summed from replayed ledger
-outcomes, not caller-authored totals. An independent process-scoped grader
+attempts, reconstructed historical writers, stale preflights, poisoned ledgers,
+or unreceipted outcomes after the preflight boundary reject the screen. Usage
+is summed from replayed ledger outcomes, not caller-authored totals. An
+independent process-scoped grader
 service HMAC-attests the objective aggregate; the general search runtime cannot
 verify its own score. The exact verification capability reloads that envelope
 and binds the same proposal, candidate, harnesses, benchmark/grader identity,
 schedule, and receipt set before metrics can enter deterministic screen
-ranking. All proposals are archived with an eligible or rejected screen;
+ranking. The screen snapshots the exact ledger after receipt replay and checks
+it again after objective verification, so an unreceipted concurrent append
+invalidates the screen. All proposals are archived with an eligible or rejected screen;
 partial screen batches cannot proceed to nomination.
 
 ## Gate feedback and champion transition

@@ -425,10 +425,10 @@ tree or a forwarding package.
 | Statistics and accounting | Task-level paired bootstrap, regression/cost checks, and an experiment-wide query/resource ledger implemented | Add multiple-candidate correction, winner replication, and a preregistered sequential policy. |
 | Mechanism evidence | Typed trajectories/spans plus a protocol-pinned producer envelope prevent caller-authored probe booleans; adversarial inactive/non-adherent/placebo fixtures are implemented | Add reusable trusted probes, typed source re-execution, and stronger disable/revert interventions on a real runtime. |
 | Experiment control | Single-process semantic controller owns admission, probes, gate completion, terminal decisions, budgets, sibling supersession, experiment lifecycle, and typed selection/sealed/invalidation closure; lifecycle resume fails closed | Replace caller-held tails with authenticated recovery plus durable cross-process compare-and-swap/leases/transactions before concurrent writers. |
-| Benchmark support | Pinned GSM8K adapter, provider-neutral fixed/replay runner, attempt ledger, and four-condition study protocol | Build automatic diagnosis/proposal/search, then execute live fixed-model studies through the same protocol. |
+| Benchmark support | Pinned GSM8K adapter, provider-neutral fixed/replay runner, writer-epoch-bound attempt ledger, four-condition protocol, and complete study barrier | Execute credentialed fixed-model studies through the same frozen protocol. |
 | Isolation | Trusted grading is logically separate but in-process; deny-by-default capability policy exists as a schema/admission constraint | Add short-lived worker sandbox, no network, read-only materialization, credential isolation, and an out-of-process grader. |
-| Evolution engine | Hand-authored controlled candidate only | Evidence packet -> diagnosis -> candidate batch -> nomination. |
-| Skills | Component kind reserved only | Immutable package, progressive loader, selection/adherence probes. |
+| Evolution engine | Bounded diagnosis, multi-proposal prompt search, four baselines, aggregate feedback, nomination, and stopping are implemented | Add skill proposals only after the skill-specific verification chain is fail-closed. |
+| Skills | Immutable declarative packages, direct generated revisions, fixed rules disclosure, request materialization, and settled request-inclusion replay; no activation/adherence/benefit or promotion authority | Add independent provider-delivery, runtime-activation, adherence, behavior, revert, and placebo evidence before skill search. |
 | Continual routing | Not implemented | Defer until single-lineage experiments pass. |
 | Platform/API/UI | Not implemented | Add only after experiment artifacts and service boundaries stabilize. |
 

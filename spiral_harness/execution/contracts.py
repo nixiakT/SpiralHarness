@@ -22,8 +22,8 @@ from spiral_harness.skills.package import (
     SKILL_CONTEXT_START_DELIMITER,
 )
 
-ATTEMPT_RESERVATION_MEDIA_TYPE = "application/vnd.spiral-harness.attempt-reservation.v2+json"
-ATTEMPT_OUTCOME_MEDIA_TYPE = "application/vnd.spiral-harness.attempt-outcome.v2+json"
+ATTEMPT_RESERVATION_MEDIA_TYPE = "application/vnd.spiral-harness.attempt-reservation.v3+json"
+ATTEMPT_OUTCOME_MEDIA_TYPE = "application/vnd.spiral-harness.attempt-outcome.v3+json"
 MODEL_EXECUTION_MEDIA_TYPE = "application/vnd.spiral-harness.model-execution.v2+json"
 
 _UNPINNED_REVISIONS = frozenset(
@@ -69,8 +69,9 @@ class AttemptBudget(ImmutableModel):
 class AttemptReservation(ImmutableModel):
     """A persisted, single-use authorization created before model execution."""
 
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     ledger_id: NonEmptyStr
+    writer_epoch_id: Sha256
     budget_fingerprint: Sha256
     sequence: Annotated[int, Field(ge=0, strict=True)]
     task_fingerprint: Sha256
@@ -96,8 +97,9 @@ class AttemptReservation(ImmutableModel):
 class AttemptOutcome(ImmutableModel):
     """The immutable terminal record consuming exactly one reservation."""
 
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     ledger_id: NonEmptyStr
+    writer_epoch_id: Sha256
     budget_fingerprint: Sha256
     sequence: Annotated[int, Field(ge=0, strict=True)]
     reservation_ref: ArtifactRef
@@ -134,9 +136,10 @@ class AttemptOutcome(ImmutableModel):
 
 
 class AttemptLedgerState(ImmutableModel):
-    """Replay-derived accounting state for one explicit immutable tail."""
+    """Replay-derived state owned by one process-local ledger writer."""
 
     ledger_id: NonEmptyStr
+    writer_epoch_id: Sha256
     budget: AttemptBudget
     tail_ref: ArtifactRef | None
     pending_reservation_ref: ArtifactRef | None
@@ -592,7 +595,7 @@ class ModelExecution(_FrozenExecutionModel):
 class ModelExecutionRecord(_FrozenExecutionModel):
     """Atomic result of one fully persisted and terminally accounted execution."""
 
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     execution: ModelExecution
     execution_ref: ArtifactRef
     outcome_ref: ArtifactRef

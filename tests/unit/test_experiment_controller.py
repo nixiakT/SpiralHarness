@@ -21,6 +21,7 @@ from spiral_harness.core.experiment import (
     PROTOCOL_MANIFEST_MEDIA_TYPE,
     CandidateManifest,
     ExperimentManifest,
+    MutationPolicy,
     ProtocolManifest,
     ProtocolPartition,
     ProtocolSplit,
@@ -32,6 +33,7 @@ from spiral_harness.core.models import (
     ArtifactRef,
     BudgetPolicy,
     CandidateMutation,
+    ComponentKind,
     HarnessComponentRef,
     HarnessManifest,
 )
@@ -81,6 +83,13 @@ from spiral_harness.experiments.lifecycle import (
     SelectionReason,
 )
 from spiral_harness.harness.registry import HarnessRegistry
+from spiral_harness.skills.package import (
+    SKILL_PACKAGE_MEDIA_TYPE,
+    SkillLicense,
+    SkillPackage,
+    SkillRule,
+    SkillSourceKind,
+)
 from spiral_harness.storage.journal import CandidateJournal
 from spiral_harness.verification.artifacts import (
     GATE_TRIAL_BATCH_MEDIA_TYPE,
@@ -91,6 +100,7 @@ from spiral_harness.verification.artifacts import (
 from spiral_harness.verification.gate import PromotionGate
 from spiral_harness.verification.mechanism import (
     ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE,
+    RESERVED_SKILL_MECHANISM_IDS,
     AttestedMechanismEvidence,
     TrustedMechanismEvidenceService,
 )
@@ -576,6 +586,148 @@ def another_candidate(graph: DecisionGraph) -> SimpleNamespace:
     )
 
 
+def skill_candidate_with_generic_checks(graph: DecisionGraph) -> SimpleNamespace:
+    """Build an admitted skill revision whose generic mechanism checks all pass."""
+
+    store = graph.store
+    provenance_ref = put_json(store, {"source": "controller quarantine test"})
+    review_ref = put_json(store, {"approved": True})
+    license = SkillLicense(
+        spdx_expression="Apache-2.0",
+        source_kind=SkillSourceKind.GENERATED,
+        provenance_refs=(provenance_ref,),
+        compliance_review_ref=review_ref,
+    )
+    before_package = SkillPackage(
+        skill_id="verify-arithmetic",
+        revision=0,
+        name="Verify arithmetic",
+        summary="Check arithmetic before returning an answer.",
+        activation_guidance="Use for arithmetic tasks.",
+        applicability_tags=("arithmetic",),
+        rules=(SkillRule(rule_id="solve", instruction="Solve the arithmetic once."),),
+        procedure="Solve once and return the result.",
+        compatible_model_fingerprints=(graph.protocol.model_fingerprint,),
+        runtime_fingerprints=(graph.protocol.runtime_fingerprint,),
+        license=license,
+    )
+    before_ref = put_json(store, before_package, media_type=SKILL_PACKAGE_MEDIA_TYPE)
+    after_package = before_package.model_copy(
+        update={
+            "revision": 1,
+            "parent_package_ref": before_ref,
+            "rules": (
+                SkillRule(rule_id="solve", instruction="Solve the arithmetic once."),
+                SkillRule(
+                    rule_id="recheck",
+                    instruction="Recompute independently before returning the answer.",
+                ),
+            ),
+        }
+    )
+    after_ref = put_json(store, after_package, media_type=SKILL_PACKAGE_MEDIA_TYPE)
+    before = HarnessComponentRef(
+        name=before_package.skill_id,
+        kind=ComponentKind.SKILL,
+        artifact=before_ref,
+    )
+    after = HarnessComponentRef(
+        name=before.name,
+        kind=before.kind,
+        artifact=after_ref,
+    )
+    original_parent = store.get_json(graph.candidate.parent_harness_ref, HarnessManifest)
+    parent = original_parent.model_copy(update={"components": (before,)})
+    parent_ref = put_json(store, parent, media_type=HARNESS_MANIFEST_MEDIA_TYPE)
+    original_mutation = store.get_json(graph.candidate.mutation_ref, CandidateMutation)
+    mutation = CandidateMutation(
+        target_component=before.name,
+        before=before,
+        after=after,
+        hypothesis=original_mutation.hypothesis,
+    )
+    mutation_ref = put_json(store, mutation, media_type=CANDIDATE_MUTATION_MEDIA_TYPE)
+    policy = MutationPolicy(
+        allowed_kinds=(ComponentKind.SKILL,),
+        allowed_component_names=(before.name,),
+        allowed_media_types=(SKILL_PACKAGE_MEDIA_TYPE,),
+        max_artifact_size_bytes=65_536,
+    )
+    original_experiment = store.get_json(graph.experiment_ref, ExperimentManifest)
+    experiment = original_experiment.model_copy(
+        update={"seed_harness_ref": parent_ref, "mutation_policy": policy}
+    )
+    experiment_ref = put_json(
+        store,
+        experiment,
+        media_type=EXPERIMENT_MANIFEST_MEDIA_TYPE,
+    )
+    child = HarnessRegistry(policy).apply_mutation(
+        parent=parent,
+        parent_ref=parent_ref,
+        mutation=mutation,
+        artifact_bytes=store.get_bytes(after_ref),
+        artifact_media_type=SKILL_PACKAGE_MEDIA_TYPE,
+    )
+    child_ref = put_json(store, child, media_type=HARNESS_MANIFEST_MEDIA_TYPE)
+    candidate = CandidateManifest(
+        experiment_ref=experiment_ref,
+        parent_harness_ref=parent_ref,
+        child_harness_ref=child_ref,
+        mutation_ref=mutation_ref,
+        evidence_refs=mutation.hypothesis.evidence_refs,
+        evaluation_plan_ref=graph.gate_config_ref,
+    )
+    candidate_ref = put_json(store, candidate, media_type=CANDIDATE_MANIFEST_MEDIA_TYPE)
+    admission = CandidateAdmissionService(store).admit(
+        candidate_ref=candidate_ref,
+        experiment_ref=experiment_ref,
+    )
+    admission_report_ref = put_json(
+        store,
+        admission,
+        media_type=ADMISSION_REPORT_MEDIA_TYPE,
+    )
+    original_envelope = store.get_json(
+        graph.mechanism_evidence_ref,
+        AttestedMechanismEvidence,
+    )
+    source_digests = tuple(ref.sha256 for ref in original_envelope.source_refs)
+    mechanism_evidence = MechanismEvidence(
+        candidate_harness_id=child_ref.sha256,
+        checks=tuple(
+            MechanismCheck(name=name, passed=True, evidence_refs=source_digests)
+            for name in ("activation", "adherence", "behavior")
+        ),
+    )
+    envelope = graph.mechanism_evidence_service.create(
+        protocol_ref=graph.protocol_ref,
+        protocol=graph.protocol,
+        candidate_ref=candidate_ref,
+        candidate_harness_ref=child_ref,
+        source_refs=original_envelope.source_refs,
+        evidence=mechanism_evidence,
+    )
+    mechanism_evidence_ref = put_json(
+        store,
+        envelope,
+        media_type=ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE,
+    )
+    return SimpleNamespace(
+        store=store,
+        gate_batch_service=graph.gate_batch_service,
+        mechanism_evidence_service=graph.mechanism_evidence_service,
+        protocol=graph.protocol,
+        protocol_ref=graph.protocol_ref,
+        experiment_ref=experiment_ref,
+        candidate=candidate,
+        candidate_ref=candidate_ref,
+        admission_report_ref=admission_report_ref,
+        mechanism_evidence=mechanism_evidence,
+        mechanism_evidence_ref=mechanism_evidence_ref,
+    )
+
+
 def test_controller_owns_complete_semantic_path_usage_and_exact_terminal_branch(
     tmp_path: Path,
 ) -> None:
@@ -864,6 +1016,97 @@ def test_probe_failure_or_missing_check_generates_typed_rejection_without_caller
     assert report.failed_checks == failed
     assert report.missing_checks == missing
     assert evidence_ref in event.evidence_refs
+
+
+def test_skill_candidate_generic_checks_cannot_bypass_reserved_mechanism_quarantine(
+    tmp_path: Path,
+) -> None:
+    graph = skill_candidate_with_generic_checks(build_graph(tmp_path))
+    assert {check.name: check.passed for check in graph.mechanism_evidence.checks} == {
+        "activation": True,
+        "adherence": True,
+        "behavior": True,
+    }
+    controller = controller_for(graph)
+    probes = advance_to_probes(graph, controller)
+
+    rejected_tail = controller.start_gate(
+        candidate_ref=graph.candidate_ref,
+        previous_tail_ref=probes,
+        mechanism_evidence_ref=graph.mechanism_evidence_ref,
+    )
+
+    event = CandidateJournal(graph.store).replay(rejected_tail)[-1]
+    assert event.to_state is CandidateState.REJECTED
+    report_ref = next(
+        ref for ref in event.evidence_refs if ref.media_type == PROBE_REJECTION_REPORT_MEDIA_TYPE
+    )
+    report = graph.store.get_json(report_ref, ProbeRejectionReport)
+    reserved = tuple(sorted(RESERVED_SKILL_MECHANISM_IDS))
+    assert report.error_code is ProbeRejectionCode.REQUIRED_CHECK_MISSING
+    assert report.required_checks == ("activation", *reserved)
+    assert report.failed_checks == ()
+    assert report.missing_checks == reserved
+
+
+def test_skill_candidate_legacy_signed_reserved_checks_remain_missing(
+    tmp_path: Path,
+) -> None:
+    graph = skill_candidate_with_generic_checks(build_graph(tmp_path))
+    original = graph.store.get_json(
+        graph.mechanism_evidence_ref,
+        AttestedMechanismEvidence,
+    )
+    source_digests = tuple(ref.sha256 for ref in original.source_refs)
+    legacy_evidence = MechanismEvidence(
+        candidate_harness_id=graph.candidate.child_harness_ref.sha256,
+        checks=(
+            MechanismCheck(
+                name="activation",
+                passed=True,
+                evidence_refs=source_digests,
+            ),
+            *tuple(
+                MechanismCheck(
+                    name=name,
+                    passed=True,
+                    evidence_refs=source_digests,
+                )
+                for name in sorted(RESERVED_SKILL_MECHANISM_IDS)
+            ),
+        ),
+    )
+    legacy_sign = graph.mechanism_evidence_service._TrustedMechanismEvidenceService__sign
+    legacy_envelope = legacy_sign(original.content.model_copy(update={"evidence": legacy_evidence}))
+    assert (
+        graph.mechanism_evidence_service.verification_capability.verify(legacy_envelope)
+        == legacy_envelope
+    )
+    legacy_ref = put_json(
+        graph.store,
+        legacy_envelope,
+        media_type=ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE,
+    )
+    controller = controller_for(graph)
+    probes = advance_to_probes(graph, controller)
+
+    rejected_tail = controller.start_gate(
+        candidate_ref=graph.candidate_ref,
+        previous_tail_ref=probes,
+        mechanism_evidence_ref=legacy_ref,
+    )
+
+    event = CandidateJournal(graph.store).replay(rejected_tail)[-1]
+    assert event.to_state is CandidateState.REJECTED
+    report_ref = next(
+        ref for ref in event.evidence_refs if ref.media_type == PROBE_REJECTION_REPORT_MEDIA_TYPE
+    )
+    report = graph.store.get_json(report_ref, ProbeRejectionReport)
+    reserved = tuple(sorted(RESERVED_SKILL_MECHANISM_IDS))
+    assert report.error_code is ProbeRejectionCode.REQUIRED_CHECK_MISSING
+    assert report.required_checks == ("activation", *reserved)
+    assert report.failed_checks == ()
+    assert report.missing_checks == reserved
 
 
 @pytest.mark.parametrize(

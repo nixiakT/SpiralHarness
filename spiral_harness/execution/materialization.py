@@ -123,10 +123,11 @@ class HarnessMaterializer:
     ) -> ResolvedHarness:
         """Replay one exact harness and rejoin it to the actual model request.
 
-        The request itself is the selection/load/activation fact.  This method
-        accepts no caller-authored mechanism booleans: it reloads the manifest
-        and skill package, recreates the disclosure, and requires every prompt
-        field in the persisted execution to equal that deterministic result.
+        This method establishes exact request inclusion only.  It accepts no
+        caller-authored mechanism booleans: it reloads the manifest and skill
+        package, recreates the disclosure, and requires every prompt field in
+        the persisted execution to equal that deterministic result.  It does
+        not prove provider delivery, model activation, adherence, or benefit.
         """
 
         expected = self.materialize(harness_ref)

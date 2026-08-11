@@ -97,6 +97,7 @@ from spiral_harness.evolution.strategies import (
     make_search_policy,
     make_strategy_plugin_manifest,
 )
+from spiral_harness.execution.attempts import AttemptLedger
 from spiral_harness.execution.contracts import ATTEMPT_OUTCOME_MEDIA_TYPE, ExecutionStatus
 from spiral_harness.execution.receipts import (
     EXECUTION_RECEIPT_MEDIA_TYPE,
@@ -713,7 +714,7 @@ def build_receipt_backed_screen(tmp_path: Path) -> SimpleNamespace:
         token_ceiling_per_attempt=10,
     )
     ledger = ledger_for(store, schedule, extra_attempts=1)
-    preflight = preflight_attempt_budget(schedule, ledger.state(), execution_spec)
+    preflight = preflight_attempt_budget(schedule, ledger, execution_spec)
     preflight_ref = publish_schedule_preflight(store, preflight)
     records = tuple(
         record_attempt(
@@ -856,7 +857,7 @@ def test_objective_aggregate_requires_independent_exact_capability(tmp_path: Pat
             pass
 
 
-def test_objective_aggregate_v2_binds_receipts_attestor_and_hmac_domain(
+def test_objective_aggregate_v3_binds_receipts_attestor_and_hmac_domain(
     tmp_path: Path,
 ) -> None:
     store = ArtifactStore(tmp_path)
@@ -866,14 +867,14 @@ def test_objective_aggregate_v2_binds_receipts_attestor_and_hmac_domain(
     aggregate_ref = service.attest(content)
     envelope = store.get_json(aggregate_ref, TrustedObjectiveAggregate)
 
-    assert TRUSTED_OBJECTIVE_AGGREGATE_MEDIA_TYPE.endswith(".v2+json")
+    assert TRUSTED_OBJECTIVE_AGGREGATE_MEDIA_TYPE.endswith(".v3+json")
     assert aggregate_ref.media_type == TRUSTED_OBJECTIVE_AGGREGATE_MEDIA_TYPE
-    assert content.schema_version == "2"
-    assert envelope.schema_version == "2"
+    assert content.schema_version == "3"
+    assert envelope.schema_version == "3"
     assert service.verification_capability.attestor_id == sha256_bytes(
-        b"spiral-harness/objective-aggregate-attestor/v2\x00" + secret
+        b"spiral-harness/objective-aggregate-attestor/v3\x00" + secret
     )
-    expected = hmac.new(secret, b"spiral-harness/objective-aggregate/v2\x00", sha256)
+    expected = hmac.new(secret, b"spiral-harness/objective-aggregate/v3\x00", sha256)
     expected.update(envelope.attestor_id.encode("ascii") + b"\x00")
     expected.update(canonical_json_bytes(envelope.content))
     assert envelope.authentication_tag == expected.hexdigest()
@@ -890,24 +891,24 @@ def test_objective_aggregate_v2_binds_receipts_attestor_and_hmac_domain(
         TrustedObjectiveAggregateContent.model_validate(content_payload, strict=True)
 
 
-def test_screen_evaluation_v2_rejects_legacy_receipt_and_outcome_refs(tmp_path: Path) -> None:
+def test_screen_evaluation_v3_rejects_legacy_receipt_and_outcome_refs(tmp_path: Path) -> None:
     store = ArtifactStore(tmp_path)
     schedule = EvaluationBatchSchedule(
-        study="screen-v2-contract",
+        study="screen-v3-contract",
         kind=BaselineKind.PROMPT_ONLY.value,
         phase=EvaluationPhase.EXPLORATION,
         query=0,
         master_seed=17,
-        parent_harness_id="parent-v2",
-        candidate_harness_id="candidate-v2",
-        task_ids=("task-v2",),
+        parent_harness_id="parent-v3",
+        candidate_harness_id="candidate-v3",
+        task_ids=("task-v3",),
         search_runs=(17,),
         repeat_seeds=(23,),
         max_attempts_per_cell=1,
         token_ceiling_per_attempt=10,
     )
-    receipt_ref = put_json(store, "receipt-v2", media_type=EXECUTION_RECEIPT_MEDIA_TYPE)
-    outcome_ref = put_json(store, "outcome-v2", media_type=ATTEMPT_OUTCOME_MEDIA_TYPE)
+    receipt_ref = put_json(store, "receipt-v3", media_type=EXECUTION_RECEIPT_MEDIA_TYPE)
+    outcome_ref = put_json(store, "outcome-v3", media_type=ATTEMPT_OUTCOME_MEDIA_TYPE)
     usage = TrustedExecutionUsage(
         schedule_fingerprint=schedule.fingerprint,
         receipt_refs=(receipt_ref,),
@@ -921,21 +922,21 @@ def test_screen_evaluation_v2_rejects_legacy_receipt_and_outcome_refs(tmp_path: 
         charged_tokens=3,
     )
     evaluation = TrustedScreenEvaluation(
-        search_run_ref=put_json(store, "run-v2", media_type=SEARCH_RUN_MANIFEST_MEDIA_TYPE),
+        search_run_ref=put_json(store, "run-v3", media_type=SEARCH_RUN_MANIFEST_MEDIA_TYPE),
         baseline_kind=BaselineKind.PROMPT_ONLY,
         round_index=0,
-        proposal_ref=put_json(store, "proposal-v2", media_type=PROMPT_PROPOSAL_MEDIA_TYPE),
-        candidate_ref=put_json(store, "candidate-v2"),
-        parent_harness_ref=put_json(store, "parent-v2"),
-        candidate_harness_ref=put_json(store, "harness-v2"),
+        proposal_ref=put_json(store, "proposal-v3", media_type=PROMPT_PROPOSAL_MEDIA_TYPE),
+        candidate_ref=put_json(store, "candidate-v3"),
+        parent_harness_ref=put_json(store, "parent-v3"),
+        candidate_harness_ref=put_json(store, "harness-v3"),
         schedule=schedule,
-        preflight_ref=put_json(store, "preflight-v2", media_type=SCHEDULE_PREFLIGHT_MEDIA_TYPE),
+        preflight_ref=put_json(store, "preflight-v3", media_type=SCHEDULE_PREFLIGHT_MEDIA_TYPE),
         receipt_refs=(receipt_ref,),
         final_ledger_tail_ref=outcome_ref,
         trusted_usage=usage,
         objective_aggregate_ref=put_json(
             store,
-            "objective-v2",
+            "objective-v3",
             media_type=TRUSTED_OBJECTIVE_AGGREGATE_MEDIA_TYPE,
         ),
         primary_score=0.8,
@@ -951,9 +952,10 @@ def test_screen_evaluation_v2_rejects_legacy_receipt_and_outcome_refs(tmp_path: 
     )
     payload = evaluation.model_dump(mode="python", round_trip=True, warnings="none")
 
-    assert TRUSTED_SCREEN_EVALUATION_MEDIA_TYPE.endswith(".v2+json")
+    assert TRUSTED_SCREEN_EVALUATION_MEDIA_TYPE.endswith(".v3+json")
     assert evaluation_ref.media_type == TRUSTED_SCREEN_EVALUATION_MEDIA_TYPE
-    assert evaluation.schema_version == "2"
+    assert evaluation.schema_version == "3"
+    assert evaluation.trusted_usage.schema_version == "3"
     assert all(ref.media_type == EXECUTION_RECEIPT_MEDIA_TYPE for ref in evaluation.receipt_refs)
     assert evaluation.final_ledger_tail_ref.media_type == ATTEMPT_OUTCOME_MEDIA_TYPE
 
@@ -1433,6 +1435,80 @@ def test_receipt_backed_screen_replays_live_ledger_and_hmac_aggregate(
     assert verified.trusted_usage.settled_attempts == 8
     assert verified.trusted_usage.charged_tokens == 24
     assert verified.schedule.repeat_seeds == (11, 12)
+
+
+def test_screen_rechecks_ledger_after_objective_verification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env = build_receipt_backed_screen(tmp_path)
+    original_verify = ObjectiveAggregateVerificationCapability.verify
+
+    def verify_then_advance(
+        capability: ObjectiveAggregateVerificationCapability,
+        aggregate_ref: ArtifactRef,
+    ) -> TrustedObjectiveAggregateContent:
+        content = original_verify(capability, aggregate_ref)
+        reservation_ref = env.ledger.reserve(
+            task_fingerprint="a" * 64,
+            execution_fingerprint="b" * 64,
+            request_sha256="c" * 64,
+            token_ceiling=env.schedule.token_ceiling_per_attempt,
+        )
+        env.ledger.burn(reservation_ref, error_class="objective-verification-race")
+        return content
+
+    monkeypatch.setattr(ObjectiveAggregateVerificationCapability, "verify", verify_then_advance)
+
+    with pytest.raises(AutomaticSearchLoopError, match="ledger changed during verification"):
+        env.loop._verify_screen_evaluation(
+            run_ref=env.run_ref,
+            run=env.run,
+            round_index=0,
+            champion_ref=env.screen_parent_harness_ref,
+            proposal_ref=env.proposal_ref,
+            screen=env.screen,
+        )
+
+
+def test_screen_rejects_reconstructed_ledger_before_objective_verification(
+    tmp_path: Path,
+) -> None:
+    env = build_receipt_backed_screen(tmp_path)
+    reconstructed = AttemptLedger(
+        env.store,
+        ledger_id=env.ledger.ledger_id,
+        budget=env.ledger.budget,
+        tail_ref=env.ledger.tail_ref,
+    )
+    assert reconstructed.state().writer_epoch_id != env.ledger.state().writer_epoch_id
+    unreachable_objective_ref = ArtifactRef(
+        sha256="0" * 64,
+        size=1,
+        media_type=TRUSTED_OBJECTIVE_AGGREGATE_MEDIA_TYPE,
+    )
+    evaluation_ref = env.store.put_json(
+        env.evaluation.model_copy(update={"objective_aggregate_ref": unreachable_objective_ref}),
+        media_type=TRUSTED_SCREEN_EVALUATION_MEDIA_TYPE,
+    )
+    screen = env.screen.model_copy(update={"evaluation_ref": evaluation_ref})
+    loop = AutomaticSearchLoop(
+        env.store,
+        runtime=LedgerRuntime(reconstructed),  # type: ignore[arg-type]
+        lifecycle=object(),  # type: ignore[arg-type]
+        objective_aggregate_verifier=env.objective_service.verification_capability,
+        strategy_feedback_verifier=env.feedback_service.verification_capability,
+    )
+
+    with pytest.raises(ExecutionReceiptIntegrityError, match="writer epoch"):
+        loop._verify_screen_evaluation(
+            run_ref=env.run_ref,
+            run=env.run,
+            round_index=0,
+            champion_ref=env.screen_parent_harness_ref,
+            proposal_ref=env.proposal_ref,
+            screen=screen,
+        )
 
 
 def test_screen_rejects_foreign_preflight_model_spec(tmp_path: Path) -> None:

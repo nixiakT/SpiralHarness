@@ -1,18 +1,4 @@
-"""Trusted, single-writer control of one frozen experiment.
-
-The structural :class:`~spiral_harness.storage.CandidateJournal` deliberately
-accepts any locally legal lifecycle event.  This module is the semantic owner
-of those events: it rejoins admission, mechanism, gate, usage, and terminal
-artifacts before publishing a transition. Mechanism checks must arrive in a
-protocol-pinned trusted-producer envelope; a caller-authored ``passed`` value
-cannot authorize entry into the gate.
-
-M0.2 uses caller-held content-addressed tails plus one in-process controller as
-the single writer.  Stale tails and branches are rejected inside that process.
-This is not a cross-process compare-and-swap protocol: a distributed service
-must add a durable lease/transaction around the experiment usage head and each
-candidate head before multiple workers may write concurrently.
-"""
+"""Trusted in-process single-writer controller for one frozen experiment."""
 
 from __future__ import annotations
 
@@ -39,6 +25,8 @@ from spiral_harness.core.lifecycle import (
 from spiral_harness.core.models import (
     ArtifactRef,
     BudgetPolicy,
+    CandidateMutation,
+    ComponentKind,
     ImmutableModel,
     NonEmptyStr,
 )
@@ -57,6 +45,7 @@ from spiral_harness.verification.artifacts import (
 )
 from spiral_harness.verification.mechanism import (
     ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE,
+    RESERVED_SKILL_MECHANISM_IDS,
     AttestedMechanismEvidence,
     MechanismEvidenceVerificationCapability,
 )
@@ -1860,7 +1849,18 @@ class ExperimentController:
             "frozen gate config",
         )
         required = gate_config.required_mechanism_checks
-        by_name = {check.name: check for check in evidence.checks}
+        mutation = self._load(candidate.mutation_ref, CandidateMutation, "candidate mutation")
+        is_skill_mutation = mutation.after.kind is ComponentKind.SKILL
+        if is_skill_mutation:
+            skill_required = sorted(RESERVED_SKILL_MECHANISM_IDS)
+            required = tuple(dict.fromkeys((*required, *skill_required)))
+        by_name = {
+            check.name: check
+            for check in evidence.checks
+            if not (
+                is_skill_mutation and check.name.strip().casefold() in RESERVED_SKILL_MECHANISM_IDS
+            )
+        }
         failed = tuple(
             name for name in required if name in by_name and by_name[name].passed is False
         )

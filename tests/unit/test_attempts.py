@@ -145,7 +145,8 @@ def test_reservation_is_persisted_before_settlement_and_usage_is_derived(tmp_pat
     assert pending.charged_tokens == 0
     assert pending.encumbered_tokens == 10
     reservation = store.get_json(reservation_ref, AttemptReservation)
-    assert reservation.schema_version == "2"
+    assert reservation.schema_version == "3"
+    assert reservation.writer_epoch_id == ledger.state().writer_epoch_id
     assert reservation.request_sha256 == completed.request_sha256
     assert reservation.budget_fingerprint == ledger.budget.fingerprint
 
@@ -157,7 +158,8 @@ def test_reservation_is_persisted_before_settlement_and_usage_is_derived(tmp_pat
     outcome = store.get_json(outcome_ref, AttemptOutcome)
 
     assert outcome_ref.media_type == ATTEMPT_OUTCOME_MEDIA_TYPE
-    assert outcome.schema_version == "2"
+    assert outcome.schema_version == "3"
+    assert outcome.writer_epoch_id == state.writer_epoch_id
     assert outcome.disposition is AttemptDisposition.SETTLED
     assert outcome.reported_tokens == outcome.charged_tokens == 4
     assert state.pending_reservation_ref is None
@@ -171,7 +173,13 @@ def test_reservation_is_persisted_before_settlement_and_usage_is_derived(tmp_pat
         budget=budget(),
         tail_ref=outcome_ref,
     )
-    assert reopened.state() == state
+    reopened_state = reopened.state()
+    assert reopened_state.writer_epoch_id != state.writer_epoch_id
+    assert reopened_state.model_dump(exclude={"writer_epoch_id"}) == state.model_dump(
+        exclude={"writer_epoch_id"}
+    )
+    with pytest.raises(AttemptReservationError, match="audit-only"):
+        reserve(reopened, execution(task_id="task-2"))
 
 
 def test_burn_without_execution_conservatively_charges_full_reservation(tmp_path) -> None:
@@ -191,6 +199,29 @@ def test_burn_without_execution_conservatively_charges_full_reservation(tmp_path
     assert outcome.charged_tokens == 10
     assert outcome.execution_ref is None
     assert ledger.state().remaining_tokens == 20
+
+
+def test_reopened_pending_ledger_cannot_settle_or_burn_the_prior_writer(tmp_path) -> None:
+    store = ArtifactStore(tmp_path / "cas")
+    original = AttemptLedger(store, ledger_id="run", budget=budget())
+    completed = execution()
+    reservation_ref = reserve(original, completed)
+    execution_ref = store_execution(store, completed)
+    reopened = AttemptLedger(
+        store,
+        ledger_id=original.ledger_id,
+        budget=original.budget,
+        tail_ref=reservation_ref,
+    )
+    object_count = len(tuple(store.objects_dir.rglob("*")))
+
+    with pytest.raises(AttemptReservationError, match="audit-only"):
+        reopened.settle(reservation_ref, execution_ref=execution_ref)
+    with pytest.raises(AttemptReservationError, match="audit-only"):
+        reopened.burn(reservation_ref, error_class="must-not-write")
+
+    assert reopened.tail_ref == reservation_ref
+    assert len(tuple(store.objects_dir.rglob("*"))) == object_count
 
 
 def test_burn_derives_usage_from_failed_execution(tmp_path) -> None:
@@ -314,7 +345,7 @@ def test_completed_usage_overrun_poisons_ledger_and_consumes_actual_tokens(tmp_p
         tail_ref=outcome_ref,
     )
     assert reopened.state().poisoned is True
-    with pytest.raises(AttemptBudgetExceeded, match="poisoned"):
+    with pytest.raises(AttemptReservationError, match="audit-only"):
         reserve(reopened, execution(task_id="task-2"))
 
 
@@ -429,6 +460,7 @@ def test_replay_checks_execution_binding_for_every_disposition(
     replacement_ref = store_execution(store, replacement)
     forged_outcome = AttemptOutcome(
         ledger_id="run",
+        writer_epoch_id=ledger.state().writer_epoch_id,
         budget_fingerprint=configured_budget.fingerprint,
         sequence=0,
         reservation_ref=reservation_ref,
@@ -480,6 +512,7 @@ def test_replay_checks_bound_execution_usage_for_every_disposition(
     execution_ref = store_execution(store, actual)
     forged_outcome = AttemptOutcome(
         ledger_id="run",
+        writer_epoch_id=ledger.state().writer_epoch_id,
         budget_fingerprint=configured_budget.fingerprint,
         sequence=0,
         reservation_ref=reservation_ref,

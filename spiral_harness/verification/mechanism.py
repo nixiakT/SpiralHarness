@@ -30,6 +30,16 @@ from spiral_harness.verification.models import MechanismEvidence
 ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE = (
     "application/vnd.spiral-harness.attested-mechanism-evidence.v1+json"
 )
+SKILL_REQUEST_ACTIVATION_MECHANISM_ID = "skill_request_activation"
+SKILL_ADHERENCE_MECHANISM_ID = "skill_adherence"
+SKILL_BEHAVIOR_MECHANISM_ID = "skill_behavior"
+RESERVED_SKILL_MECHANISM_IDS = frozenset(
+    {
+        SKILL_REQUEST_ACTIVATION_MECHANISM_ID,
+        SKILL_ADHERENCE_MECHANISM_ID,
+        SKILL_BEHAVIOR_MECHANISM_ID,
+    }
+)
 
 _ATTESTATION_DOMAIN = b"spiral-harness:mechanism-evidence-attestation:v1\x00"
 _ATTESTOR_ID_DOMAIN = b"spiral-harness:mechanism-evidence-attestor-id:v1\x00"
@@ -37,6 +47,19 @@ _ATTESTOR_ID_DOMAIN = b"spiral-harness:mechanism-evidence-attestor-id:v1\x00"
 
 class MechanismEvidenceAttestationError(ValueError):
     """Raised when mechanism evidence is not authentic under the frozen producer."""
+
+
+def _reject_reserved_skill_mechanism_ids(evidence: MechanismEvidence) -> None:
+    used = {
+        check.name.strip().casefold()
+        for check in evidence.checks
+        if check.name.strip().casefold() in RESERVED_SKILL_MECHANISM_IDS
+    }
+    if used:
+        raise MechanismEvidenceAttestationError(
+            "caller-authored evidence may not use reserved skill mechanism IDs: "
+            + ", ".join(sorted(used))
+        )
 
 
 def _require_json_ref(ref: ArtifactRef, *, field_name: str) -> None:
@@ -194,11 +217,17 @@ class TrustedMechanismEvidenceService:
         """Sign one exact, already validated trusted-producer assertion."""
 
         validated = MechanismEvidenceContent.model_validate(content)
-        fields = validated.model_dump(mode="python", round_trip=True, warnings="none")
+        _reject_reserved_skill_mechanism_ids(validated.evidence)
+        return self.__sign(validated)
+
+    def __sign(self, content: MechanismEvidenceContent) -> AttestedMechanismEvidence:
+        """Create the envelope after a public entry point enforces its policy."""
+
+        fields = content.model_dump(mode="python", round_trip=True, warnings="none")
         return AttestedMechanismEvidence(
             **fields,
             attestor_id=self.attestor_id,
-            attestation_sha256=_attestation(self.__secret, validated, self.attestor_id),
+            attestation_sha256=_attestation(self.__secret, content, self.attestor_id),
         )
 
     def create(
@@ -239,6 +268,10 @@ class TrustedMechanismEvidenceService:
 
 __all__ = [
     "ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE",
+    "RESERVED_SKILL_MECHANISM_IDS",
+    "SKILL_ADHERENCE_MECHANISM_ID",
+    "SKILL_BEHAVIOR_MECHANISM_ID",
+    "SKILL_REQUEST_ACTIVATION_MECHANISM_ID",
     "AttestedMechanismEvidence",
     "MechanismEvidenceAttestationError",
     "MechanismEvidenceContent",
