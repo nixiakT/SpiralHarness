@@ -4,7 +4,14 @@ import json
 
 import pytest
 
-from spiral_harness.core import ArtifactRef, ComponentKind, HarnessComponentRef
+from spiral_harness.core import (
+    ArtifactRef,
+    ComponentKind,
+    HarnessComponentRef,
+    HarnessManifest,
+    canonical_json_bytes,
+    sha256_bytes,
+)
 from spiral_harness.storage import (
     ArtifactDecodeError,
     ArtifactIntegrityError,
@@ -45,7 +52,48 @@ def test_json_put_is_canonical_and_can_return_a_validated_model(tmp_path) -> Non
         artifact=left,
     )
     component_ref = store.put_json(component)
-    assert store.get_json(component_ref, HarnessComponentRef) == component
+    loaded_component = store.get_json(component_ref, HarnessComponentRef)
+
+    assert loaded_component == component
+    assert component_ref.sha256 == sha256_bytes(canonical_json_bytes(loaded_component))
+
+
+@pytest.mark.parametrize("variant", ["alias", "missing-default", "unsorted", "whitespace"])
+def test_typed_json_rejects_noncanonical_model_representations(tmp_path, variant: str) -> None:
+    store = ArtifactStore(tmp_path)
+    manifest = HarnessManifest(
+        model_fingerprint="model",
+        runtime_fingerprint="runtime",
+        trusted_plane_version="trusted-plane-v1",
+        parent=ArtifactRef(sha256="f" * 64, size=1, media_type="application/json"),
+        components=(
+            HarnessComponentRef(
+                name="alpha",
+                kind=ComponentKind.PROMPT,
+                artifact=ArtifactRef(sha256="a" * 64, size=1, media_type="text/plain"),
+            ),
+            HarnessComponentRef(
+                name="zeta",
+                kind=ComponentKind.SKILL,
+                artifact=ArtifactRef(sha256="b" * 64, size=1, media_type="text/plain"),
+            ),
+        ),
+    )
+    payload = manifest.model_dump(mode="json", by_alias=False, exclude_none=False)
+
+    if variant == "alias":
+        payload["parent_ref"] = payload.pop("parent")
+    elif variant == "missing-default":
+        del payload["schema_version"]
+    elif variant == "unsorted":
+        payload["components"].reverse()
+    else:
+        payload["model_fingerprint"] = " model "
+
+    ref = store.put_json(payload)
+
+    with pytest.raises(ArtifactDecodeError, match="not canonical for HarnessManifest"):
+        store.get_json(ref, HarnessManifest)
 
 
 def test_read_detects_same_size_hash_tampering(tmp_path) -> None:

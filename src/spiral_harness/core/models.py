@@ -20,6 +20,7 @@ class ImmutableModel(BaseModel):
         frozen=True,
         populate_by_name=True,
         revalidate_instances="always",
+        strict=True,
         str_strip_whitespace=True,
         validate_default=True,
     )

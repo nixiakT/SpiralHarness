@@ -179,5 +179,6 @@ and regressions confined to a small protected slice.
 ## 10. Audit rule
 
 No score without a run record; no comparison without matched fingerprints; no
-promotion without a versioned decision artifact; no final claim without a test
-set that did not participate in search.
+promotion unless the versioned decision can be deterministically recomputed
+from its frozen gate config, paired observations, and mechanism evidence; no
+final claim without a test set that did not participate in search.

@@ -18,6 +18,7 @@ from spiral_harness.verification.models import (
     TrialObservation,
     TrialStatus,
 )
+from spiral_harness.verification.protocol import CandidateVerifier
 from spiral_harness.verification.statistics import (
     compare_trials,
     compute_paired_statistics,
@@ -26,6 +27,7 @@ from spiral_harness.verification.statistics import (
 )
 
 __all__ = [
+    "CandidateVerifier",
     "ComparisonMetrics",
     "ComparisonResult",
     "ConfidenceInterval",

@@ -1,5 +1,6 @@
 """Benchmark adapters, including explicitly synthetic infrastructure fixtures."""
 
+from spiral_harness.benchmark.base import BenchmarkAdapter
 from spiral_harness.benchmark.controlled_fixture import (
     CANDIDATE_PROMPT,
     CONTROLLED_TASKS,
@@ -27,6 +28,7 @@ __all__ = [
     "NORMALIZATION_SLICE",
     "PROTECTED_CANONICAL_SLICE",
     "SEED_PROMPT",
+    "BenchmarkAdapter",
     "BenchmarkTask",
     "DeterministicExecution",
     "DeterministicExecutor",

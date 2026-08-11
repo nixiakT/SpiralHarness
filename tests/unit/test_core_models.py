@@ -66,6 +66,25 @@ def test_artifact_ref_is_strict_validated_and_frozen() -> None:
         ref.size = 2
 
 
+def test_immutable_models_reject_python_coercion_but_accept_json_forms() -> None:
+    prompt = component("system", ComponentKind.PROMPT, "a")
+    manifest_values = {
+        "model_fingerprint": "model",
+        "runtime_fingerprint": "runtime",
+        "trusted_plane_version": "trusted-plane-v1",
+    }
+
+    with pytest.raises(ValidationError):
+        ArtifactRef(sha256="a" * 64, size=1, media_type=b"text/plain")
+    with pytest.raises(ValidationError):
+        HarnessComponentRef(name="system", kind="prompt", artifact=artifact("a"))
+    with pytest.raises(ValidationError):
+        HarnessManifest(**manifest_values, components=[prompt])
+
+    manifest = HarnessManifest(**manifest_values, components=(prompt,))
+    assert HarnessManifest.model_validate_json(canonical_json_bytes(manifest)) == manifest
+
+
 def test_budget_requires_a_finite_nonnegative_ceiling() -> None:
     assert BudgetPolicy(max_tokens=0).max_tokens == 0
     with pytest.raises(ValidationError, match="at least one"):

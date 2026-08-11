@@ -268,7 +268,18 @@ class ArtifactStore:
         # Validate through Pydantic's JSON entry point.  Strict models may
         # correctly accept a JSON array for a tuple while rejecting a Python
         # list supplied directly by an untrusted caller.
-        return TypeAdapter(model_type).validate_json(data)
+        validated = TypeAdapter(model_type).validate_json(data)
+        try:
+            typed_canonical = canonical_json_bytes(validated)
+        except (TypeError, ValueError, UnicodeEncodeError) as exc:
+            raise ArtifactDecodeError(
+                f"artifact {digest} typed value cannot be represented as canonical JSON"
+            ) from exc
+        if typed_canonical != data:
+            raise ArtifactDecodeError(
+                f"artifact {digest} bytes are not canonical for {model_type.__name__}"
+            )
+        return validated
 
     @staticmethod
     def _is_json_media_type(media_type: str) -> bool:

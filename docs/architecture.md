@@ -1,9 +1,11 @@
 # M0–M1 architecture
 
-> **Status:** target architecture. M0 currently implements immutable core
-> schemas, content-addressed local artifacts, paired statistics, a promotion
-> gate, and a synthetic controlled-fault vertical slice. Other modules and
-> isolation guarantees below remain planned until explicitly marked otherwise.
+> **Status:** target architecture. M0 currently implements immutable core and
+> experiment schemas, content-addressed local artifacts and linked lifecycle
+> journals, trusted cross-artifact prompt mutation admission, typed trajectory/evidence
+> contracts, paired statistics, a promotion gate, and a synthetic
+> controlled-fault vertical slice. Process isolation and the other guarantees
+> below remain planned until explicitly marked otherwise.
 
 This document turns the contracts in the [research plan](research-plan.md) and
 [verification protocol](verification-protocol.md) into implementable module and
@@ -69,10 +71,15 @@ mutable Python objects. The evolution engine submits a frozen
 access view. Benchmark adapters do not import evolution code, and graders do
 not execute inside candidate workers.
 
-M0 is scoped to the domain, repository, harness registry, verifier, experiment
-controller, and a deterministic controlled-fault adapter. M1 is scoped to a
-fixed-model runtime, one real benchmark adapter, trajectory-driven evolution,
-and static, random-valid, and prompt-only experiment strategies.
+M0 now provides the domain, repository, atomic harness registry, lifecycle
+projection/journal, verifier, frozen experiment contracts, trusted candidate
+admission and terminal-decision joins, interface protocols, typed evidence
+schemas, and a deterministic controlled-fault adapter. The journal is a
+structural ledger, not semantic authorization by itself. A complete secure
+experiment controller that owns all transitions and budgets remains planned.
+M1 is scoped to a fixed-model runtime, one real benchmark adapter,
+trajectory-driven evolution, and static, random-valid, and prompt-only
+experiment strategies.
 
 ## 3. Artifact model and lineage
 
@@ -87,7 +94,7 @@ Core artifacts are:
 
 | Artifact | Required references |
 | --- | --- |
-| `ProtocolManifest` | split-manifest hashes, grader/gate versions, runtime policy, model settings, budgets |
+| `ProtocolManifest` | split-manifest refs, gate-config ref, grader/runtime policy, model settings, budgets |
 | `ExperimentManifest` | protocol hash, seed harness, objectives, baselines, stopping rule |
 | `HarnessSnapshot` | typed component name → component artifact hash |
 | `HarnessPatch` | parent snapshot, changed component(s), canonical before/after hashes |
@@ -148,6 +155,19 @@ and recorded evidence are immutable. Terminal outcomes remain archived. An
 sequential policy permits it; otherwise further work is a new candidate or
 experiment. Promotion atomically appends a decision and advances the champion
 pointer while retaining the previous champion for rollback.
+
+The current `CandidateJournal` enforces immutable links, sequence, stream,
+candidate identity, and the legal transition graph. Trusted admission and
+terminal-decision services separately replay the referenced semantic joins
+before `VALID` and terminal events. The future experiment controller will own
+those calls so an untrusted caller cannot bypass them by invoking the
+structural journal directly.
+
+The current terminal replay closes the deterministic score path over typed
+trial tuples and mechanism evidence. Candidate/arm/split-bound trial-batch
+envelopes, an independently pinned gate-implementation fingerprint, exact
+media types for every domain artifact, and binding to a specific
+`EVIDENCE_COMPLETE` journal tail remain M0.2 controller work.
 
 Experiment transitions are:
 
@@ -237,14 +257,15 @@ interaction experiment can attribute their joint effect.
 ```text
 src/spiral_harness/
   cli.py
-  core/            # implemented: immutable schemas and canonical hashing
-  storage/         # implemented: content-addressed local artifact objects
+  core/            # implemented: immutable state, experiment and lifecycle schemas
+  storage/         # implemented: CAS objects and content-addressed linked journal
+  evidence/        # implemented: trajectory, span, packet and diagnosis contracts
   verification/    # implemented: pairing, statistics, constraints, promotion gate
-  benchmark/       # controlled fixture implemented; adapter protocol/M1 adapter planned
-  harness/         # planned: snapshots, patch application, component validators
-  execution/       # planned: controller, sandbox, fingerprints, event capture
+  benchmark/       # adapter protocol + controlled fixture; real adapter planned
+  harness/         # implemented: atomic policy validation/snapshot application
+  execution/       # executor protocol; controller, sandbox and capture planned
   evolution/       # controlled flow implemented; automatic search/baselines planned
-  experiments/     # planned: budgets, state-machine controller, orchestration
+  experiments/     # implemented: trusted admission and decision replay; controller planned
   access/          # planned: exploration/gate/sealed views and disclosure policy
 ```
 

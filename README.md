@@ -36,13 +36,31 @@ are later extensions, not part of the initial claim.
 The M0 verification kernel now includes:
 
 - immutable schemas for harness manifests and atomic candidate mutations;
+- frozen protocol/experiment manifests binding split, model, runtime, grader,
+  gate, mutation policy, stopping rule, and evaluation budget;
+- canonical typed-artifact reads that reject aliases, omitted defaults, and
+  validator normalization when those would create a second content identity;
+- a prompt-only mutation registry that verifies the actual parent component and
+  candidate bytes, hash, media type, size, and immutable fields;
+- trusted candidate admission that reloads and rejoins the experiment,
+  protocol, parent lineage, mutation, evidence, child, and gate configuration;
 - canonical hashing and an integrity-checking content-addressed artifact store;
+- a strict evidence-bearing candidate lifecycle stored as a content-addressed,
+  append-only linked journal with no overwriteable head;
+- typed trajectory events, source spans, evidence packets, failure signatures,
+  and diagnostic clusters;
+- structural interfaces for benchmark, executor, diagnoser, proposer, artifact
+  repository, and independent verifier implementations;
 - strict task/seed pairing with task-level bootstrap statistics;
 - a three-state promotion gate (`promote`, `reject`, `inconclusive`);
+- terminal-decision validation that replays admission, reloads the frozen gate
+  split/config and paired evidence, recomputes the complete gate decision, and
+  binds it to the only matching lifecycle outcome;
 - hard checks for preregistered rosters, mechanism evidence, protected slices,
-  policy violations, regressions, and resource budgets.
+  policy violations, regressions, and resource budgets;
 - a deterministic controlled-fault vertical slice with logically disjoint
-  exploration and gate rosters and replayable artifact lineage.
+  exploration and gate rosters, pre-gate mechanism probes, a frozen experiment
+  contract, and replayable artifact/lifecycle lineage.
 
 The immediate plan is:
 
@@ -52,8 +70,9 @@ The immediate plan is:
    baselines under the same evaluation budget;
 4. expand the mutation space only after the core claim is measurable.
 
-See [the research plan](docs/research-plan.md) and
-[the verification protocol](docs/verification-protocol.md).
+See [the research plan](docs/research-plan.md),
+[the verification protocol](docs/verification-protocol.md), and the
+[pinned open-source architecture study](docs/reference-architecture-study.md).
 
 ## Run the M0 vertical slice
 
@@ -66,10 +85,13 @@ uv run pytest
 ```
 
 The demo injects a known prompt fault into a deterministic synthetic executor,
-diagnoses it on an exploration roster, applies one atomic prompt repair, and
-evaluates parent/candidate pairs on a disjoint gate roster. It prints the root
-SHA-256 of a replay manifest; all prompts, manifests, trials, mechanism checks,
-gate configuration, and the decision are stored beneath the output directory.
+diagnoses it on an exploration roster, applies one policy-checked atomic prompt
+repair, verifies the proposed mechanism on exploration probes, and evaluates
+parent/candidate pairs on a disjoint gate roster loaded back through the frozen
+protocol. It prints the root SHA-256 of
+a replay manifest; all protocol/experiment contracts, prompts, manifests,
+trials, mechanism checks, candidate lifecycle events, gate configuration, and
+the decision are stored beneath the output directory.
 
 The fixture validates plumbing and adversarial gate behavior only. It is not a
 real benchmark, does not call an LLM, and is not evidence of model or agent

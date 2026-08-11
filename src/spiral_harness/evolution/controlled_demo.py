@@ -21,20 +21,39 @@ from spiral_harness.benchmark import (
     NORMALIZATION_SLICE,
     PROTECTED_CANONICAL_SLICE,
     SEED_PROMPT,
+    BenchmarkTask,
     DeterministicExecution,
     DeterministicExecutor,
 )
 from spiral_harness.core import (
     ArtifactRef,
     BudgetPolicy,
+    CandidateLifecycleEvent,
+    CandidateManifest,
     CandidateMutation,
+    CandidateState,
     ComponentKind,
+    ExperimentManifest,
     HarnessComponentRef,
     HarnessManifest,
     MutationHypothesis,
+    MutationPolicy,
+    ProtocolManifest,
+    ProtocolPartition,
+    ProtocolSplit,
 )
-from spiral_harness.storage import ArtifactStore
+from spiral_harness.experiments import (
+    ADMISSION_REPORT_MEDIA_TYPE,
+    GATE_EVALUATION_MANIFEST_MEDIA_TYPE,
+    TERMINAL_DECISION_REPORT_MEDIA_TYPE,
+    CandidateAdmissionService,
+    GateEvaluationManifest,
+    TerminalDecisionService,
+)
+from spiral_harness.harness import HarnessRegistry
+from spiral_harness.storage import ArtifactStore, CandidateJournal
 from spiral_harness.verification import (
+    Decision,
     GateConfig,
     GateDecision,
     MechanismCheck,
@@ -76,20 +95,29 @@ class ControlledDemoRefs(_FrozenArtifactModel):
     exploration_suite_ref: ArtifactRef
     gate_suite_ref: ArtifactRef
     gate_config_ref: ArtifactRef
+    protocol_manifest_ref: ArtifactRef
+    experiment_manifest_ref: ArtifactRef
     seed_prompt_ref: ArtifactRef
     candidate_prompt_ref: ArtifactRef
     seed_manifest_ref: ArtifactRef
     candidate_manifest_ref: ArtifactRef
+    candidate_record_ref: ArtifactRef
     exploration_trials_ref: ArtifactRef
     exploration_execution_ref: ArtifactRef
+    candidate_exploration_trials_ref: ArtifactRef
+    candidate_exploration_execution_ref: ArtifactRef
     seed_gate_trials_ref: ArtifactRef
     candidate_gate_trials_ref: ArtifactRef
     seed_gate_execution_ref: ArtifactRef
     candidate_gate_execution_ref: ArtifactRef
     fault_evidence_ref: ArtifactRef
     candidate_mutation_ref: ArtifactRef
+    admission_report_ref: ArtifactRef
     mechanism_evidence_ref: ArtifactRef
+    gate_evaluation_ref: ArtifactRef
     gate_decision_ref: ArtifactRef
+    terminal_decision_report_ref: ArtifactRef
+    candidate_journal_tail_ref: ArtifactRef
 
     @property
     def benchmark_suite_ref(self) -> ArtifactRef:
@@ -203,16 +231,17 @@ def _mechanism_evidence(
     candidate_manifest: HarnessManifest,
     candidate_manifest_ref: ArtifactRef,
     candidate_prompt_ref: ArtifactRef,
-    seed_trials: tuple[TrialObservation, ...],
-    seed_trials_ref: ArtifactRef,
-    candidate_trials: tuple[TrialObservation, ...],
-    candidate_trials_ref: ArtifactRef,
+    parent_probe_trials: tuple[TrialObservation, ...],
+    parent_probe_trials_ref: ArtifactRef,
+    candidate_probe_trials: tuple[TrialObservation, ...],
+    candidate_probe_trials_ref: ArtifactRef,
     candidate_executions: tuple[DeterministicExecution, ...],
     candidate_execution_ref: ArtifactRef,
+    exploration_tasks: tuple[BenchmarkTask, ...],
 ) -> MechanismEvidence:
-    tasks_by_id = {task.task_id: task for task in GATE_TASKS}
-    seed_by_id = {trial.task_id: trial for trial in seed_trials}
-    candidate_by_id = {trial.task_id: trial for trial in candidate_trials}
+    tasks_by_id = {task.task_id: task for task in exploration_tasks}
+    parent_by_id = {trial.task_id: trial for trial in parent_probe_trials}
+    candidate_by_id = {trial.task_id: trial for trial in candidate_probe_trials}
 
     patch_validity = (
         len(seed_manifest.components) == 1
@@ -240,17 +269,20 @@ def _mechanism_evidence(
     )
     improved_task_ids = tuple(
         task.task_id
-        for task in GATE_TASKS
-        if candidate_by_id[task.task_id].score > seed_by_id[task.task_id].score
+        for task in EXPLORATION_TASKS
+        if candidate_by_id[task.task_id].score > parent_by_id[task.task_id].score
     )
     protected_task_ids = tuple(
-        task.task_id for task in GATE_TASKS if PROTECTED_CANONICAL_SLICE in task.slice_tags
+        task.task_id for task in EXPLORATION_TASKS if PROTECTED_CANONICAL_SLICE in task.slice_tags
     )
     protected_unchanged = all(
-        candidate_by_id[task_id].score == seed_by_id[task_id].score
+        candidate_by_id[task_id].score == parent_by_id[task_id].score
         for task_id in protected_task_ids
     )
-    behavior = len(improved_task_ids) >= 10 and protected_unchanged
+    expected_probe_improvements = sum(
+        NORMALIZATION_SLICE in task.slice_tags for task in EXPLORATION_TASKS
+    )
+    behavior = len(improved_task_ids) == expected_probe_improvements and protected_unchanged
 
     return MechanismEvidence(
         candidate_harness_id=candidate_manifest_ref.sha256,
@@ -281,10 +313,13 @@ def _mechanism_evidence(
                 name="behavior",
                 passed=behavior,
                 details=(
-                    f"{len(improved_task_ids)} synthetic tasks improved; "
+                    f"{len(improved_task_ids)} exploration probes improved; "
                     f"{len(protected_task_ids)} protected canonical tasks were unchanged"
                 ),
-                evidence_refs=(seed_trials_ref.sha256, candidate_trials_ref.sha256),
+                evidence_refs=(
+                    parent_probe_trials_ref.sha256,
+                    candidate_probe_trials_ref.sha256,
+                ),
             ),
         ),
     )
@@ -299,6 +334,11 @@ def run_controlled_demo(root: str | Path) -> ControlledDemoResult:
         store,
         EXPLORATION_TASKS,
         media_type="application/vnd.spiral-harness.synthetic-exploration-tasks+json",
+    )
+    gate_suite_ref = _put_models(
+        store,
+        GATE_TASKS,
+        media_type="application/vnd.spiral-harness.synthetic-gate-tasks+json",
     )
     # The gate policy is persisted before any observations are produced.
     gate_config = _gate_config()
@@ -319,8 +359,83 @@ def run_controlled_demo(root: str | Path) -> ControlledDemoResult:
     )
 
     executor = DeterministicExecutor()
+    mutation_policy = MutationPolicy(
+        allowed_component_names=("match-policy",),
+        allowed_media_types=("text/plain",),
+        max_artifact_size_bytes=4_096,
+    )
+    total_evaluations = 2 * len(EXPLORATION_TASKS) + 2 * len(GATE_TASKS)
+    protocol_manifest = ProtocolManifest(
+        benchmark_fingerprint=FIXTURE_KIND,
+        splits=(
+            ProtocolSplit(
+                partition=ProtocolPartition.EXPLORATION,
+                manifest_ref=exploration_suite_ref,
+            ),
+            ProtocolSplit(
+                partition=ProtocolPartition.GATE,
+                manifest_ref=gate_suite_ref,
+            ),
+        ),
+        model_fingerprint=seed_manifest.model_fingerprint,
+        inference_fingerprint="synthetic-deterministic:no-inference-settings",
+        runtime_fingerprint=seed_manifest.runtime_fingerprint,
+        sandbox_fingerprint="logical-fixture-isolation:no-security-claim",
+        grader_fingerprint="synthetic-match-label-grader-v1",
+        gate_config_ref=gate_config_ref,
+        trusted_plane_version=seed_manifest.trusted_plane_version,
+        budget=BudgetPolicy(
+            max_tokens=executor.tokens_per_trial * total_evaluations,
+            max_tool_calls=0,
+            max_wall_time_seconds=(executor.latency_ms_per_trial * total_evaluations / 1_000),
+            max_cost_usd=0.0,
+            max_evaluations=total_evaluations,
+        ),
+    )
+    protocol_manifest_ref = store.put_json(
+        protocol_manifest,
+        media_type="application/vnd.spiral-harness.protocol-manifest.v1+json",
+    )
+
+    # Execution consumes only inputs reloaded through the persisted protocol.
+    # Keeping module constants out of the execution path makes a replayed ref,
+    # rather than accidental Python object identity, the source of truth.
+    frozen_protocol = store.get_json(protocol_manifest_ref, ProtocolManifest)
+    split_refs = {split.partition: split.manifest_ref for split in frozen_protocol.splits}
+    exploration_tasks = store.get_json(
+        split_refs[ProtocolPartition.EXPLORATION],
+        tuple[BenchmarkTask, ...],
+    )
+    gate_tasks = store.get_json(
+        split_refs[ProtocolPartition.GATE],
+        tuple[BenchmarkTask, ...],
+    )
+    frozen_gate_config = store.get_json(frozen_protocol.gate_config_ref, GateConfig)
+    if {task.task_id for task in exploration_tasks} & {task.task_id for task in gate_tasks}:
+        raise RuntimeError("controlled protocol task IDs overlap across exploration and gate")
+    exploration_content = {(task.reference_text, task.observed_text) for task in exploration_tasks}
+    gate_content = {(task.reference_text, task.observed_text) for task in gate_tasks}
+    if exploration_content & gate_content:
+        raise RuntimeError("controlled protocol task content overlaps across partitions")
+    if frozen_gate_config.expected_task_ids != tuple(task.task_id for task in gate_tasks):
+        raise RuntimeError("controlled gate roster does not match its frozen gate config")
+
+    experiment_manifest = ExperimentManifest(
+        protocol_ref=protocol_manifest_ref,
+        seed_harness_ref=seed_manifest_ref,
+        mutation_policy=mutation_policy,
+        objective="repair the controlled normalization fault under the frozen paired gate",
+        baselines=("synthetic-static-seed",),
+        stopping=("one-preregistered-candidate", "total-evaluation-budget"),
+        search_budget=frozen_protocol.budget,
+    )
+    experiment_manifest_ref = store.put_json(
+        experiment_manifest,
+        media_type="application/vnd.spiral-harness.experiment-manifest.v1+json",
+    )
+
     exploration_executions = executor.execute_suite(
-        EXPLORATION_TASKS,
+        exploration_tasks,
         prompt_bytes=store.get_bytes(seed_prompt_ref),
         prompt_ref=seed_prompt_ref,
         harness_id=seed_manifest_ref.sha256,
@@ -394,28 +509,138 @@ def run_controlled_demo(root: str | Path) -> ControlledDemoResult:
         mutation,
         media_type="application/vnd.spiral-harness.candidate-mutation+json",
     )
-    candidate_manifest = _manifest(candidate_component, parent=seed_manifest_ref)
+    candidate_manifest = HarnessRegistry(mutation_policy).apply_mutation(
+        parent=seed_manifest,
+        parent_ref=seed_manifest_ref,
+        mutation=mutation,
+        artifact_bytes=store.get_bytes(candidate_prompt_ref),
+        artifact_media_type=_PROMPT_MEDIA_TYPE,
+    )
     candidate_manifest_ref = store.put_json(
         candidate_manifest,
         media_type="application/vnd.spiral-harness.manifest+json",
     )
+    candidate_record = CandidateManifest(
+        experiment_ref=experiment_manifest_ref,
+        parent_harness_ref=seed_manifest_ref,
+        child_harness_ref=candidate_manifest_ref,
+        mutation_ref=candidate_mutation_ref,
+        evidence_refs=(fault_evidence_ref,),
+        evaluation_plan_ref=gate_config_ref,
+    )
+    candidate_record_ref = store.put_json(
+        candidate_record,
+        media_type="application/vnd.spiral-harness.candidate-manifest.v1+json",
+    )
+    admission_service = CandidateAdmissionService(store)
+    admission_report = admission_service.admit(
+        candidate_ref=candidate_record_ref,
+        experiment_ref=experiment_manifest_ref,
+    )
+    admission_report_ref = store.put_json(
+        admission_report,
+        media_type=ADMISSION_REPORT_MEDIA_TYPE,
+    )
+    admission_service.verify_report(
+        candidate_ref=candidate_record_ref,
+        experiment_ref=experiment_manifest_ref,
+        report_ref=admission_report_ref,
+    )
+
+    journal = CandidateJournal(store)
+    candidate_stream_id = f"candidate/{candidate_record_ref.sha256}"
+    candidate_journal_tail_ref = journal.append(
+        stream_id=candidate_stream_id,
+        event=CandidateLifecycleEvent(
+            candidate_ref=candidate_record_ref,
+            from_state=None,
+            to_state=CandidateState.REGISTERED,
+            reason="candidate manifest and atomic mutation were frozen",
+        ),
+    )
+    candidate_journal_tail_ref = journal.append(
+        stream_id=candidate_stream_id,
+        previous_entry_ref=candidate_journal_tail_ref,
+        event=CandidateLifecycleEvent(
+            candidate_ref=candidate_record_ref,
+            from_state=CandidateState.REGISTERED,
+            to_state=CandidateState.VALID,
+            evidence_refs=(admission_report_ref,),
+            reason="trusted registry admitted the prompt-only mutation",
+        ),
+    )
+    candidate_journal_tail_ref = journal.append(
+        stream_id=candidate_stream_id,
+        previous_entry_ref=candidate_journal_tail_ref,
+        event=CandidateLifecycleEvent(
+            candidate_ref=candidate_record_ref,
+            from_state=CandidateState.VALID,
+            to_state=CandidateState.RUNNING_PROBES,
+            reason="candidate entered preregistered exploration probes",
+        ),
+    )
+
+    candidate_exploration_executions = executor.execute_suite(
+        exploration_tasks,
+        prompt_bytes=store.get_bytes(candidate_prompt_ref),
+        prompt_ref=candidate_prompt_ref,
+        harness_id=candidate_manifest_ref.sha256,
+        seed=EXPLORATION_SEED,
+    )
+    candidate_exploration_trials = _observations(candidate_exploration_executions)
+    candidate_exploration_execution_ref = _put_models(
+        store,
+        candidate_exploration_executions,
+        media_type="application/vnd.spiral-harness.synthetic-exploration-executions+json",
+    )
+    candidate_exploration_trials_ref = _put_models(
+        store,
+        candidate_exploration_trials,
+        media_type="application/vnd.spiral-harness.exploration-observations+json",
+    )
+    mechanism_evidence = _mechanism_evidence(
+        mutation=mutation,
+        mutation_ref=candidate_mutation_ref,
+        seed_manifest=seed_manifest,
+        seed_manifest_ref=seed_manifest_ref,
+        candidate_manifest=candidate_manifest,
+        candidate_manifest_ref=candidate_manifest_ref,
+        candidate_prompt_ref=candidate_prompt_ref,
+        parent_probe_trials=exploration_trials,
+        parent_probe_trials_ref=exploration_trials_ref,
+        candidate_probe_trials=candidate_exploration_trials,
+        candidate_probe_trials_ref=candidate_exploration_trials_ref,
+        candidate_executions=candidate_exploration_executions,
+        candidate_execution_ref=candidate_exploration_execution_ref,
+        exploration_tasks=exploration_tasks,
+    )
+    mechanism_evidence_ref = store.put_json(
+        mechanism_evidence,
+        media_type="application/vnd.spiral-harness.mechanism-evidence+json",
+    )
+    candidate_journal_tail_ref = journal.append(
+        stream_id=candidate_stream_id,
+        previous_entry_ref=candidate_journal_tail_ref,
+        event=CandidateLifecycleEvent(
+            candidate_ref=candidate_record_ref,
+            from_state=CandidateState.RUNNING_PROBES,
+            to_state=CandidateState.RUNNING_GATE,
+            evidence_refs=(mechanism_evidence_ref,),
+            reason="all required mechanism probes passed on exploration tasks",
+        ),
+    )
 
     # Gate measurements use task IDs and strings that never appeared in the
     # exploration evidence.  This is logical fixture isolation, not sealing.
-    gate_suite_ref = _put_models(
-        store,
-        GATE_TASKS,
-        media_type="application/vnd.spiral-harness.synthetic-tasks+json",
-    )
     seed_gate_executions = executor.execute_suite(
-        GATE_TASKS,
+        gate_tasks,
         prompt_bytes=store.get_bytes(seed_prompt_ref),
         prompt_ref=seed_prompt_ref,
         harness_id=seed_manifest_ref.sha256,
         seed=FIXTURE_SEED,
     )
     candidate_gate_executions = executor.execute_suite(
-        GATE_TASKS,
+        gate_tasks,
         prompt_bytes=store.get_bytes(candidate_prompt_ref),
         prompt_ref=candidate_prompt_ref,
         harness_id=candidate_manifest_ref.sha256,
@@ -444,26 +669,39 @@ def run_controlled_demo(root: str | Path) -> ControlledDemoResult:
         media_type="application/vnd.spiral-harness.gate-trial-observations+json",
     )
 
-    mechanism_evidence = _mechanism_evidence(
-        mutation=mutation,
-        mutation_ref=candidate_mutation_ref,
-        seed_manifest=seed_manifest,
-        seed_manifest_ref=seed_manifest_ref,
-        candidate_manifest=candidate_manifest,
-        candidate_manifest_ref=candidate_manifest_ref,
-        candidate_prompt_ref=candidate_prompt_ref,
-        seed_trials=seed_gate_trials,
-        seed_trials_ref=seed_gate_trials_ref,
-        candidate_trials=candidate_gate_trials,
+    gate_evaluation = GateEvaluationManifest(
+        candidate_ref=candidate_record_ref,
+        admission_report_ref=admission_report_ref,
+        gate_config_ref=frozen_protocol.gate_config_ref,
+        gate_split_ref=split_refs[ProtocolPartition.GATE],
+        parent_trials_ref=seed_gate_trials_ref,
         candidate_trials_ref=candidate_gate_trials_ref,
-        candidate_executions=candidate_gate_executions,
-        candidate_execution_ref=candidate_gate_execution_ref,
+        mechanism_evidence_ref=mechanism_evidence_ref,
     )
-    mechanism_evidence_ref = store.put_json(
-        mechanism_evidence,
-        media_type="application/vnd.spiral-harness.mechanism-evidence+json",
+    gate_evaluation_ref = store.put_json(
+        gate_evaluation,
+        media_type=GATE_EVALUATION_MANIFEST_MEDIA_TYPE,
     )
-    decision = PromotionGate(gate_config).evaluate(
+
+    candidate_journal_tail_ref = journal.append(
+        stream_id=candidate_stream_id,
+        previous_entry_ref=candidate_journal_tail_ref,
+        event=CandidateLifecycleEvent(
+            candidate_ref=candidate_record_ref,
+            from_state=CandidateState.RUNNING_GATE,
+            to_state=CandidateState.EVIDENCE_COMPLETE,
+            evidence_refs=(
+                mechanism_evidence_ref,
+                seed_gate_trials_ref,
+                candidate_gate_trials_ref,
+                seed_gate_execution_ref,
+                candidate_gate_execution_ref,
+                gate_evaluation_ref,
+            ),
+            reason="the complete matched gate roster and mechanism evidence were persisted",
+        ),
+    )
+    decision = PromotionGate(frozen_gate_config).evaluate(
         seed_gate_trials,
         candidate_gate_trials,
         mechanism_evidence,
@@ -474,25 +712,68 @@ def run_controlled_demo(root: str | Path) -> ControlledDemoResult:
         decision,
         media_type="application/vnd.spiral-harness.gate-decision+json",
     )
+    terminal_state = {
+        Decision.PROMOTE: CandidateState.PROMOTED,
+        Decision.REJECT: CandidateState.REJECTED,
+        Decision.INCONCLUSIVE: CandidateState.INCONCLUSIVE,
+    }[decision.decision]
+    terminal_decision_service = TerminalDecisionService(store)
+    terminal_decision_report = terminal_decision_service.validate(
+        candidate_ref=candidate_record_ref,
+        experiment_ref=experiment_manifest_ref,
+        evaluation_ref=gate_evaluation_ref,
+        decision_ref=gate_decision_ref,
+        terminal_state=terminal_state,
+    )
+    terminal_decision_report_ref = store.put_json(
+        terminal_decision_report,
+        media_type=TERMINAL_DECISION_REPORT_MEDIA_TYPE,
+    )
+    terminal_decision_service.verify_report(
+        terminal_decision_report_ref,
+        candidate_ref=candidate_record_ref,
+        experiment_ref=experiment_manifest_ref,
+        evaluation_ref=gate_evaluation_ref,
+    )
+    candidate_journal_tail_ref = journal.append(
+        stream_id=candidate_stream_id,
+        previous_entry_ref=candidate_journal_tail_ref,
+        event=CandidateLifecycleEvent(
+            candidate_ref=candidate_record_ref,
+            from_state=CandidateState.EVIDENCE_COMPLETE,
+            to_state=terminal_state,
+            evidence_refs=(gate_decision_ref, terminal_decision_report_ref),
+            reason=f"independent promotion gate returned {decision.decision.value}",
+        ),
+    )
 
     refs = ControlledDemoRefs(
         exploration_suite_ref=exploration_suite_ref,
         gate_suite_ref=gate_suite_ref,
         gate_config_ref=gate_config_ref,
+        protocol_manifest_ref=protocol_manifest_ref,
+        experiment_manifest_ref=experiment_manifest_ref,
         seed_prompt_ref=seed_prompt_ref,
         candidate_prompt_ref=candidate_prompt_ref,
         seed_manifest_ref=seed_manifest_ref,
         candidate_manifest_ref=candidate_manifest_ref,
+        candidate_record_ref=candidate_record_ref,
         exploration_trials_ref=exploration_trials_ref,
         exploration_execution_ref=exploration_execution_ref,
+        candidate_exploration_trials_ref=candidate_exploration_trials_ref,
+        candidate_exploration_execution_ref=candidate_exploration_execution_ref,
         seed_gate_trials_ref=seed_gate_trials_ref,
         candidate_gate_trials_ref=candidate_gate_trials_ref,
         seed_gate_execution_ref=seed_gate_execution_ref,
         candidate_gate_execution_ref=candidate_gate_execution_ref,
         fault_evidence_ref=fault_evidence_ref,
         candidate_mutation_ref=candidate_mutation_ref,
+        admission_report_ref=admission_report_ref,
         mechanism_evidence_ref=mechanism_evidence_ref,
+        gate_evaluation_ref=gate_evaluation_ref,
         gate_decision_ref=gate_decision_ref,
+        terminal_decision_report_ref=terminal_decision_report_ref,
+        candidate_journal_tail_ref=candidate_journal_tail_ref,
     )
     run_manifest_ref = store.put_json(
         refs,

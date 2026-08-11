@@ -412,11 +412,11 @@ mechanism works.
 | Capability | Current status | Next invariant |
 | --- | --- | --- |
 | Typed component state | Implemented for prompt, skill, memory, tool, middleware, control flow refs | Enforce per-kind contracts and actual-diff mutation policy. |
-| Immutable artifacts | Local SHA-256 CAS implemented with verified reads and atomic publication | Add typed append-only lineage/events and a query index later. |
-| Candidate hypothesis | Atomic before/after mutation and falsifiable fields implemented | Add candidate manifest, batch diversity/decline, and lifecycle projection. |
+| Immutable artifacts | Local SHA-256 CAS, canonical typed reads, and linked lifecycle events implemented | Add a query index without making it authoritative. |
+| Candidate hypothesis | Atomic mutation, falsifiable hypothesis, candidate manifest, and trusted lineage admission implemented | Add batch diversity, decline, and champion-controller eligibility. |
 | Evaluation integrity | Exact task/seed roster, fingerprint audit, status handling implemented | Freeze full protocol manifest before any arm runs. |
 | Statistics | Task-level paired bootstrap and regression/cost checks implemented | Add adaptive-query ledger, multiple-candidate correction, winner replication, sequential policy. |
-| Mechanism evidence | Required checks and candidate binding implemented | Standard trajectory event/span schemas and trusted probes. |
+| Mechanism evidence | Typed trajectories/spans and required candidate-bound checks implemented | Add reusable trusted probes and disable/revert/placebo interventions. |
 | Benchmark support | Synthetic controlled-fault fixture only | Build one real deterministic/replayable adapter plus static/random/prompt-only baselines. |
 | Isolation | Logical exploration/gate separation only | Short-lived worker sandbox, no network, read-only materialization, grader separation. |
 | Evolution engine | Hand-authored controlled candidate only | Evidence packet -> diagnosis -> candidate batch -> nomination. |
