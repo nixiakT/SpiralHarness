@@ -1,0 +1,21 @@
+schema_version: "1"
+datasets:
+  - id: gsm8k
+    name: GSM8K (Grade School Math 8K)
+    upstream_repository: https://github.com/openai/grade-school-math
+    upstream_commit: 3101c7d5072418e28b9008a6636bde82a006892c
+    license:
+      spdx_id: MIT
+      name: MIT License
+      copyright: Copyright (c) 2021 OpenAI
+      url: https://raw.githubusercontent.com/openai/grade-school-math/3101c7d5072418e28b9008a6636bde82a006892c/LICENSE
+    distribution: downloaded on demand; dataset bytes are not included in SpiralHarness wheels
+    files:
+      - role: train
+        url: https://raw.githubusercontent.com/openai/grade-school-math/3101c7d5072418e28b9008a6636bde82a006892c/grade_school_math/data/train.jsonl
+        size: 4166206
+        sha256: 17f347dc51477c50d4efb83959dbb7c56297aba886e5544ee2aaed3024813465
+      - role: test
+        url: https://raw.githubusercontent.com/openai/grade-school-math/3101c7d5072418e28b9008a6636bde82a006892c/grade_school_math/data/test.jsonl
+        size: 749738
+        sha256: 3730d312f6e3440559ace48831e51066acaca737f6eabec99bccb9e4b3c39d14

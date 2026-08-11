@@ -16,6 +16,7 @@ __pycache__/
 coverage.xml
 htmlcov/
 .venv/
+.venv-*/
 dist/
 build/
 *.egg-info/
@@ -24,6 +25,7 @@ build/
 artifacts/
 runs/
 cache/
+data/benchmarks/
 data/sealed/
 *.sqlite
 *.sqlite3

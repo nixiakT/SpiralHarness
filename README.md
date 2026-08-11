@@ -33,7 +33,7 @@ are later extensions, not part of the initial claim.
 
 ## Status
 
-The M0.2 verification and experiment-control kernel now includes:
+The M0.2 verification and experiment-control kernel includes:
 
 - immutable schemas for harness manifests and atomic candidate mutations;
 - an exact-media v2 protocol and frozen experiment manifests binding split,
@@ -96,6 +96,24 @@ The M0.2 verification and experiment-control kernel now includes:
   exploration and gate rosters, pre-gate mechanism probes, a frozen experiment
   contract, and content-addressed artifact/lifecycle lineage.
 
+The first M1 benchmark/runner foundation now also includes:
+
+- a byte-exact GSM8K registry pinned to an upstream commit, file sizes,
+  SHA-256 values, MIT attribution, and a verify-before-publish downloader;
+- a strict trusted GSM8K adapter with question-only worker tasks, the official
+  compatible scorer, group-aware exploration/gate membership, official-test
+  sealed membership, and frozen full-data split fingerprints;
+- a provider-neutral fixed-model specification and score-free runner whose
+  paired fingerprint separates treatment-arm request identity from the shared
+  model/task/seed context;
+- an immutable attempt reservation/outcome ledger that reserves before a
+  backend call, settles successes, burns uncertain failures, poisons known
+  token overruns, and rejects restart under a different budget fingerprint;
+- an exact four-condition protocol for static, random-valid, prompt-only, and
+  evidence-targeted studies, including independent search-run seeds, paired
+  rollout seeds, identical ceilings, information boundaries, and structural
+  validation of declared aggregate usage.
+
 M0.2 establishes typed logical trust boundaries, not deployment isolation. Its
 capture, mechanism-evidence, and gate-batch HMACs are process-local API
 capabilities: the symmetric verification objects still contain key material,
@@ -105,30 +123,54 @@ interpreter. The capability policy is a schema/admission contract rather than
 an OS-enforced sandbox; there is no enforced network, filesystem, or process
 isolation.
 
-The controller uses caller-held content-addressed tails and one in-process
-single writer. It rejects experiment-lifecycle resume entirely because M0.2
+The controller and attempt ledger use caller-held content-addressed tails and
+one in-process single writer. The controller rejects experiment-lifecycle
+resume entirely because M0.2
 cannot semantically authenticate a recovered head, and it does not provide
 cross-process durable compare-and-swap, leases, or transactions. Usage is
-charged from submitted signed batches; a future runner must reserve attempts
-before execution so omitted retries cannot escape accounting. Typed sealed
+charged from submitted signed batches; the M1 runner now separately reserves
+each backend attempt before execution so an observed failure cannot disappear
+from its local budget stream. Typed sealed
 reports are joined to the exact selection branch, but their producer is not yet
-cryptographically attested. The repository still has no real benchmark or
-fixed-model production runner. Current producer HMACs authenticate assertions
+cryptographically attested. Current producer HMACs authenticate assertions
 and exact source hashes; they do not re-execute source artifacts to derive
 mechanism booleans or scores. Typed capture/source replay and trusted regrading
-belong in that runner stage.
+are not yet wired from the new runner into automatic gate-batch production.
+
+The fixed runner is provider-neutral and currently ships a deterministic replay
+backend, not a credentialed live-model provider. It does not add an OS sandbox,
+network/filesystem/process isolation, hard cancellation around a blocking SDK,
+an authoritative repository-wide ledger head, or cross-process attempt leases.
+Its local ledger hard-enforces attempts and tokens; backend-reported monetary
+cost is captured but is not yet pre-reserved or hard-bounded. Execution
+artifacts are strictly parsed and bound to reservations, but are assertions of
+the trusted in-process runner rather than cryptographic producer attestations.
 
 The next implementation stage is:
 
-1. connect one reproducible benchmark and a fixed-model runner;
-2. implement bounded diagnosis/proposal strategies over prompt mutations;
-3. compare targeted evolution with static, random-mutation, and prompt-only
-   baselines under the same evaluation budget;
-4. expand the mutation space only after the core claim is measurable.
+1. implement the bounded diagnosis/proposal/search loop over prompt mutations;
+2. execute the four frozen conditions through the same runner/controller path;
+3. add skill packages and skill-specific activation/adherence verification;
+4. expand into memory, tools, middleware, and control flow only after the
+   prompt/skill claims are measurable.
 
 See [the research plan](docs/research-plan.md),
 [the verification protocol](docs/verification-protocol.md), and the
 [pinned open-source architecture study](docs/reference-architecture-study.md).
+The real-benchmark details are in the
+[GSM8K protocol](docs/gsm8k-protocol.md), and baseline equality rules are in
+the [four-condition protocol](docs/baseline-protocol.md).
+
+## Materialize the real benchmark
+
+```bash
+uv sync --locked --all-groups
+uv run spiral benchmark fetch gsm8k --output data/benchmarks/gsm8k
+```
+
+This verifies the registered upstream bytes and prints the frozen split and
+adapter fingerprints. It does not run a model or expose a sealed-test score.
+Keep the downloaded official test data in the trusted evaluation plane.
 
 ## Run the M0 vertical slice
 

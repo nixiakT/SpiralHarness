@@ -6,10 +6,12 @@
 > trajectory and mechanism evidence, paired statistics, an adversarial
 > controlled fixture, producer-attested mechanism/gate-evidence closure, and a
 > semantic experiment controller with budget accounting and typed
-> selection/sealed closure. These trust boundaries are currently in-process:
-> there is no OS sandbox, network/filesystem/process isolation, cross-process
-> durable compare-and-swap or lease, real benchmark adapter, or fixed-model
-> production runner yet.
+> selection/sealed closure. The M1 foundation adds a pinned GSM8K adapter,
+> provider-neutral fixed/replay runner, pre-execution attempt accounting, and
+> the frozen four-condition baseline protocol. These trust boundaries remain
+> in-process: there is no OS sandbox, network/filesystem/process isolation,
+> cross-process durable compare-and-swap or lease, live provider, or automatic
+> search loop yet.
 
 This document turns the contracts in the [research plan](research-plan.md) and
 [verification protocol](verification-protocol.md) into implementable module and
@@ -98,15 +100,22 @@ it also owns experiment lifecycle transitions and an experiment-wide
 query/resource ledger. The journals remain structural storage, while the
 controller performs the semantic authorization.
 
+The M1 foundation adds a byte-pinned GSM8K registry/downloader, a trusted
+question-only adapter with frozen exploration/gate/sealed membership, a
+provider-neutral score-free runner, and a pre-execution reservation/outcome
+ledger. It also freezes the static, random-valid, prompt-only, and
+evidence-targeted comparison contract. The GSM8K runner path is integrated and
+replayable; the four-condition protocol remains a separate planning boundary
+that the automatic strategy runner does not consume yet.
+
 This controller is a single-process, single-writer implementation with
 caller-held content-addressed tails. It rejects stale tails and duplicate
 charges inside that process, but it is not a durable cross-process
 compare-and-swap, lease, or transaction protocol. It deliberately rejects any
 experiment-lifecycle tail supplied to a new controller: structural journal
-replay is not semantic authorization. The next integration stage is a
-fixed-model production runner and one real benchmark adapter, followed by
-trajectory-driven evolution and static, random-valid, and prompt-only
-experiment strategies.
+replay is not semantic authorization. The next integration stage is the
+trajectory-driven diagnosis/proposal/search loop consuming the new real
+adapter, runner, attempt ledger, and four-condition experiment protocol.
 
 ## 3. Artifact model and lineage
 
@@ -339,10 +348,12 @@ out-of-process grader. Its symmetric verifiers contain HMAC secrets, and
 ephemeral key loss makes historical evidence unverifiable outside the original
 process. Producer attestations authenticate complete assertions and source
 hashes, but M0.2 does not replay those sources to re-derive mechanism booleans
-or scores. It also has no durable multi-process compare-and-swap, lease,
-transactional head update, pre-execution attempt reservation, or authenticated
-sealed-evaluator producer. Those controls must be implemented and tested before
-the target isolation and durable-replay claims apply.
+or scores. M0.2 itself also has no durable multi-process compare-and-swap,
+lease, transactional head update, pre-execution attempt reservation, or
+authenticated sealed-evaluator producer. M1 now supplies a local trusted-runner
+reservation stream, while the remaining isolation, attestation, and durable
+coordination controls must still be implemented before those broader claims
+apply.
 
 The controlled adversarial suite now covers no-op, wrong-target, inactive,
 non-adherent, placebo, regression, timeout, malformed, tamper, budget, and
@@ -380,11 +391,11 @@ src/spiral_harness/
   storage/         # implemented: CAS objects and content-addressed linked journal
   evidence/        # implemented: trajectory, span, packet and diagnosis contracts
   verification/    # implemented: paired gate, bound trial batches, closure artifacts
-  benchmark/       # controlled fixture + in-process trusted grader; real adapter planned
+  benchmark/       # controlled fixture + pinned GSM8K registry, split and trusted grader
   harness/         # implemented: atomic policy validation/snapshot application
-  execution/       # executor protocol + capability-policy schema; launcher/sandbox planned
-  evolution/       # controlled flow implemented; automatic search/baselines planned
-  experiments/     # implemented: semantic controller, usage/lifecycle ledgers, gate replay
+  execution/       # fixed/replay runner + attempt ledger + policy; launcher/sandbox planned
+  evolution/       # controlled flow implemented; automatic diagnosis/search planned
+  experiments/     # controller, ledgers, gate replay + four-condition baseline protocol
   access/          # planned: exploration/gate/sealed views and disclosure policy
 ```
 
@@ -396,7 +407,9 @@ bypasses state transitions.
 
 The controlled end-to-end vertical slice now exercises a prompt fault, one
 typed repair, paired deterministic trials, trusted grading, immutable gate and
-lifecycle closure, and replay from artifact hashes. The immediate next stage is
-one real deterministic or replayable benchmark plus a fixed-model production
-runner. Automated search follows that integration, while OS isolation and
-durable multi-process coordination remain parallel hardening work.
+lifecycle closure, and replay from artifact hashes. The M1 runner/adapter
+integration additionally exercises score-free GSM8K execution, pre-call
+reservation, and trusted grading. It freezes—but does not yet execute—the four
+matched study conditions. Automated search is next, while a live provider, OS
+isolation, and durable multi-process coordination remain parallel hardening
+work.

@@ -148,8 +148,14 @@ best score alone is not a valid result.
 - one real benchmark adapter;
 - fixed-model task runner with complete trajectory capture;
 - failure diagnosis and bounded candidate generation;
-- static, random, and prompt-only baselines;
+- static, random-valid, prompt-only, and evidence-targeted conditions;
 - end-to-end reproducible experiment command.
+
+Implementation status: the pinned GSM8K adapter, fixed/replay runner,
+pre-execution attempt ledger, and four-condition comparison-planning protocol
+are now in place. Automated diagnosis, proposal, candidate search, and
+live-model study execution remain the next M1 batch; skill evolution follows
+that loop.
 
 ### M2 — Multi-component evolution
 

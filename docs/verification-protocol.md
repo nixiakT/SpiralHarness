@@ -68,10 +68,12 @@ overruns; and binds selection closure and sealed-run authorization to the exact
 usage and lifecycle branches. These are logical one-way controls inside one
 trusted process, not OS-level capability separation.
 
-This ledger accounts for persisted signed batches after execution. It cannot
-detect a runner attempt, retry, or failure that was never submitted. The fixed
-runner stage must reserve a single-use attempt before launch and settle or burn
-that reservation afterward.
+This gate ledger accounts for persisted signed batches after execution. The M1
+fixed runner now adds a separate content-addressed single-use reservation before
+each local backend launch and settles success or burns failure afterward. Its
+budget fingerprint is bound into every link. The runner ledger is still one
+in-process writer and is not yet atomically joined to gate-batch publication or
+protected by a cross-process lease.
 
 ## 3. Candidate preregistration
 
@@ -284,7 +286,8 @@ set that did not participate in search. The current typed sealed report proves
 branch consistency, not the identity of an external sealed evaluator;
 production completion must add an authenticated evaluator producer.
 
-M0.2 validates this protocol against deterministic synthetic tasks only. A real
-benchmark and a fixed-model production runner are the next implementation
-stage; until they exist, the fixture is evidence about verifier plumbing and
+M0.2 validates the promotion protocol against deterministic synthetic tasks.
+M1 now supplies a pinned real GSM8K adapter and provider-neutral score-free
+runner with replay backend, but no automatic optimizer or live-model benchmark
+result yet. The controlled fixture remains evidence about verifier plumbing and
 fail-closed behavior, not evidence of agent capability improvement.
