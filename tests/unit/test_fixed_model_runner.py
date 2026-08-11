@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import pytest
@@ -11,6 +12,7 @@ from spiral_harness.execution.attempts import (
     AttemptDisposition,
     AttemptLedger,
     AttemptOutcome,
+    AttemptReservation,
 )
 from spiral_harness.execution.model import (
     BackendFingerprintMismatchError,
@@ -23,6 +25,7 @@ from spiral_harness.execution.model import (
     FrozenModelSpec,
     InferenceConfig,
     ModelExecution,
+    ModelExecutionRecord,
     PromptHarness,
     ReplayBackend,
     materialize_request,
@@ -576,3 +579,46 @@ def test_replay_backend_selects_by_exact_spec_and_request_not_call_order() -> No
     changed_spec = fixed_spec(revision="snapshot-2026-08-02")
     with pytest.raises(LookupError, match="frozen spec/request"):
         backend.invoke(spec=changed_spec, request=first_request)
+
+
+def test_execute_record_returns_atomic_refs_under_concurrent_calls(tmp_path) -> None:
+    store = ArtifactStore(tmp_path / "cas")
+    ledger = attempt_ledger(store, attempts=2, total_tokens=24, per_attempt=12)
+    runner = FixedModelRunner(
+        spec=fixed_spec(),
+        backend=ReplayBackend(
+            fingerprint=BACKEND_FINGERPRINT,
+            default_response=response(),
+        ),
+        attempt_ledger=ledger,
+    )
+    calls = (
+        (task("task-a", "Question A?"), harness("arm-a", "Prompt A"), 31),
+        (task("task-b", "Question B?"), harness("arm-b", "Prompt B"), 37),
+    )
+
+    def run(call: tuple[CandidateTask, PromptHarness, int]) -> ModelExecutionRecord:
+        item, prompt_harness, seed = call
+        return runner.execute_record(item, harness=prompt_harness, seed=seed)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        records = tuple(pool.map(run, calls))
+
+    assert {record.execution.task_id for record in records} == {"task-a", "task-b"}
+    assert len({record.execution_ref.sha256 for record in records}) == 2
+    assert len({record.outcome_ref.sha256 for record in records}) == 2
+    for record in records:
+        assert store.get_json(record.execution_ref, ModelExecution) == record.execution
+        outcome = store.get_json(record.outcome_ref, AttemptOutcome)
+        reservation = store.get_json(outcome.reservation_ref, AttemptReservation)
+        assert outcome.execution_ref == record.execution_ref
+        assert reservation.request_sha256 == record.execution.request_sha256
+        assert reservation.execution_fingerprint == record.execution.execution_fingerprint
+
+    # Compatibility diagnostics may point at whichever call completed last,
+    # but the two refs themselves are updated under the same runner lock.
+    assert (runner.last_execution_ref, runner.last_outcome_ref) in {
+        (record.execution_ref, record.outcome_ref) for record in records
+    }
+    with pytest.raises(ValidationError):
+        records[0].outcome_ref = records[1].outcome_ref

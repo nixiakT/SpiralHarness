@@ -24,6 +24,7 @@ from pydantic import Field, model_validator
 
 from spiral_harness.core.canonical import canonical_json_bytes
 from spiral_harness.core.experiment import (
+    EXPERIMENT_MANIFEST_MEDIA_TYPE,
     PROTOCOL_MANIFEST_MEDIA_TYPE,
     CandidateManifest,
     ExperimentManifest,
@@ -387,12 +388,13 @@ class ExperimentController:
         usage_tail_ref: ArtifactRef | None = None,
         experiment_tail_ref: ArtifactRef | None = None,
     ) -> None:
-        if not isinstance(gate_batch_verifier, GateBatchVerificationCapability):
+        # These process-local objects are verification capabilities, not
+        # extension points.  Accepting a subclass would let caller code
+        # override ``attestor_id`` and ``verify`` while still satisfying an
+        # ``isinstance`` check.
+        if type(gate_batch_verifier) is not GateBatchVerificationCapability:
             raise TypeError("gate_batch_verifier must be a GateBatchVerificationCapability")
-        if not isinstance(
-            mechanism_evidence_verifier,
-            MechanismEvidenceVerificationCapability,
-        ):
+        if type(mechanism_evidence_verifier) is not MechanismEvidenceVerificationCapability:
             raise TypeError(
                 "mechanism_evidence_verifier must be a MechanismEvidenceVerificationCapability"
             )
@@ -409,6 +411,7 @@ class ExperimentController:
             self.experiment_ref,
             ExperimentManifest,
             "frozen experiment",
+            expected_media_type=EXPERIMENT_MANIFEST_MEDIA_TYPE,
         )
         self._protocol = self._load(
             self._experiment.protocol_ref,
@@ -602,6 +605,125 @@ class ExperimentController:
             usage_tail_ref=self._usage_tail_ref,
             reason="champion, usage head, and sealed analysis plan were frozen",
         )
+
+    def close_current_selection(
+        self,
+        *,
+        previous_tail_ref: ArtifactRef,
+        analysis_plan_ref: ArtifactRef,
+    ) -> ArtifactRef:
+        """Close selection from controller-owned heads for search orchestration.
+
+        The lower-level compatibility API accepts explicit champion and usage
+        references so old callers can prove their expected view.  An automatic
+        search loop must not reconstruct those values from plugin output.  This
+        method projects the only current candidate/usage heads owned by this
+        controller and leaves the caller responsible solely for supplying the
+        analysis plan already frozen in its typed search-run manifest.
+        """
+
+        champion_candidate_ref = self._champion_candidate_ref
+        champion_candidate_tail_ref = (
+            None
+            if champion_candidate_ref is None
+            else self._candidate_tails[champion_candidate_ref.sha256]
+        )
+        return self.close_selection(
+            previous_tail_ref=previous_tail_ref,
+            previous_usage_tail_ref=self._usage_tail_ref,
+            champion_candidate_ref=champion_candidate_ref,
+            champion_candidate_tail_ref=champion_candidate_tail_ref,
+            champion_harness_ref=self._champion_harness_ref,
+            analysis_plan_ref=analysis_plan_ref,
+        )
+
+    def verify_experiment_selection_closure(
+        self,
+        tail_ref: ArtifactRef,
+    ) -> SelectionClosure:
+        """Re-authenticate this controller's exact current selection closure.
+
+        Study-level orchestration must not treat a caller-authored
+        :class:`SelectionClosure` as evidence.  This read-only capability
+        replays the current controller-owned lifecycle branch and rejoins the
+        closure with champion, candidate, usage, and analysis heads without
+        starting sealed evaluation.
+        """
+
+        checked_ref = ArtifactRef.model_validate(tail_ref)
+        events = self._require_experiment_tail(
+            checked_ref,
+            expected_state=ExperimentState.SELECTION_CLOSED,
+        )
+        terminal_event = events[-1]
+        closure_ref = self._only_evidence_ref(
+            terminal_event,
+            expected_media_type=SELECTION_CLOSURE_MEDIA_TYPE,
+            label="selection closure",
+        )
+        closure = self._load(
+            closure_ref,
+            SelectionClosure,
+            "selection closure",
+            expected_media_type=SELECTION_CLOSURE_MEDIA_TYPE,
+        )
+        if closure.experiment_ref != self.experiment_ref:
+            raise ExperimentControllerError("selection closure belongs to another experiment")
+        if closure.protocol_ref != self.protocol_ref:
+            raise ExperimentControllerError("selection closure belongs to another protocol")
+        if closure.usage_tail_ref != self._usage_tail_ref:
+            raise ExperimentControllerError("selection closure does not bind current usage")
+        if terminal_event.usage_tail_ref != self._usage_tail_ref:
+            raise ExperimentControllerError("selection event does not bind current usage")
+        if closure.champion_harness_ref != self._champion_harness_ref:
+            raise ExperimentControllerError("selection closure does not bind current champion")
+        if closure.stopping_criteria != self._experiment.stopping:
+            raise ExperimentControllerError("selection closure stopping criteria changed")
+        self._load_json(closure.analysis_plan_ref, "sealed analysis plan")
+
+        champion_candidate_ref = self._champion_candidate_ref
+        if champion_candidate_ref is None:
+            if (
+                closure.champion_candidate_ref is not None
+                or closure.champion_candidate_tail_ref is not None
+            ):
+                raise ExperimentControllerError(
+                    "seed selection closure must not claim a champion candidate"
+                )
+            if closure.selection_reason is not SelectionReason.NO_PROMOTABLE_CANDIDATES:
+                raise ExperimentControllerError("seed selection closure has the wrong reason")
+        else:
+            if closure.champion_candidate_ref != champion_candidate_ref:
+                raise ExperimentControllerError(
+                    "selection closure does not bind current champion candidate"
+                )
+            expected_candidate_tail = self._candidate_tails[champion_candidate_ref.sha256]
+            if closure.champion_candidate_tail_ref != expected_candidate_tail:
+                raise ExperimentControllerError(
+                    "selection closure does not bind the champion candidate tail"
+                )
+            candidate_events = self._require_current_tail(
+                champion_candidate_ref,
+                expected_candidate_tail,
+                expected_state=CandidateState.PROMOTED,
+            )
+            if candidate_events[-1].to_state is not CandidateState.PROMOTED:
+                raise ExperimentControllerError("selection champion is not promoted")
+            candidate = self._load(
+                champion_candidate_ref,
+                CandidateManifest,
+                "champion candidate",
+            )
+            if candidate.child_harness_ref != closure.champion_harness_ref:
+                raise ExperimentControllerError(
+                    "selection candidate child does not match champion harness"
+                )
+            usage = self._replay_usage(self._usage_tail_ref)
+            if champion_candidate_ref not in usage.candidate_refs:
+                raise ExperimentControllerError("selection champion has no charged gate evaluation")
+            if closure.selection_reason is not SelectionReason.PROMOTED_CHAMPION:
+                raise ExperimentControllerError("promoted selection closure has the wrong reason")
+        return closure
 
     def start_sealed(self, *, previous_tail_ref: ArtifactRef) -> ArtifactRef:
         """Authorize sealed access only along the exact selection branch."""
@@ -1258,6 +1380,108 @@ class ExperimentController:
             authorization_ref=authorization_ref,
             superseded_report_ref=superseded_report_ref,
         )
+
+    def verify_terminal_authorization(
+        self,
+        authorization_ref: ArtifactRef,
+    ) -> TerminalTransitionAuthorization:
+        """Re-authenticate one terminal result produced by this controller.
+
+        A content-addressed ``TerminalTransitionAuthorization`` is only a typed
+        assertion: any repository writer can persist an object with that
+        schema.  Adaptive-search code must therefore consume this method as a
+        process-local verification capability instead of trusting a bare CAS
+        read.  The authorization is accepted only when it is embedded in the
+        current controller-owned terminal candidate branch and its complete
+        decision proof still replays under the protocol-pinned verifiers.
+        """
+
+        checked_ref = ArtifactRef.model_validate(authorization_ref)
+        authorization = self._load(
+            checked_ref,
+            TerminalTransitionAuthorization,
+            "terminal transition authorization",
+            expected_media_type=TERMINAL_TRANSITION_AUTHORIZATION_MEDIA_TYPE,
+        )
+        if authorization.experiment_ref != self.experiment_ref:
+            raise ExperimentControllerError("terminal authorization belongs to another experiment")
+        if authorization.protocol_ref != self.protocol_ref:
+            raise ExperimentControllerError("terminal authorization belongs to another protocol")
+
+        candidate_ref = authorization.candidate_ref
+        known_ref = self._candidate_refs.get(candidate_ref.sha256)
+        if known_ref is None:
+            raise ExperimentControllerError(
+                "terminal authorization candidate is not registered with this controller"
+            )
+        if known_ref != candidate_ref:
+            raise ExperimentControllerError(
+                "terminal authorization candidate reference metadata changed"
+            )
+        candidate_tail_ref = self._candidate_tails[candidate_ref.sha256]
+        try:
+            events = self._journal.replay(candidate_tail_ref)
+        except Exception as exc:
+            raise ExperimentControllerError(
+                f"terminal authorization candidate replay failed: {exc}"
+            ) from exc
+        terminal_event = events[-1]
+        if terminal_event.to_state is not authorization.terminal_state:
+            raise ExperimentControllerError(
+                "terminal authorization does not match the candidate terminal state"
+            )
+        if checked_ref not in terminal_event.evidence_refs:
+            raise ExperimentControllerError(
+                "terminal authorization was not published by this controller branch"
+            )
+
+        candidate = self._load(candidate_ref, CandidateManifest, "candidate manifest")
+        if authorization.parent_harness_ref != candidate.parent_harness_ref:
+            raise ExperimentControllerError("terminal authorization parent harness changed")
+        if authorization.child_harness_ref != candidate.child_harness_ref:
+            raise ExperimentControllerError("terminal authorization child harness changed")
+
+        try:
+            report = self._terminal.verify_report(
+                authorization.terminal_decision_report_ref,
+                candidate_ref=candidate_ref,
+                experiment_ref=self.experiment_ref,
+                evaluation_ref=authorization.evaluation_ref,
+            )
+        except TerminalDecisionError as exc:
+            raise ExperimentControllerError(
+                f"terminal authorization decision replay failed: {exc}"
+            ) from exc
+        if report.decision_ref != authorization.decision_ref:
+            raise ExperimentControllerError("terminal authorization decision reference changed")
+        if report.terminal_state is not authorization.gate_terminal_state:
+            raise ExperimentControllerError("terminal authorization gate outcome changed")
+
+        usage = self._replay_usage(self._usage_tail_ref)
+        if authorization.usage_entry_ref not in usage.entry_refs:
+            raise ExperimentControllerError(
+                "terminal authorization usage entry is not in the controller ledger"
+            )
+        usage_entry = self._load(
+            authorization.usage_entry_ref,
+            ExperimentUsageEntry,
+            "terminal authorization usage entry",
+            expected_media_type=EXPERIMENT_USAGE_ENTRY_MEDIA_TYPE,
+        )
+        claim = self._load(
+            usage_entry.claim_ref,
+            ExperimentUsageClaim,
+            "terminal authorization usage claim",
+            expected_media_type=EXPERIMENT_USAGE_CLAIM_MEDIA_TYPE,
+        )
+        if (
+            claim.candidate_ref != candidate_ref
+            or claim.evaluation_ref != authorization.evaluation_ref
+        ):
+            raise ExperimentControllerError(
+                "terminal authorization usage belongs to another candidate or evaluation"
+            )
+        return authorization
 
     def current_usage(self) -> ExperimentUsage:
         """Replay and query the controller's current experiment usage head."""

@@ -8,6 +8,7 @@ from pydantic import model_validator
 
 from spiral_harness.core.canonical import canonical_json_bytes
 from spiral_harness.core.experiment import (
+    EXPERIMENT_MANIFEST_MEDIA_TYPE,
     PROMOTION_GATE_IMPLEMENTATION_FINGERPRINT,
     PROTOCOL_MANIFEST_MEDIA_TYPE,
     CandidateManifest,
@@ -159,12 +160,12 @@ class TerminalDecisionService:
         gate_batch_verifier: GateBatchVerificationCapability,
         mechanism_evidence_verifier: MechanismEvidenceVerificationCapability,
     ) -> None:
-        if not isinstance(gate_batch_verifier, GateBatchVerificationCapability):
+        # Verification capabilities are deliberately closed to subclass
+        # overrides: a forged subclass could otherwise self-report the
+        # protocol's attestor ID and bypass the real HMAC verifier.
+        if type(gate_batch_verifier) is not GateBatchVerificationCapability:
             raise TypeError("gate_batch_verifier must be a GateBatchVerificationCapability")
-        if not isinstance(
-            mechanism_evidence_verifier,
-            MechanismEvidenceVerificationCapability,
-        ):
+        if type(mechanism_evidence_verifier) is not MechanismEvidenceVerificationCapability:
             raise TypeError(
                 "mechanism_evidence_verifier must be a MechanismEvidenceVerificationCapability"
             )
@@ -217,7 +218,12 @@ class TerminalDecisionService:
                 f"candidate admission report could not be verified: {exc}"
             ) from exc
 
-        experiment = self._load(experiment_ref, ExperimentManifest, "experiment")
+        experiment = self._load_exact_media(
+            experiment_ref,
+            ExperimentManifest,
+            "experiment",
+            EXPERIMENT_MANIFEST_MEDIA_TYPE,
+        )
         protocol = self._load_exact_media(
             experiment.protocol_ref,
             ProtocolManifest,

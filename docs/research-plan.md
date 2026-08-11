@@ -152,10 +152,14 @@ best score alone is not a valid result.
 - end-to-end reproducible experiment command.
 
 Implementation status: the pinned GSM8K adapter, fixed/replay runner,
-pre-execution attempt ledger, and four-condition comparison-planning protocol
-are now in place. Automated diagnosis, proposal, candidate search, and
-live-model study execution remain the next M1 batch; skill evolution follows
-that loop.
+pre-execution attempt ledger, and four-condition comparison protocol are in
+place. The first bounded prompt-search kernel now adds typed diagnosis and
+proposal contracts, finite-catalogue random-valid sampling, scoped strategy
+artifact access, receipt-backed candidate screens, aggregate-only gate
+feedback, immutable search journals, and an exact all-run study barrier. Its
+multi-condition replay fixture is non-reportable. A credentialed fixed-model
+provider and preregistered live study remain necessary for an empirical result;
+skill evolution is the next component-level extension of the control loop.
 
 ### M2 — Multi-component evolution
 

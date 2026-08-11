@@ -23,6 +23,8 @@ from spiral_harness.core.models import (
     Sha256,
 )
 
+BASELINE_STUDY_PLAN_MEDIA_TYPE = "application/vnd.spiral-harness.baseline-study-plan.v1+json"
+
 
 class BaselineProtocolError(ValueError):
     """Raised when a baseline run cannot be compared under the frozen protocol."""
@@ -684,6 +686,7 @@ class BaselineProtocolValidator:
 
 
 __all__ = [
+    "BASELINE_STUDY_PLAN_MEDIA_TYPE",
     "FORBIDDEN_ITEM_FEEDBACK",
     "REQUIRED_BASELINES",
     "BaselineArmPlan",

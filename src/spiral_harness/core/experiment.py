@@ -27,6 +27,7 @@ PROMOTION_GATE_IMPLEMENTATION_FINGERPRINT = (
     "spiral-harness.verification.promotion-gate:paired-bootstrap:v1"
 )
 PROTOCOL_MANIFEST_MEDIA_TYPE = "application/vnd.spiral-harness.protocol-manifest.v2+json"
+EXPERIMENT_MANIFEST_MEDIA_TYPE = "application/vnd.spiral-harness.experiment-manifest.v1+json"
 
 
 def _require_json_ref(ref: ArtifactRef, *, field_name: str) -> None:
@@ -297,6 +298,7 @@ class CandidateManifest(ImmutableModel):
 
 
 __all__ = [
+    "EXPERIMENT_MANIFEST_MEDIA_TYPE",
     "PROMOTION_GATE_IMPLEMENTATION_FINGERPRINT",
     "PROTOCOL_MANIFEST_MEDIA_TYPE",
     "CandidateManifest",

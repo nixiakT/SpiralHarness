@@ -10,11 +10,11 @@ comparison among exactly four conditions:
 3. `prompt-only`;
 4. `evidence-targeted`.
 
-The implementation in `experiments/baselines.py` is a configuration planner
-and validator. It does not generate candidates, invoke an optimizer model, run
-a benchmark, or choose a winner. Those execution loops belong to the next
-stage and must consume a validated plan rather than reconstructing one from
-command-line defaults.
+`experiments/baselines.py` remains the configuration planner and structural
+usage-claim validator. The automatic-search and study controllers now consume
+its persisted plan; they do not reconstruct baseline defaults at runtime. The
+bundled multi-condition execution is a deterministic replay fixture, not a
+live-model benchmark result.
 
 ## Frozen equality boundary
 
@@ -53,7 +53,7 @@ information used to choose candidates and the permitted mutation mechanism.
 Evaluation, feedback-query, proposal, optimizer-call, token, and wall-time
 ceilings must all be positive so a nominal four-condition plan cannot collapse
 into a zero-work comparison. A zero monetary ceiling remains valid for a free
-local/replay backend. The next-stage runner must additionally check that the
+local/replay backend. The execution controller must additionally check that the
 frozen evaluation budget can cover its trusted task roster crossed with every
 search-run and repeat seed; that minimum cannot be derived from an opaque
 benchmark artifact reference at this planning layer.
@@ -64,6 +64,11 @@ benchmark artifact reference at this planning layer.
 | `random-valid` | Benchmark metadata, exploration inputs, aggregate gate feedback | Uniformly sampled valid atomic mutations from the full frozen grammar | Forbidden |
 | `prompt-only` | Random-valid permissions plus exploration aggregates, item feedback, and trajectories | Prompt replacement only | Allowed within the common ceiling |
 | `evidence-targeted` | The same ordinary exploration evidence as prompt-only, plus typed diagnostic evidence | Evidence-targeted atomic mutations over the full frozen grammar | Allowed within the common ceiling |
+
+“Benchmark metadata” here means the frozen redacted view, not the complete
+benchmark binding: it contains no gate/sealed split references. Ordinary
+exploration roles and diagnostic evidence are exact binding-authorized refs;
+arbitrary runtime refs cannot expand an arm's read capability.
 
 The table defines exact profiles, not minimum permissions. An arm cannot add a
 feedback source or component kind. The mutation policy itself is identical in
@@ -87,9 +92,10 @@ usage report fails with a precise error.
 
 Aggregate gate feedback may be consumed only by a search condition and counts
 against `max_feedback_queries`. The final sealed aggregate is a reporting
-output after search closes; it is not proposer feedback. A future runner must
-enforce this information flow. These Pydantic models define and audit the
-contract but do not provide a worker sandbox.
+output after search closes; it is not proposer feedback. `SearchController`
+now discloses a fixed aggregate-only gate schema, and `StudyController`
+requires all plan-derived run closures before sealed authorization. These are
+in-process API capabilities, not a worker sandbox.
 
 ## Availability versus use
 
@@ -130,25 +136,26 @@ Failure is typed and fail-closed at this structural boundary. The validator
 does not normalize inconsistent reports, exclude an over-budget claim, impute
 a missing condition, or pretend that an unused allocation was consumed.
 
-This is intentionally not yet an attested fairness result. The aggregate usage
-objects are caller-authored claims, so the report explicitly records
-`execution_attested=false` and `evidence_scope=self-reported-aggregate-claims`.
-The next-stage search runner must derive those claims from controller-owned
-proposal, feedback, execution, and accounting events before scores may be
-presented as a fair four-condition comparison.
+`BaselineUsageReport` is intentionally not an attested fairness result. Its
+aggregate usage objects are caller-authored claims, so the report explicitly
+records `execution_attested=false` and
+`evidence_scope=self-reported-aggregate-claims`. The study controller has no
+API that accepts these reports as run-completion evidence. Automatic search
+instead derives proposal, optimizer-invocation, nomination, receipt, and ledger
+counts from controller-owned events. A reportable comparison still requires a
+separate study result assembled from all exact run closures and trusted live
+execution evidence.
 
-## Reproducible execution handoff
+## Reproducible execution binding
 
-A later baseline runner should persist the validated plan first, use its
-fingerprint as the experiment identity, and bind every proposal, evaluation,
-and usage event back to that identity. Random-valid sampling must derive from
-the frozen grammar. For every condition, the strategy random stream for one
-independent run must be deterministically derived from the frozen proposal
-master seed together with that run's `search_run_seed`; a search-run seed is
-never reused as a task rollout seed. Prompt-only and evidence-targeted model
-calls must use the frozen model/inference/runtime context and settle against the
-same model-call, token, wall-time, and cost ledger.
+The study controller persists the validated plan first, uses its fingerprint in
+every run manifest, and preregisters the complete
+`(condition, search_run_seed)` grid. Every proposal, screen, nomination,
+selection closure, and study event is rebound to those manifests during replay.
+Random-valid sampling derives from the frozen finite grammar and a
+domain-separated strategy seed; a search-run seed is never reused as a task
+rollout seed. Prompt-only and evidence-targeted invocations use one frozen
+model/inference/runtime profile and controller-owned invocation ceilings.
 
-This batch intentionally stops before that runner and before the automatic
-diagnosis/proposal/search loop. It establishes the comparison contract those
-systems must obey.
+The exact loop and its remaining trust limitations are specified in
+[`search-protocol.md`](search-protocol.md).

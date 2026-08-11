@@ -114,6 +114,29 @@ The first M1 benchmark/runner foundation now also includes:
   rollout seeds, identical ceilings, information boundaries, and structural
   validation of declared aggregate usage.
 
+The automatic-search control kernel now adds:
+
+- one preregistered search-run manifest per baseline and independent search
+  seed, with a common analysis plan and exact strategy/stopping bindings;
+- scoped, no-list strategy artifact views that log optimizer reads and writes
+  and require diagnoses, hypotheses, and prompt proposals to cite artifacts
+  actually exposed in the current round;
+- HMAC-attested strategy feedback bound to the exact run, round, champion,
+  benchmark binding, and exploration split; optimizer grants come only from
+  frozen safe metadata, role-specific exploration refs, and the exact
+  diagnostic closure, never from the complete binding or gate/sealed splits;
+- a finite-catalogue random-valid strategy with reproducible uniform sampling
+  over the eligible entries and cross-round exclusion;
+- all-or-nothing paired execution schedules, domain-separated rollout seeds,
+  receipt replay, ledger-derived screen usage, and an independently frozen
+  objective-aggregate attestor;
+- deterministic multi-proposal screening and at most one gate nomination per
+  round, followed by controller-derived aggregate-only feedback;
+- HMAC-authenticated append-only search and study journals, exact champion and
+  terminal-decision joins, frozen stopping rules, and a complete
+  `4 conditions × search seeds` selection barrier before sealed authorization;
+- a deterministic multi-condition replay fixture marked non-reportable.
+
 M0.2 establishes typed logical trust boundaries, not deployment isolation. Its
 capture, mechanism-evidence, and gate-batch HMACs are process-local API
 capabilities: the symmetric verification objects still contain key material,
@@ -123,14 +146,15 @@ interpreter. The capability policy is a schema/admission contract rather than
 an OS-enforced sandbox; there is no enforced network, filesystem, or process
 isolation.
 
-The controller and attempt ledger use caller-held content-addressed tails and
-one in-process single writer. The controller rejects experiment-lifecycle
-resume entirely because M0.2
-cannot semantically authenticate a recovered head, and it does not provide
-cross-process durable compare-and-swap, leases, or transactions. Usage is
-charged from submitted signed batches; the M1 runner now separately reserves
-each backend attempt before execution so an observed failure cannot disappear
-from its local budget stream. Typed sealed
+The controllers and attempt ledger use caller-held content-addressed tails and
+one in-process single writer. Experiment-lifecycle resume is rejected because
+M0.2 cannot semantically authenticate a recovered head. Automatic search also
+rejects resume after a completed round because its process-local optimizer
+capability and call counts cannot yet be re-authenticated. None of these
+controllers provides cross-process durable compare-and-swap, leases, or
+transactions. Usage is charged from submitted signed batches; the M1 runner
+separately reserves each backend attempt before execution so an observed
+failure cannot disappear from its local budget stream. Typed sealed
 reports are joined to the exact selection branch, but their producer is not yet
 cryptographically attested. Current producer HMACs authenticate assertions
 and exact source hashes; they do not re-execute source artifacts to derive
@@ -146,12 +170,12 @@ cost is captured but is not yet pre-reserved or hard-bounded. Execution
 artifacts are strictly parsed and bound to reservations, but are assertions of
 the trusted in-process runner rather than cryptographic producer attestations.
 
-The next implementation stage is:
+The next implementation stages are:
 
-1. implement the bounded diagnosis/proposal/search loop over prompt mutations;
-2. execute the four frozen conditions through the same runner/controller path;
-3. add skill packages and skill-specific activation/adherence verification;
-4. expand into memory, tools, middleware, and control flow only after the
+1. add skill packages and skill-specific activation/adherence verification;
+2. connect the replayable prompt/skill conditions to a credentialed fixed-model
+   provider and package the first preregistered, reportable benchmark study;
+3. expand into memory, tools, middleware, and control flow only after the
    prompt/skill claims are measurable.
 
 See [the research plan](docs/research-plan.md),
@@ -159,7 +183,9 @@ See [the research plan](docs/research-plan.md),
 [pinned open-source architecture study](docs/reference-architecture-study.md).
 The real-benchmark details are in the
 [GSM8K protocol](docs/gsm8k-protocol.md), and baseline equality rules are in
-the [four-condition protocol](docs/baseline-protocol.md).
+the [four-condition protocol](docs/baseline-protocol.md). The automatic loop,
+receipt-backed screen, and study barrier are specified in the
+[trusted search protocol](docs/search-protocol.md).
 
 ## Materialize the real benchmark
 

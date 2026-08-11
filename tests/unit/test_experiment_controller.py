@@ -7,6 +7,8 @@ import pytest
 from pydantic import ValidationError
 from test_terminal_decision import (
     DecisionGraph,
+    ForgedGateVerificationCapability,
+    ForgedMechanismVerificationCapability,
     build_graph,
     put_json,
     reissue_batch,
@@ -14,6 +16,7 @@ from test_terminal_decision import (
 )
 
 from spiral_harness.core import (
+    EXPERIMENT_MANIFEST_MEDIA_TYPE,
     PROTOCOL_MANIFEST_MEDIA_TYPE,
     ArtifactRef,
     BudgetPolicy,
@@ -206,7 +209,11 @@ def rebind_experiment_budget(
     experiment = experiment.model_copy(
         update={"search_budget": search_budget or BudgetPolicy(max_evaluations=limit)}
     )
-    experiment_ref = put_json(graph.store, experiment)
+    experiment_ref = put_json(
+        graph.store,
+        experiment,
+        media_type=EXPERIMENT_MANIFEST_MEDIA_TYPE,
+    )
     candidate = graph.candidate.model_copy(update={"experiment_ref": experiment_ref})
     candidate_ref = put_json(graph.store, candidate)
     admission = CandidateAdmissionService(graph.store).admit(
@@ -312,7 +319,11 @@ def add_sealed_split(
     if max_evaluations is not None:
         experiment_updates["search_budget"] = BudgetPolicy(max_evaluations=max_evaluations)
     experiment = experiment.model_copy(update=experiment_updates)
-    experiment_ref = put_json(store, experiment)
+    experiment_ref = put_json(
+        store,
+        experiment,
+        media_type=EXPERIMENT_MANIFEST_MEDIA_TYPE,
+    )
     candidate = graph.candidate.model_copy(update={"experiment_ref": experiment_ref})
     candidate_ref = put_json(store, candidate)
     admission = CandidateAdmissionService(store).admit(
@@ -590,6 +601,7 @@ def test_controller_owns_complete_semantic_path_usage_and_exact_terminal_branch(
     assert authorization.evaluation_ref == graph.evaluation_ref
     assert authorization.decision_ref == report.decision_ref
     assert authorization.terminal_state is CandidateState.PROMOTED
+    assert controller.verify_terminal_authorization(terminal.authorization_ref) == authorization
     events = CandidateJournal(graph.store).replay(terminal.candidate_tail_ref)
     assert tuple(event.to_state for event in events) == (
         CandidateState.REGISTERED,
@@ -600,6 +612,19 @@ def test_controller_owns_complete_semantic_path_usage_and_exact_terminal_branch(
         CandidateState.PROMOTED,
     )
     assert terminal.authorization_ref in events[-1].evidence_refs
+
+    forged = authorization.model_copy(
+        update={"prior_champion_harness_ref": graph.candidate_ref},
+    )
+    forged_ref = graph.store.put_json(
+        forged,
+        media_type=TERMINAL_TRANSITION_AUTHORIZATION_MEDIA_TYPE,
+    )
+    with pytest.raises(
+        ExperimentControllerError,
+        match="was not published by this controller branch",
+    ):
+        controller.verify_terminal_authorization(forged_ref)
 
 
 def test_controller_requires_the_protocol_frozen_gate_batch_capability(tmp_path: Path) -> None:
@@ -626,6 +651,29 @@ def test_controller_requires_the_protocol_frozen_gate_batch_capability(tmp_path:
             experiment_ref=graph.experiment_ref,
             gate_batch_verifier=graph.gate_batch_service.verification_capability,
             mechanism_evidence_verifier=(TrustedMechanismEvidenceService().verification_capability),
+        )
+
+
+def test_controller_rejects_verifier_subclasses_that_override_trust_checks(
+    tmp_path: Path,
+) -> None:
+    graph = build_graph(tmp_path)
+    forged_gate = ForgedGateVerificationCapability(b"g" * 32)
+    forged_mechanism = ForgedMechanismVerificationCapability(b"m" * 32)
+
+    with pytest.raises(TypeError, match="gate_batch_verifier"):
+        ExperimentController(
+            graph.store,
+            experiment_ref=graph.experiment_ref,
+            gate_batch_verifier=forged_gate,
+            mechanism_evidence_verifier=(graph.mechanism_evidence_service.verification_capability),
+        )
+    with pytest.raises(TypeError, match="mechanism_evidence_verifier"):
+        ExperimentController(
+            graph.store,
+            experiment_ref=graph.experiment_ref,
+            gate_batch_verifier=graph.gate_batch_service.verification_capability,
+            mechanism_evidence_verifier=forged_mechanism,
         )
 
 
@@ -1346,12 +1394,8 @@ def test_complete_experiment_lifecycle_freezes_champion_usage_sealed_split_and_r
         {"metric": "paired-score", "sealed_queries": 1},
     )
 
-    selection_tail = controller.close_selection(
+    selection_tail = controller.close_current_selection(
         previous_tail_ref=search_tail,
-        previous_usage_tail_ref=evidence.usage_tail_ref,
-        champion_candidate_ref=graph.candidate_ref,
-        champion_candidate_tail_ref=candidate_terminal.candidate_tail_ref,
-        champion_harness_ref=graph.candidate.child_harness_ref,
         analysis_plan_ref=analysis_plan_ref,
     )
     selection_event = ExperimentJournal(graph.store).replay(selection_tail)[-1]
@@ -1363,8 +1407,11 @@ def test_complete_experiment_lifecycle_freezes_champion_usage_sealed_split_and_r
     assert closure.champion_candidate_tail_ref == candidate_terminal.candidate_tail_ref
     assert closure.analysis_plan_ref == analysis_plan_ref
     assert closure.usage_tail_ref == evidence.usage_tail_ref
+    assert controller.verify_experiment_selection_closure(selection_tail) == closure
 
     sealed_tail = controller.start_sealed(previous_tail_ref=selection_tail)
+    with pytest.raises(StaleControllerTailError, match="stale"):
+        controller.verify_experiment_selection_closure(selection_tail)
     sealed_event = ExperimentJournal(graph.store).replay(sealed_tail)[-1]
     authorization_ref = sealed_event.evidence_refs[0]
     assert authorization_ref.media_type == SEALED_RUN_AUTHORIZATION_MEDIA_TYPE

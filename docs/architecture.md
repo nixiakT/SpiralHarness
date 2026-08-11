@@ -1,17 +1,20 @@
 # M0–M1 architecture
 
 > **Status:** target architecture with an implemented M0.2 logical control
-> plane. M0/M0.2 provides immutable schemas and local content-addressed
+> plane and an M1 replayable automatic-search kernel. M0/M0.2 provides
+> immutable schemas and local content-addressed
 > artifacts, linked lifecycle journals, trusted mutation admission, typed
 > trajectory and mechanism evidence, paired statistics, an adversarial
 > controlled fixture, producer-attested mechanism/gate-evidence closure, and a
 > semantic experiment controller with budget accounting and typed
 > selection/sealed closure. The M1 foundation adds a pinned GSM8K adapter,
-> provider-neutral fixed/replay runner, pre-execution attempt accounting, and
-> the frozen four-condition baseline protocol. These trust boundaries remain
-> in-process: there is no OS sandbox, network/filesystem/process isolation,
-> cross-process durable compare-and-swap or lease, live provider, or automatic
-> search loop yet.
+> provider-neutral fixed/replay runner, pre-execution attempt accounting, the
+> frozen four-condition baseline protocol, receipt-backed exploration screens,
+> bounded diagnosis/proposal/search orchestration, and a study-level all-run
+> barrier. These trust boundaries remain in-process: there is no OS sandbox,
+> network/filesystem/process isolation, cross-process durable compare-and-swap
+> or lease, or live provider. The multi-condition fixture is not a reportable
+> benchmark result.
 
 This document turns the contracts in the [research plan](research-plan.md) and
 [verification protocol](verification-protocol.md) into implementable module and
@@ -104,18 +107,25 @@ The M1 foundation adds a byte-pinned GSM8K registry/downloader, a trusted
 question-only adapter with frozen exploration/gate/sealed membership, a
 provider-neutral score-free runner, and a pre-execution reservation/outcome
 ledger. It also freezes the static, random-valid, prompt-only, and
-evidence-targeted comparison contract. The GSM8K runner path is integrated and
-replayable; the four-condition protocol remains a separate planning boundary
-that the automatic strategy runner does not consume yet.
+evidence-targeted comparison contract. The automatic-search kernel now consumes
+that contract through exact run manifests, scoped strategy views, typed
+diagnosis/proposal artifacts, receipt-backed exploration screens, one-candidate
+gate nominations, aggregate-only feedback, and immutable search/study journals.
+The GSM8K runner path and the automatic loop are each replayable, but a
+credentialed live provider and a reportable end-to-end study are not yet wired.
 
-This controller is a single-process, single-writer implementation with
-caller-held content-addressed tails. It rejects stale tails and duplicate
-charges inside that process, but it is not a durable cross-process
-compare-and-swap, lease, or transaction protocol. It deliberately rejects any
-experiment-lifecycle tail supplied to a new controller: structural journal
-replay is not semantic authorization. The next integration stage is the
-trajectory-driven diagnosis/proposal/search loop consuming the new real
-adapter, runner, attempt ledger, and four-condition experiment protocol.
+These controllers are single-process, single-writer implementations with
+caller-held content-addressed tails. They reject stale tails and duplicate
+charges inside that process, but they do not provide durable cross-process
+compare-and-swap, leases, or transactions. The experiment controller
+deliberately rejects any lifecycle tail supplied to a new controller:
+structural journal replay is not semantic authorization. Automatic search
+likewise rejects a partially open or previously completed run when a fresh
+loop instance cannot reconstruct process-local optimizer capabilities and call
+counts. The next
+integration boundary is a live fixed-model study; skill evolution can reuse the
+same run, evidence, screen, nomination, and study-barrier contracts after adding
+skill-specific activation and adherence checks.
 
 ## 3. Artifact model and lineage
 
@@ -279,13 +289,17 @@ by `AccessView`, not as naming conventions:
    champion and emits the final report. Its result cannot trigger another
    candidate in the same experiment lineage.
 
-M0.2 enforces the logical portion of this flow. Gate use is charged from the
-referenced parent and candidate batches; selection freezes the champion,
-analysis plan, and usage tail; sealed access requires an authorization bound to
-that exact closed branch and frozen sealed split. The current controller does
-not load benchmark tasks, launch workers, or prevent a caller process from
-holding additional references. `AccessView` and the worker capability boundary
-remain to be implemented.
+M0.2 and the automatic-search kernel enforce the logical portion of this flow.
+Gate use is charged from the referenced parent and candidate batches; selection
+freezes the champion, analysis plan, and usage tail. Sealed access requires an
+authorization bound to that exact closed branch and frozen sealed split. The
+strategy-facing access view is now an exact per-round allowlist with no
+repository-list operation, and gate feedback has a fixed aggregate-only
+schema. The current controller still
+does not provide an isolated worker or prevent a caller process from holding
+additional references. Its study barrier detects premature sealed transitions
+but cannot revoke an older controller reference retained in the same
+interpreter.
 
 In the target runtime, gate and sealed workers must have no network egress or
 persistent candidate-owned state. Otherwise a harness could copy private tasks
@@ -393,10 +407,9 @@ src/spiral_harness/
   verification/    # implemented: paired gate, bound trial batches, closure artifacts
   benchmark/       # controlled fixture + pinned GSM8K registry, split and trusted grader
   harness/         # implemented: atomic policy validation/snapshot application
-  execution/       # fixed/replay runner + attempt ledger + policy; launcher/sandbox planned
-  evolution/       # controlled flow implemented; automatic diagnosis/search planned
-  experiments/     # controller, ledgers, gate replay + four-condition baseline protocol
-  access/          # planned: exploration/gate/sealed views and disclosure policy
+  execution/       # fixed/replay runner, schedules, receipts, attempt ledger, capability policy
+  evolution/       # typed strategies, scoped artifact views, automatic search orchestration
+  experiments/     # experiment/search/study controllers, gate replay, four-condition protocol
 ```
 
 The target dependency direction is inward: infrastructure modules implement
@@ -405,11 +418,12 @@ adapters do not own storage or gate policy; `experiments` composes services but
 contains no scoring logic. The CLI invokes experiment use cases and never
 bypasses state transitions.
 
-The controlled end-to-end vertical slice now exercises a prompt fault, one
+The controlled end-to-end vertical slice exercises a prompt fault, one
 typed repair, paired deterministic trials, trusted grading, immutable gate and
 lifecycle closure, and replay from artifact hashes. The M1 runner/adapter
 integration additionally exercises score-free GSM8K execution, pre-call
-reservation, and trusted grading. It freezes—but does not yet execute—the four
-matched study conditions. Automated search is next, while a live provider, OS
-isolation, and durable multi-process coordination remain parallel hardening
-work.
+reservation, and trusted grading. The automatic-search fixture executes the
+four matched strategy conditions across multiple independent run seeds through
+the same bounded controller path and study barrier. It remains explicitly
+non-reportable; a live provider, OS isolation, and durable multi-process
+coordination remain future integration and hardening work.

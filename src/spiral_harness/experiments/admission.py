@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from spiral_harness.core.canonical import canonical_json_bytes, canonical_sha256
 from spiral_harness.core.experiment import (
+    EXPERIMENT_MANIFEST_MEDIA_TYPE,
     PROTOCOL_MANIFEST_MEDIA_TYPE,
     CandidateManifest,
     ExperimentManifest,
@@ -92,6 +93,8 @@ class CandidateAdmissionService:
     ) -> AdmissionReport:
         """Return a proof for a valid candidate, otherwise fail without side effects."""
 
+        if experiment_ref.media_type != EXPERIMENT_MANIFEST_MEDIA_TYPE:
+            raise CandidateAdmissionError("experiment artifact declares the wrong media type")
         candidate = self._load_canonical(candidate_ref, CandidateManifest, "candidate")
         if candidate.experiment_ref != experiment_ref:
             raise CandidateAdmissionError(

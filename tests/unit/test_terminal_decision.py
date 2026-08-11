@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from spiral_harness.core import (
+    EXPERIMENT_MANIFEST_MEDIA_TYPE,
     PROMOTION_GATE_IMPLEMENTATION_FINGERPRINT,
     PROTOCOL_MANIFEST_MEDIA_TYPE,
     ArtifactRef,
@@ -43,6 +44,7 @@ from spiral_harness.verification import (
     GATE_TRIAL_BATCH_MEDIA_TYPE,
     AttestedMechanismEvidence,
     Decision,
+    GateBatchVerificationCapability,
     GateConfig,
     GateDecision,
     GateTrialArm,
@@ -50,6 +52,7 @@ from spiral_harness.verification import (
     GateTrialBatchContent,
     MechanismCheck,
     MechanismEvidence,
+    MechanismEvidenceVerificationCapability,
     PromotionGate,
     TrialObservation,
     TrustedGateBatchService,
@@ -61,6 +64,28 @@ _STATE_BY_DECISION = {
     Decision.REJECT: CandidateState.REJECTED,
     Decision.INCONCLUSIVE: CandidateState.INCONCLUSIVE,
 }
+
+
+class ForgedGateVerificationCapability(GateBatchVerificationCapability):
+    """A subclass can override the trust checks an ``isinstance`` guard assumes."""
+
+    @property
+    def attestor_id(self) -> str:
+        return "0" * 64
+
+    def verify(self, batch: object) -> object:
+        return batch
+
+
+class ForgedMechanismVerificationCapability(MechanismEvidenceVerificationCapability):
+    """Adversarial verifier subclass rejected before any asserted ID is read."""
+
+    @property
+    def attestor_id(self) -> str:
+        return "0" * 64
+
+    def verify(self, value: object) -> object:
+        return value
 
 
 @dataclass(frozen=True)
@@ -239,7 +264,11 @@ def build_graph(
         stopping=("budget exhausted",),
         search_budget=BudgetPolicy(max_evaluations=20),
     )
-    experiment_ref = put_json(store, experiment)
+    experiment_ref = put_json(
+        store,
+        experiment,
+        media_type=EXPERIMENT_MANIFEST_MEDIA_TYPE,
+    )
     child_harness = HarnessRegistry(mutation_policy).apply_mutation(
         parent=parent_harness,
         parent_ref=parent_harness_ref,
@@ -606,6 +635,27 @@ def test_gate_batch_and_terminal_services_require_explicit_capabilities(tmp_path
         TerminalDecisionService(
             graph.store,
             gate_batch_verifier=graph.gate_batch_service.verification_capability,
+        )
+
+
+def test_terminal_service_rejects_verifier_subclasses_that_override_trust_checks(
+    tmp_path: Path,
+) -> None:
+    graph = build_graph(tmp_path)
+    forged_gate = ForgedGateVerificationCapability(b"g" * 32)
+    forged_mechanism = ForgedMechanismVerificationCapability(b"m" * 32)
+
+    with pytest.raises(TypeError, match="gate_batch_verifier"):
+        TerminalDecisionService(
+            graph.store,
+            gate_batch_verifier=forged_gate,
+            mechanism_evidence_verifier=(graph.mechanism_evidence_service.verification_capability),
+        )
+    with pytest.raises(TypeError, match="mechanism_evidence_verifier"):
+        TerminalDecisionService(
+            graph.store,
+            gate_batch_verifier=graph.gate_batch_service.verification_capability,
+            mechanism_evidence_verifier=forged_mechanism,
         )
 
 

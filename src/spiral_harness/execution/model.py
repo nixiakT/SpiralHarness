@@ -8,6 +8,7 @@ import time
 from collections.abc import Callable, Mapping
 from contextlib import suppress
 from enum import StrEnum
+from threading import RLock
 from typing import Annotated, ClassVar, Literal, Protocol, Self, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -15,12 +16,24 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from spiral_harness.core.canonical import canonical_sha256, sha256_bytes
 from spiral_harness.core.models import ArtifactRef
 from spiral_harness.execution.attempts import (
+    ATTEMPT_OUTCOME_MEDIA_TYPE,
     MODEL_EXECUTION_MEDIA_TYPE,
     AttemptAccountingError,
     AttemptLedger,
+    AttemptLedgerState,
 )
+from spiral_harness.storage.protocol import ArtifactRepository
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+class _UnspecifiedLedgerTail:
+    __slots__ = ()
+
+
+_UNSPECIFIED_LEDGER_TAIL = _UnspecifiedLedgerTail()
+
+
 _UNPINNED_REVISIONS = frozenset(
     {
         "auto",
@@ -387,6 +400,23 @@ class ModelExecution(_FrozenExecutionModel):
         return self.usage.cost_usd
 
 
+class ModelExecutionRecord(_FrozenExecutionModel):
+    """Atomic result of one fully persisted and terminally accounted execution."""
+
+    schema_version: Literal["1"] = "1"
+    execution: ModelExecution
+    execution_ref: ArtifactRef
+    outcome_ref: ArtifactRef
+
+    @model_validator(mode="after")
+    def references_have_exact_media_types(self) -> Self:
+        if self.execution_ref.media_type != MODEL_EXECUTION_MEDIA_TYPE:
+            raise ValueError("execution_ref declares the wrong media type")
+        if self.outcome_ref.media_type != ATTEMPT_OUTCOME_MEDIA_TYPE:
+            raise ValueError("outcome_ref declares the wrong media type")
+        return self
+
+
 @runtime_checkable
 class ModelBackend(Protocol):
     """Provider adapter boundary; implementations have no grading authority."""
@@ -553,6 +583,7 @@ class FixedModelRunner:
         self._backend = backend
         self._attempt_ledger = attempt_ledger
         self._clock = clock
+        self._lock = RLock()
         self._last_execution_ref: ArtifactRef | None = None
         self._last_outcome_ref: ArtifactRef | None = None
         self._require_backend_match()
@@ -577,13 +608,26 @@ class FixedModelRunner:
     def last_execution_ref(self) -> ArtifactRef | None:
         """Most recently persisted execution ref, for local orchestration diagnostics."""
 
-        return self._last_execution_ref
+        with self._lock:
+            return self._last_execution_ref
 
     @property
     def last_outcome_ref(self) -> ArtifactRef | None:
         """Most recent immutable attempt outcome ref."""
 
-        return self._last_outcome_ref
+        with self._lock:
+            return self._last_outcome_ref
+
+    @property
+    def repository(self) -> ArtifactRepository:
+        """Trusted artifact repository used by execution and attempt accounting."""
+
+        return self._attempt_ledger.repository
+
+    def attempt_state(self) -> AttemptLedgerState:
+        """Return a replay-verified, read-only view of the current attempt ledger."""
+
+        return self._attempt_ledger.state()
 
     def execute(
         self,
@@ -593,6 +637,57 @@ class FixedModelRunner:
         seed: int,
     ) -> ModelExecution:
         """Reserve, invoke once, then settle or conservatively burn the attempt."""
+
+        with self._lock:
+            return self._execute_record(task, harness=harness, seed=seed).execution
+
+    def execute_record(
+        self,
+        task: object,
+        *,
+        harness: PromptHarness,
+        seed: int,
+        reservation_token_ceiling: int | None = None,
+        expected_previous_ledger_tail_ref: (
+            ArtifactRef | _UnspecifiedLedgerTail | None
+        ) = _UNSPECIFIED_LEDGER_TAIL,
+    ) -> ModelExecutionRecord:
+        """Return execution and accounting refs from one runner-atomic call."""
+
+        with self._lock:
+            if not isinstance(expected_previous_ledger_tail_ref, _UnspecifiedLedgerTail):
+                expected_tail = (
+                    None
+                    if expected_previous_ledger_tail_ref is None
+                    else ArtifactRef.model_validate(
+                        expected_previous_ledger_tail_ref,
+                        strict=True,
+                    )
+                )
+                if self._attempt_ledger.state().tail_ref != expected_tail:
+                    raise AttemptAccountingError(
+                        "attempt ledger advanced beyond the expected scheduled boundary"
+                    )
+            return self._execute_record(
+                task,
+                harness=harness,
+                seed=seed,
+                reservation_token_ceiling=reservation_token_ceiling,
+                expected_previous_ledger_tail_ref=expected_previous_ledger_tail_ref,
+            )
+
+    def _execute_record(
+        self,
+        task: object,
+        *,
+        harness: PromptHarness,
+        seed: int,
+        reservation_token_ceiling: int | None = None,
+        expected_previous_ledger_tail_ref: (
+            ArtifactRef | _UnspecifiedLedgerTail | None
+        ) = _UNSPECIFIED_LEDGER_TAIL,
+    ) -> ModelExecutionRecord:
+        """Execute under ``_lock``; callers must never invoke this helper directly."""
 
         checked_task = CandidateTask.from_task_view(task)
         checked_harness = PromptHarness.model_validate(harness, strict=True)
@@ -605,12 +700,26 @@ class FixedModelRunner:
             backend_fingerprint=backend_fingerprint,
         )
         request_sha256 = request.fingerprint
-        reservation_ref = self._attempt_ledger.reserve(
-            task_fingerprint=checked_task.fingerprint,
-            execution_fingerprint=execution_fingerprint,
-            request_sha256=request_sha256,
-            token_ceiling=self._attempt_ledger.budget.max_tokens_per_attempt,
+        effective_token_ceiling = (
+            self._attempt_ledger.budget.max_tokens_per_attempt
+            if reservation_token_ceiling is None
+            else reservation_token_ceiling
         )
+        if isinstance(expected_previous_ledger_tail_ref, _UnspecifiedLedgerTail):
+            reservation_ref = self._attempt_ledger.reserve(
+                task_fingerprint=checked_task.fingerprint,
+                execution_fingerprint=execution_fingerprint,
+                request_sha256=request_sha256,
+                token_ceiling=effective_token_ceiling,
+            )
+        else:
+            reservation_ref = self._attempt_ledger.reserve_at_tail(
+                expected_previous_outcome_ref=expected_previous_ledger_tail_ref,
+                task_fingerprint=checked_task.fingerprint,
+                execution_fingerprint=execution_fingerprint,
+                request_sha256=request_sha256,
+                token_ceiling=effective_token_ceiling,
+            )
 
         started = self._read_clock()
         try:
@@ -692,7 +801,7 @@ class FixedModelRunner:
                 cost_usd=None,
             )
 
-        reserved_tokens = self._attempt_ledger.budget.max_tokens_per_attempt
+        reserved_tokens = effective_token_ceiling
         if (
             response.usage.total_tokens > reserved_tokens
             or response.usage.output_tokens > self._spec.inference.max_output_tokens
@@ -743,7 +852,11 @@ class FixedModelRunner:
             raise AttemptAccountingError("successful execution could not be settled") from exc
         self._last_execution_ref = execution_ref
         self._last_outcome_ref = outcome_ref
-        return execution
+        return ModelExecutionRecord(
+            execution=execution,
+            execution_ref=execution_ref,
+            outcome_ref=outcome_ref,
+        )
 
     def _record_failure(
         self,
@@ -759,7 +872,7 @@ class FixedModelRunner:
         error_class: ExecutionErrorClass,
         detail: str,
         cost_usd: float | None,
-    ) -> ModelExecution:
+    ) -> ModelExecutionRecord:
         execution = self._make_execution(
             task=task,
             request=request,
@@ -790,7 +903,11 @@ class FixedModelRunner:
         )
         self._last_execution_ref = execution_ref
         self._last_outcome_ref = outcome_ref
-        return execution
+        return ModelExecutionRecord(
+            execution=execution,
+            execution_ref=execution_ref,
+            outcome_ref=outcome_ref,
+        )
 
     def _make_execution(
         self,
@@ -891,6 +1008,7 @@ __all__ = [
     "InferenceConfig",
     "ModelBackend",
     "ModelExecution",
+    "ModelExecutionRecord",
     "ModelRequest",
     "ModelUsage",
     "PromptHarness",

@@ -274,6 +274,46 @@ class AttemptLedger:
             self._tail_ref = checked_ref
             return checked_ref
 
+    def reserve_at_tail(
+        self,
+        *,
+        expected_previous_outcome_ref: ArtifactRef | None,
+        task_fingerprint: str,
+        execution_fingerprint: str,
+        request_sha256: str,
+        token_ceiling: int | None = None,
+    ) -> ArtifactRef:
+        """Reserve only if the process-local ledger is still at an exact outcome head."""
+
+        with self._lock:
+            checked_expected = (
+                None
+                if expected_previous_outcome_ref is None
+                else ArtifactRef.model_validate(
+                    expected_previous_outcome_ref,
+                    strict=True,
+                )
+            )
+            if (
+                checked_expected is not None
+                and checked_expected.media_type != ATTEMPT_OUTCOME_MEDIA_TYPE
+            ):
+                raise AttemptReservationError(
+                    "expected previous outcome declares the wrong media type"
+                )
+            if self._tail_ref != checked_expected:
+                raise AttemptReservationError(
+                    "attempt ledger advanced beyond the expected scheduled boundary"
+                )
+            # ``RLock`` keeps the comparison and the nested reservation atomic
+            # for every writer sharing this exact process-local ledger object.
+            return self.reserve(
+                task_fingerprint=task_fingerprint,
+                execution_fingerprint=execution_fingerprint,
+                request_sha256=request_sha256,
+                token_ceiling=token_ceiling,
+            )
+
     def settle(
         self,
         reservation_ref: ArtifactRef,

@@ -26,6 +26,7 @@ from spiral_harness.benchmark import (
     DeterministicExecutor,
 )
 from spiral_harness.core import (
+    EXPERIMENT_MANIFEST_MEDIA_TYPE,
     PROTOCOL_MANIFEST_MEDIA_TYPE,
     ArtifactRef,
     BudgetPolicy,
@@ -461,7 +462,7 @@ def run_controlled_demo(
     )
     experiment_manifest_ref = store.put_json(
         experiment_manifest,
-        media_type="application/vnd.spiral-harness.experiment-manifest.v1+json",
+        media_type=EXPERIMENT_MANIFEST_MEDIA_TYPE,
     )
     analysis_plan_ref = store.put_json(
         {
