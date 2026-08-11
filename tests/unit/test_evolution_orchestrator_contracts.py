@@ -8,16 +8,18 @@ from pydantic import ValidationError
 from test_execution_receipts import ledger_for, persist_preflight, record_attempt
 from test_terminal_decision import build_graph
 
-from spiral_harness.core import (
+from spiral_harness.core.experiment import (
     EXPERIMENT_MANIFEST_MEDIA_TYPE,
-    ArtifactRef,
-    ComponentKind,
     ExperimentManifest,
-    HarnessManifest,
-    MutationHypothesis,
     ProtocolPartition,
 )
-from spiral_harness.evidence import (
+from spiral_harness.core.models import (
+    ArtifactRef,
+    ComponentKind,
+    HarnessManifest,
+    MutationHypothesis,
+)
+from spiral_harness.evidence.models import (
     DiagnosticCluster,
     EvidencePacket,
     EvidenceSpanRef,
@@ -86,7 +88,7 @@ from spiral_harness.evolution.strategies import (
     make_search_policy,
     make_strategy_plugin_manifest,
 )
-from spiral_harness.execution.model import ExecutionStatus
+from spiral_harness.execution.contracts import ExecutionStatus
 from spiral_harness.execution.receipts import (
     EXECUTION_RECEIPT_MEDIA_TYPE,
     ExecutionReceiptIntegrityError,

@@ -15,31 +15,26 @@ from test_terminal_decision import (
     store_forged_score_attack,
 )
 
-from spiral_harness.core import (
+from spiral_harness.core.experiment import (
     EXPERIMENT_MANIFEST_MEDIA_TYPE,
     PROTOCOL_MANIFEST_MEDIA_TYPE,
-    ArtifactRef,
-    BudgetPolicy,
-    CandidateLifecycleEvent,
     CandidateManifest,
-    CandidateMutation,
-    CandidateState,
     ExperimentManifest,
-    HarnessComponentRef,
-    HarnessManifest,
     ProtocolManifest,
     ProtocolPartition,
     ProtocolSplit,
 )
-from spiral_harness.experiments import (
+from spiral_harness.core.lifecycle import CandidateLifecycleEvent, CandidateState
+from spiral_harness.core.models import (
+    ArtifactRef,
+    BudgetPolicy,
+    CandidateMutation,
+    HarnessComponentRef,
+    HarnessManifest,
+)
+from spiral_harness.experiments.admission import (
     ADMISSION_REPORT_MEDIA_TYPE,
-    GATE_EVALUATION_MANIFEST_MEDIA_TYPE,
-    GATE_TRIAL_BATCH_MEDIA_TYPE,
-    TERMINAL_DECISION_REPORT_MEDIA_TYPE,
     CandidateAdmissionService,
-    GateEvaluationManifest,
-    GateTrialArm,
-    TerminalDecisionService,
 )
 from spiral_harness.experiments.controller import (
     ADMISSION_FAILURE_REPORT_MEDIA_TYPE,
@@ -60,6 +55,12 @@ from spiral_harness.experiments.controller import (
     SupersededCandidateReport,
     TerminalTransitionAuthorization,
 )
+from spiral_harness.experiments.decision import (
+    GATE_EVALUATION_MANIFEST_MEDIA_TYPE,
+    TERMINAL_DECISION_REPORT_MEDIA_TYPE,
+    GateEvaluationManifest,
+    TerminalDecisionService,
+)
 from spiral_harness.experiments.lifecycle import (
     EXPERIMENT_COMPLETION_REPORT_MEDIA_TYPE,
     EXPERIMENT_INVALIDATION_REPORT_MEDIA_TYPE,
@@ -76,18 +77,24 @@ from spiral_harness.experiments.lifecycle import (
     SelectionClosure,
     SelectionReason,
 )
-from spiral_harness.harness import HarnessRegistry
-from spiral_harness.storage import CandidateJournal
-from spiral_harness.verification import (
+from spiral_harness.harness.registry import HarnessRegistry
+from spiral_harness.storage.journal import CandidateJournal
+from spiral_harness.verification.artifacts import (
+    GATE_TRIAL_BATCH_MEDIA_TYPE,
+    GateBatchExecutionContext,
+    GateTrialArm,
+    TrustedGateBatchService,
+)
+from spiral_harness.verification.gate import PromotionGate
+from spiral_harness.verification.mechanism import (
     ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE,
     AttestedMechanismEvidence,
+    TrustedMechanismEvidenceService,
+)
+from spiral_harness.verification.models import (
     Decision,
-    GateBatchExecutionContext,
     MechanismCheck,
     MechanismEvidence,
-    PromotionGate,
-    TrustedGateBatchService,
-    TrustedMechanismEvidenceService,
 )
 
 

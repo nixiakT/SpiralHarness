@@ -5,10 +5,11 @@ from dataclasses import dataclass
 from spiral_harness.benchmark.base import BenchmarkAdapter
 from spiral_harness.core.experiment import ProtocolPartition
 from spiral_harness.evolution.interfaces import Diagnoser, Proposer
-from spiral_harness.execution import HarnessExecutor
-from spiral_harness.storage import ArtifactStore
+from spiral_harness.execution.base import HarnessExecutor
+from spiral_harness.storage.artifact_store import ArtifactStore
 from spiral_harness.storage.protocol import ArtifactRepository
-from spiral_harness.verification import PromotionGate, TrialObservation
+from spiral_harness.verification.gate import PromotionGate
+from spiral_harness.verification.models import TrialObservation
 from spiral_harness.verification.protocol import CandidateVerifier
 
 

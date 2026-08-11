@@ -7,14 +7,14 @@ from typing import Annotated
 import typer
 
 from spiral_harness import __version__
-from spiral_harness.benchmark import (
+from spiral_harness.benchmark.datasets import (
     DATASET_REGISTRY,
     GSM8K_PROVENANCE,
-    GSM8KBenchmarkAdapter,
     materialize_dataset,
 )
-from spiral_harness.core import ProtocolPartition
-from spiral_harness.evolution import run_controlled_demo
+from spiral_harness.benchmark.gsm8k import GSM8KBenchmarkAdapter
+from spiral_harness.core.experiment import ProtocolPartition
+from spiral_harness.evolution.controlled_demo import run_controlled_demo
 
 app = typer.Typer(
     name="spiral",

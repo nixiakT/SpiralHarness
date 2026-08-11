@@ -23,10 +23,14 @@ from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from spiral_harness.core import canonical_json_bytes, canonical_sha256
+from spiral_harness.core.canonical import canonical_json_bytes, canonical_sha256
 from spiral_harness.core.models import ImmutableModel, NonEmptyStr, Sha256
-from spiral_harness.verification import MechanismCheck, MechanismEvidence, TrialObservation
-from spiral_harness.verification.models import TrialStatus
+from spiral_harness.verification.models import (
+    MechanismCheck,
+    MechanismEvidence,
+    TrialObservation,
+    TrialStatus,
+)
 
 MECHANISM_CHECK_NAMES = (
     "mutation_applied",

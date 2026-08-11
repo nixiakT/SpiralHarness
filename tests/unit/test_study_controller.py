@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from test_terminal_decision import put_json
 
-from spiral_harness.core import ArtifactRef
+from spiral_harness.core.models import ArtifactRef
 from spiral_harness.evolution.models import (
     SEARCH_RUN_MANIFEST_MEDIA_TYPE,
     STRATEGY_PLUGIN_MANIFEST_MEDIA_TYPE,
@@ -42,7 +42,7 @@ from spiral_harness.experiments.study import (
     StudyState,
     TrustedStudyEventService,
 )
-from spiral_harness.storage import ArtifactStore
+from spiral_harness.storage.artifact_store import ArtifactStore
 
 
 @dataclass(frozen=True)

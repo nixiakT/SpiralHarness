@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from spiral_harness import benchmark as benchmark_package
 from spiral_harness.benchmark.datasets import (
     DATASET_REGISTRY,
     GSM8K_PROVENANCE,
@@ -16,24 +15,25 @@ from spiral_harness.benchmark.datasets import (
     DatasetArtifact,
     DatasetIntegrityError,
     DatasetLicense,
-    DatasetOpener,
     DatasetProvenance,
     DatasetRegistry,
     DatasetSnapshot,
-    GitCommit,
     download_dataset_artifact,
     materialize_dataset,
     read_dataset_snapshot,
     verify_dataset_artifact,
 )
+from spiral_harness.benchmark.gsm8k import (
+    GSM8K_ANSWER_PATTERN,
+    GSM8K_ANSWER_RE,
+    GSM8KExecution,
+)
 
 
-def test_dataset_and_adapter_public_types_are_available_from_package_facade() -> None:
-    assert benchmark_package.DatasetOpener is DatasetOpener
-    assert benchmark_package.DatasetSnapshot is DatasetSnapshot
-    assert benchmark_package.GitCommit is GitCommit
-    assert benchmark_package.GSM8K_ANSWER_RE.pattern == benchmark_package.GSM8K_ANSWER_PATTERN
-    assert benchmark_package.GSM8KExecution.__name__ == "GSM8KExecution"
+def test_dataset_and_adapter_public_types_have_explicit_leaf_owners() -> None:
+    assert DatasetSnapshot.__module__ == "spiral_harness.benchmark.datasets"
+    assert GSM8K_ANSWER_RE.pattern == GSM8K_ANSWER_PATTERN
+    assert GSM8KExecution.__module__ == "spiral_harness.benchmark.gsm8k"
 
 
 def artifact_for(

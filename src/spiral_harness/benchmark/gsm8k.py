@@ -19,7 +19,7 @@ from spiral_harness.benchmark.datasets import (
     DatasetSnapshot,
     read_dataset_snapshot,
 )
-from spiral_harness.core import canonical_sha256
+from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.experiment import ProtocolPartition
 from spiral_harness.core.models import ImmutableModel, NonEmptyStr, Sha256
 from spiral_harness.verification.models import TrialObservation, TrialStatus

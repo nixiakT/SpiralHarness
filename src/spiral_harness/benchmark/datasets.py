@@ -20,7 +20,7 @@ from typing import Annotated, Literal, Protocol, cast
 
 from pydantic import Field, field_validator, model_validator
 
-from spiral_harness.core import canonical_sha256
+from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.models import ImmutableModel, NonEmptyStr, Sha256
 
 GSM8K_UPSTREAM_COMMIT = "3101c7d5072418e28b9008a6636bde82a006892c"

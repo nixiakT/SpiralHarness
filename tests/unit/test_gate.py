@@ -3,13 +3,13 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from spiral_harness.verification import (
+from spiral_harness.verification.gate import PromotionGate
+from spiral_harness.verification.models import (
     Decision,
     GateCheckOutcome,
     GateConfig,
     MechanismCheck,
     MechanismEvidence,
-    PromotionGate,
     TrialObservation,
     TrialStatus,
 )

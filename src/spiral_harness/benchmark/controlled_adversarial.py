@@ -15,10 +15,15 @@ from spiral_harness.benchmark.grading import (
     SealedTaskRoster,
     TrustedGradingError,
 )
-from spiral_harness.core import canonical_json_bytes
+from spiral_harness.core.canonical import canonical_json_bytes
 from spiral_harness.core.models import ImmutableModel, Sha256
-from spiral_harness.verification import Decision, GateConfig, GateDecision, PromotionGate
-from spiral_harness.verification.models import TrialObservation
+from spiral_harness.verification.gate import PromotionGate
+from spiral_harness.verification.models import (
+    Decision,
+    GateConfig,
+    GateDecision,
+    TrialObservation,
+)
 
 
 class AdversarialVerificationResult(ImmutableModel):

@@ -3,12 +3,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from spiral_harness.verification import (
-    GateConfig,
-    TrialObservation,
-    compare_trials,
-    paired_bootstrap_ci,
-)
+from spiral_harness.verification.models import GateConfig, TrialObservation
+from spiral_harness.verification.statistics import compare_trials, paired_bootstrap_ci
 
 
 def observation(

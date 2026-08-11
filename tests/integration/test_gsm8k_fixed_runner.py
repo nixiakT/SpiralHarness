@@ -2,20 +2,22 @@ from __future__ import annotations
 
 import json
 
-from spiral_harness.benchmark import GSM8KBenchmarkAdapter
-from spiral_harness.core import ProtocolPartition
-from spiral_harness.execution import (
+from spiral_harness.benchmark.gsm8k import GSM8KBenchmarkAdapter
+from spiral_harness.core.experiment import ProtocolPartition
+from spiral_harness.execution.attempts import AttemptLedger
+from spiral_harness.execution.contracts import (
     AttemptBudget,
-    AttemptLedger,
     BackendResponse,
     BackendTokenUsage,
-    FixedModelRunner,
     FrozenModelSpec,
     InferenceConfig,
     PromptHarness,
+)
+from spiral_harness.execution.model import (
+    FixedModelRunner,
     ReplayBackend,
 )
-from spiral_harness.storage import ArtifactStore
+from spiral_harness.storage.artifact_store import ArtifactStore
 
 
 def test_score_free_fixed_runner_closes_into_trusted_gsm8k_grading(tmp_path) -> None:

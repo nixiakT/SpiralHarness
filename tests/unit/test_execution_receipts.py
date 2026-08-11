@@ -6,28 +6,28 @@ import pytest
 
 from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.models import ArtifactRef
-from spiral_harness.execution.attempts import (
+from spiral_harness.execution.attempts import AttemptLedger
+from spiral_harness.execution.contracts import (
     MODEL_EXECUTION_MEDIA_TYPE,
     AttemptBudget,
     AttemptDisposition,
-    AttemptLedger,
     AttemptOutcome,
     AttemptReservation,
-)
-from spiral_harness.execution.model import (
     BackendResponse,
     BackendTokenUsage,
     CandidateTask,
     ExecutionError,
     ExecutionErrorClass,
     ExecutionStatus,
-    FixedModelRunner,
     FrozenModelSpec,
     InferenceConfig,
     ModelExecution,
     ModelRequest,
     ModelUsage,
     PromptHarness,
+)
+from spiral_harness.execution.model import (
+    FixedModelRunner,
     ReplayBackend,
 )
 from spiral_harness.execution.receipts import (
@@ -47,7 +47,7 @@ from spiral_harness.execution.schedule import (
     preflight_attempt_budget,
     publish_schedule_preflight,
 )
-from spiral_harness.storage import ArtifactStore
+from spiral_harness.storage.artifact_store import ArtifactStore
 
 SHA_B = "b" * 64
 SHA_C = "c" * 64

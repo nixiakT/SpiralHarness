@@ -17,10 +17,10 @@ from pydantic import Field, field_validator, model_validator
 
 from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.models import ArtifactRef, ImmutableModel, NonEmptyStr, Sha256
-from spiral_harness.execution.attempts import (
+from spiral_harness.execution.attempts import AttemptBudgetExceeded
+from spiral_harness.execution.contracts import (
     ATTEMPT_OUTCOME_MEDIA_TYPE,
     AttemptBudget,
-    AttemptBudgetExceeded,
     AttemptLedgerState,
 )
 from spiral_harness.storage.protocol import ArtifactRepository

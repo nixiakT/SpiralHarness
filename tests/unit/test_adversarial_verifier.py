@@ -5,13 +5,13 @@ from collections.abc import Sequence
 import pytest
 from pydantic import ValidationError
 
-from spiral_harness.benchmark import (
+from spiral_harness.benchmark.controlled_adversarial import ControlledAdversarialVerifier
+from spiral_harness.benchmark.grading import (
     MECHANISM_CHECK_NAMES,
     CandidateOutputTrace,
     CaptureAttestation,
     CapturedOutputTrace,
     CaptureVerificationCapability,
-    ControlledAdversarialVerifier,
     FixedGraderConfig,
     FixedOutputGrader,
     GradingTask,
@@ -19,7 +19,7 @@ from spiral_harness.benchmark import (
     TrustedCaptureService,
     TrustedGradingError,
 )
-from spiral_harness.verification import Decision, GateConfig, TrialStatus
+from spiral_harness.verification.models import Decision, GateConfig, TrialStatus
 
 
 def grading_tasks() -> tuple[GradingTask, ...]:

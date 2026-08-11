@@ -5,10 +5,10 @@ from dataclasses import FrozenInstanceError
 import pytest
 from pydantic import ValidationError
 
-from spiral_harness.core import ArtifactRef, ComponentKind, canonical_sha256
+from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.experiment import EXPERIMENT_MANIFEST_MEDIA_TYPE
-from spiral_harness.evolution import (
-    BASELINE_STUDY_PLAN_MEDIA_TYPE,
+from spiral_harness.core.models import ArtifactRef, ComponentKind
+from spiral_harness.evolution.models import (
     DIAGNOSIS_MEDIA_TYPE,
     PROMPT_MUTATION_CATALOGUE_MEDIA_TYPE,
     PROMPT_PROPOSAL_MEDIA_TYPE,
@@ -29,17 +29,20 @@ from spiral_harness.evolution import (
     SearchRunManifest,
     SearchStoppingPolicy,
     StrategyFeedbackView,
-    derive_strategy_seed,
+)
+from spiral_harness.evolution.seeds import derive_strategy_seed
+from spiral_harness.evolution.strategies import (
     make_search_policy,
     make_strategy_plugin_manifest,
     validate_strategy_permissions,
 )
-from spiral_harness.experiments import (
+from spiral_harness.experiments.baselines import (
+    BASELINE_STUDY_PLAN_MEDIA_TYPE,
     BaselineKind,
     FeedbackType,
     FrozenMutationPolicy,
 )
-from spiral_harness.verification import Decision
+from spiral_harness.verification.models import Decision
 
 
 def ref(character: str, media_type: str = "application/json", *, size: int = 32) -> ArtifactRef:

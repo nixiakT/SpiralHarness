@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from spiral_harness.benchmark import (
+from spiral_harness.benchmark.controlled_fixture import (
     CANDIDATE_PROMPT,
     CONTROLLED_TASKS,
     EXPLORATION_SEED,
@@ -12,31 +12,30 @@ from spiral_harness.benchmark import (
     BenchmarkTask,
     DeterministicExecution,
 )
-from spiral_harness.core import (
+from spiral_harness.core.experiment import (
     CandidateManifest,
-    CandidateMutation,
-    CandidateState,
     ExperimentManifest,
-    HarnessManifest,
     ProtocolManifest,
     ProtocolPartition,
 )
-from spiral_harness.evolution import (
+from spiral_harness.core.lifecycle import CandidateState
+from spiral_harness.core.models import CandidateMutation, HarnessManifest
+from spiral_harness.evolution.controlled_demo import (
     ControlledDemoRefs,
     ControlledFaultEvidence,
     run_controlled_demo,
 )
-from spiral_harness.experiments import (
-    AdmissionReport,
-    GateEvaluationManifest,
-    TerminalDecisionReport,
-    TerminalDecisionService,
-)
+from spiral_harness.experiments.admission import AdmissionReport
 from spiral_harness.experiments.controller import (
     ExperimentController,
     ExperimentUsageClaim,
     ExperimentUsageEntry,
     TerminalTransitionAuthorization,
+)
+from spiral_harness.experiments.decision import (
+    GateEvaluationManifest,
+    TerminalDecisionReport,
+    TerminalDecisionService,
 )
 from spiral_harness.experiments.lifecycle import (
     ExperimentJournal,
@@ -44,16 +43,18 @@ from spiral_harness.experiments.lifecycle import (
     SelectionClosure,
     SelectionReason,
 )
-from spiral_harness.storage import ArtifactStore, CandidateJournal, JournalEntry
-from spiral_harness.verification import (
+from spiral_harness.storage.artifact_store import ArtifactStore
+from spiral_harness.storage.journal import CandidateJournal, JournalEntry
+from spiral_harness.verification.artifacts import GateTrialBatch, TrustedGateBatchService
+from spiral_harness.verification.mechanism import (
     AttestedMechanismEvidence,
+    TrustedMechanismEvidenceService,
+)
+from spiral_harness.verification.models import (
     Decision,
     GateConfig,
     GateDecision,
-    GateTrialBatch,
     TrialObservation,
-    TrustedGateBatchService,
-    TrustedMechanismEvidenceService,
 )
 
 

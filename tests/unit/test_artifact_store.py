@@ -4,15 +4,14 @@ import json
 
 import pytest
 
-from spiral_harness.core import (
+from spiral_harness.core.canonical import canonical_json_bytes, sha256_bytes
+from spiral_harness.core.models import (
     ArtifactRef,
     ComponentKind,
     HarnessComponentRef,
     HarnessManifest,
-    canonical_json_bytes,
-    sha256_bytes,
 )
-from spiral_harness.storage import (
+from spiral_harness.storage.artifact_store import (
     ArtifactDecodeError,
     ArtifactIntegrityError,
     ArtifactMediaTypeError,

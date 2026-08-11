@@ -6,9 +6,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from spiral_harness.core import ArtifactRef, ComponentKind
 from spiral_harness.core.experiment import EXPERIMENT_MANIFEST_MEDIA_TYPE
 from spiral_harness.core.lifecycle import CandidateState
+from spiral_harness.core.models import ArtifactRef, ComponentKind
 from spiral_harness.evolution.models import (
     SEARCH_POLICY_MEDIA_TYPE,
     SEARCH_RUN_MANIFEST_MEDIA_TYPE,

@@ -9,22 +9,11 @@ service above this module; this class does not claim to provide one.
 
 from __future__ import annotations
 
-from enum import StrEnum
 from threading import RLock
-from typing import TYPE_CHECKING, Annotated, Literal, Self
 
-from pydantic import Field, model_validator
-
-from spiral_harness.core.canonical import canonical_sha256
-from spiral_harness.core.models import ArtifactRef, ImmutableModel, NonEmptyStr, Sha256
+import spiral_harness.execution.contracts as _contracts
+from spiral_harness.core.models import ArtifactRef
 from spiral_harness.storage.protocol import ArtifactRepository
-
-if TYPE_CHECKING:
-    from spiral_harness.execution.model import ModelExecution
-
-ATTEMPT_RESERVATION_MEDIA_TYPE = "application/vnd.spiral-harness.attempt-reservation.v1+json"
-ATTEMPT_OUTCOME_MEDIA_TYPE = "application/vnd.spiral-harness.attempt-outcome.v1+json"
-MODEL_EXECUTION_MEDIA_TYPE = "application/vnd.spiral-harness.model-execution.v1+json"
 
 
 class AttemptAccountingError(RuntimeError):
@@ -41,116 +30,6 @@ class AttemptLedgerIntegrityError(AttemptAccountingError):
 
 class AttemptReservationError(AttemptAccountingError):
     """Raised for a stale, foreign, forged, or already-consumed reservation."""
-
-
-class AttemptDisposition(StrEnum):
-    """Terminal accounting treatment for one reservation."""
-
-    SETTLED = "settled"
-    BURNED = "burned"
-    POISONED = "poisoned"
-
-
-class AttemptBudget(ImmutableModel):
-    """Hard ceilings enforced before a backend is invoked."""
-
-    schema_version: Literal["1"] = "1"
-    max_attempts: Annotated[int, Field(ge=1, strict=True)]
-    max_total_tokens: Annotated[int, Field(ge=1, strict=True)]
-    max_tokens_per_attempt: Annotated[int, Field(ge=1, strict=True)]
-
-    @model_validator(mode="after")
-    def per_attempt_ceiling_fits_total(self) -> Self:
-        if self.max_tokens_per_attempt > self.max_total_tokens:
-            raise ValueError("max_tokens_per_attempt must not exceed max_total_tokens")
-        return self
-
-    @property
-    def fingerprint(self) -> str:
-        return canonical_sha256(self)
-
-
-class AttemptReservation(ImmutableModel):
-    """A persisted, single-use authorization created before model execution."""
-
-    schema_version: Literal["1"] = "1"
-    ledger_id: NonEmptyStr
-    budget_fingerprint: Sha256
-    sequence: Annotated[int, Field(ge=0, strict=True)]
-    task_fingerprint: Sha256
-    execution_fingerprint: Sha256
-    request_sha256: Sha256
-    reserved_tokens: Annotated[int, Field(ge=1, strict=True)]
-    previous_outcome_ref: ArtifactRef | None
-
-    @model_validator(mode="after")
-    def previous_ref_has_exact_media_type(self) -> Self:
-        if (
-            self.previous_outcome_ref is not None
-            and self.previous_outcome_ref.media_type != ATTEMPT_OUTCOME_MEDIA_TYPE
-        ):
-            raise ValueError("previous_outcome_ref declares the wrong media type")
-        if self.sequence == 0 and self.previous_outcome_ref is not None:
-            raise ValueError("reservation sequence 0 must not have a previous outcome")
-        if self.sequence > 0 and self.previous_outcome_ref is None:
-            raise ValueError("reservation sequence greater than 0 requires a previous outcome")
-        return self
-
-
-class AttemptOutcome(ImmutableModel):
-    """The immutable terminal record consuming exactly one reservation."""
-
-    schema_version: Literal["1"] = "1"
-    ledger_id: NonEmptyStr
-    budget_fingerprint: Sha256
-    sequence: Annotated[int, Field(ge=0, strict=True)]
-    reservation_ref: ArtifactRef
-    disposition: AttemptDisposition
-    reported_tokens: Annotated[int, Field(ge=0, strict=True)]
-    charged_tokens: Annotated[int, Field(ge=0, strict=True)]
-    execution_ref: ArtifactRef | None
-    error_class: NonEmptyStr | None
-
-    @model_validator(mode="after")
-    def disposition_shape_is_valid(self) -> Self:
-        if self.reservation_ref.media_type != ATTEMPT_RESERVATION_MEDIA_TYPE:
-            raise ValueError("reservation_ref declares the wrong media type")
-        if (
-            self.execution_ref is not None
-            and self.execution_ref.media_type != MODEL_EXECUTION_MEDIA_TYPE
-        ):
-            raise ValueError("execution_ref declares the wrong media type")
-        if self.disposition is AttemptDisposition.SETTLED:
-            if self.execution_ref is None:
-                raise ValueError("a settled outcome requires an execution_ref")
-            if self.error_class is not None:
-                raise ValueError("a settled outcome must not declare an error_class")
-            if self.charged_tokens != self.reported_tokens:
-                raise ValueError("a settled outcome charges exactly its reported tokens")
-        elif self.error_class is None:
-            raise ValueError("a burned or poisoned outcome requires an error_class")
-        if (
-            self.disposition is AttemptDisposition.POISONED
-            and self.charged_tokens != self.reported_tokens
-        ):
-            raise ValueError("a poisoned outcome charges its reported token overrun")
-        return self
-
-
-class AttemptLedgerState(ImmutableModel):
-    """Replay-derived accounting state for one explicit immutable tail."""
-
-    ledger_id: NonEmptyStr
-    budget: AttemptBudget
-    tail_ref: ArtifactRef | None
-    pending_reservation_ref: ArtifactRef | None
-    poisoned: bool
-    attempts_used: Annotated[int, Field(ge=0, strict=True)]
-    completed_attempts: Annotated[int, Field(ge=0, strict=True)]
-    charged_tokens: Annotated[int, Field(ge=0, strict=True)]
-    encumbered_tokens: Annotated[int, Field(ge=0, strict=True)]
-    remaining_attempts: Annotated[int, Field(ge=0, strict=True)]
-    remaining_tokens: Annotated[int, Field(ge=0, strict=True)]
 
 
 class AttemptLedger:
@@ -177,7 +56,7 @@ class AttemptLedger:
         repository: ArtifactRepository,
         *,
         ledger_id: str,
-        budget: AttemptBudget,
+        budget: _contracts.AttemptBudget,
         tail_ref: ArtifactRef | None = None,
     ) -> None:
         if not isinstance(repository, ArtifactRepository):
@@ -189,7 +68,7 @@ class AttemptLedger:
             raise ValueError("ledger_id must not be empty")
         self._repository = repository
         self._ledger_id = normalized_id
-        self._budget = AttemptBudget.model_validate(budget, strict=True)
+        self._budget = _contracts.AttemptBudget.model_validate(budget, strict=True)
         self._lock = RLock()
         self._tail_ref = (
             None if tail_ref is None else ArtifactRef.model_validate(tail_ref, strict=True)
@@ -208,14 +87,14 @@ class AttemptLedger:
         return self._ledger_id
 
     @property
-    def budget(self) -> AttemptBudget:
+    def budget(self) -> _contracts.AttemptBudget:
         return self._budget
 
     @property
     def tail_ref(self) -> ArtifactRef | None:
         return self._tail_ref
 
-    def state(self) -> AttemptLedgerState:
+    def state(self) -> _contracts.AttemptLedgerState:
         """Re-verify and derive state from the current explicit tail."""
 
         with self._lock:
@@ -251,7 +130,7 @@ class AttemptLedger:
             if state.charged_tokens + ceiling > self._budget.max_total_tokens:
                 raise AttemptBudgetExceeded("total token budget cannot fit a full reservation")
 
-            reservation = AttemptReservation(
+            reservation = _contracts.AttemptReservation(
                 ledger_id=self._ledger_id,
                 budget_fingerprint=self._budget.fingerprint,
                 sequence=state.attempts_used,
@@ -263,12 +142,12 @@ class AttemptLedger:
             )
             reservation_ref = self._repository.put_json(
                 reservation,
-                media_type=ATTEMPT_RESERVATION_MEDIA_TYPE,
+                media_type=_contracts.ATTEMPT_RESERVATION_MEDIA_TYPE,
             )
             checked_ref = self._verify_published(
                 reservation_ref,
-                expected_media_type=ATTEMPT_RESERVATION_MEDIA_TYPE,
-                model_type=AttemptReservation,
+                expected_media_type=_contracts.ATTEMPT_RESERVATION_MEDIA_TYPE,
+                model_type=_contracts.AttemptReservation,
                 expected_value=reservation,
             )
             self._tail_ref = checked_ref
@@ -296,7 +175,7 @@ class AttemptLedger:
             )
             if (
                 checked_expected is not None
-                and checked_expected.media_type != ATTEMPT_OUTCOME_MEDIA_TYPE
+                and checked_expected.media_type != _contracts.ATTEMPT_OUTCOME_MEDIA_TYPE
             ):
                 raise AttemptReservationError(
                     "expected previous outcome declares the wrong media type"
@@ -335,7 +214,7 @@ class AttemptLedger:
                 return self._publish_outcome(
                     reservation_ref=checked_reservation_ref,
                     reservation=reservation,
-                    disposition=AttemptDisposition.POISONED,
+                    disposition=_contracts.AttemptDisposition.POISONED,
                     reported_tokens=tokens,
                     charged_tokens=tokens,
                     execution_ref=checked_execution_ref,
@@ -344,7 +223,7 @@ class AttemptLedger:
             return self._publish_outcome(
                 reservation_ref=checked_reservation_ref,
                 reservation=reservation,
-                disposition=AttemptDisposition.SETTLED,
+                disposition=_contracts.AttemptDisposition.SETTLED,
                 reported_tokens=tokens,
                 charged_tokens=tokens,
                 execution_ref=checked_execution_ref,
@@ -393,7 +272,9 @@ class AttemptLedger:
                 reservation_ref=checked_reservation_ref,
                 reservation=reservation,
                 disposition=(
-                    AttemptDisposition.POISONED if poisoned else AttemptDisposition.BURNED
+                    _contracts.AttemptDisposition.POISONED
+                    if poisoned
+                    else _contracts.AttemptDisposition.BURNED
                 ),
                 reported_tokens=tokens,
                 charged_tokens=tokens if poisoned else reservation.reserved_tokens,
@@ -405,14 +286,14 @@ class AttemptLedger:
         self,
         *,
         reservation_ref: ArtifactRef,
-        reservation: AttemptReservation,
-        disposition: AttemptDisposition,
+        reservation: _contracts.AttemptReservation,
+        disposition: _contracts.AttemptDisposition,
         reported_tokens: int,
         charged_tokens: int,
         execution_ref: ArtifactRef | None,
         error_class: str | None,
     ) -> ArtifactRef:
-        outcome = AttemptOutcome(
+        outcome = _contracts.AttemptOutcome(
             ledger_id=self._ledger_id,
             budget_fingerprint=self._budget.fingerprint,
             sequence=reservation.sequence,
@@ -425,12 +306,12 @@ class AttemptLedger:
         )
         outcome_ref = self._repository.put_json(
             outcome,
-            media_type=ATTEMPT_OUTCOME_MEDIA_TYPE,
+            media_type=_contracts.ATTEMPT_OUTCOME_MEDIA_TYPE,
         )
         checked_ref = self._verify_published(
             outcome_ref,
-            expected_media_type=ATTEMPT_OUTCOME_MEDIA_TYPE,
-            model_type=AttemptOutcome,
+            expected_media_type=_contracts.ATTEMPT_OUTCOME_MEDIA_TYPE,
+            model_type=_contracts.AttemptOutcome,
             expected_value=outcome,
         )
         self._tail_ref = checked_ref
@@ -439,12 +320,12 @@ class AttemptLedger:
     def _require_current_reservation(
         self,
         reservation_ref: ArtifactRef,
-    ) -> tuple[ArtifactRef, AttemptReservation]:
+    ) -> tuple[ArtifactRef, _contracts.AttemptReservation]:
         try:
             checked_ref = ArtifactRef.model_validate(reservation_ref, strict=True)
         except Exception as exc:
             raise AttemptReservationError("reservation reference is malformed") from exc
-        if checked_ref.media_type != ATTEMPT_RESERVATION_MEDIA_TYPE:
+        if checked_ref.media_type != _contracts.ATTEMPT_RESERVATION_MEDIA_TYPE:
             raise AttemptReservationError("reservation reference declares the wrong media type")
         state = self._replay(self._tail_ref)
         if state.pending_reservation_ref is None or checked_ref != state.pending_reservation_ref:
@@ -456,20 +337,16 @@ class AttemptLedger:
     def _load_execution(
         self,
         execution_ref: ArtifactRef,
-    ) -> tuple[ArtifactRef, ModelExecution]:
-        # Local import avoids a module cycle: the fixed runner depends on this
-        # ledger, while settlement must still validate the runner's exact type.
-        from spiral_harness.execution.model import ModelExecution
-
+    ) -> tuple[ArtifactRef, _contracts.ModelExecution]:
         try:
             checked_ref = ArtifactRef.model_validate(execution_ref, strict=True)
         except Exception as exc:
             raise AttemptReservationError("execution reference is malformed") from exc
-        if checked_ref.media_type != MODEL_EXECUTION_MEDIA_TYPE:
+        if checked_ref.media_type != _contracts.MODEL_EXECUTION_MEDIA_TYPE:
             raise AttemptReservationError("execution reference declares the wrong media type")
         try:
-            loaded = self._repository.get_json(checked_ref, ModelExecution)
-            execution = ModelExecution.model_validate(loaded, strict=True)
+            loaded = self._repository.get_json(checked_ref, _contracts.ModelExecution)
+            execution = _contracts.ModelExecution.model_validate(loaded, strict=True)
         except Exception as exc:
             raise AttemptReservationError(
                 "execution artifact is not a canonical ModelExecution"
@@ -478,8 +355,8 @@ class AttemptLedger:
 
     @staticmethod
     def _verify_execution_binding(
-        reservation: AttemptReservation,
-        execution: ModelExecution,
+        reservation: _contracts.AttemptReservation,
+        execution: _contracts.ModelExecution,
     ) -> None:
         if execution.task.fingerprint != reservation.task_fingerprint:
             raise AttemptReservationError("execution task does not match its reservation")
@@ -493,8 +370,8 @@ class AttemptLedger:
         ref: ArtifactRef,
         *,
         expected_media_type: str,
-        model_type: type[AttemptReservation] | type[AttemptOutcome],
-        expected_value: AttemptReservation | AttemptOutcome,
+        model_type: type[_contracts.AttemptReservation] | type[_contracts.AttemptOutcome],
+        expected_value: _contracts.AttemptReservation | _contracts.AttemptOutcome,
     ) -> ArtifactRef:
         try:
             checked_ref = ArtifactRef.model_validate(ref, strict=True)
@@ -513,9 +390,9 @@ class AttemptLedger:
             raise AttemptLedgerIntegrityError("published accounting artifact changed content")
         return checked_ref
 
-    def _replay(self, tail_ref: ArtifactRef | None) -> AttemptLedgerState:
+    def _replay(self, tail_ref: ArtifactRef | None) -> _contracts.AttemptLedgerState:
         if tail_ref is None:
-            return AttemptLedgerState(
+            return _contracts.AttemptLedgerState(
                 ledger_id=self._ledger_id,
                 budget=self._budget,
                 tail_ref=None,
@@ -535,20 +412,27 @@ class AttemptLedger:
             raise AttemptLedgerIntegrityError("attempt ledger tail is malformed") from exc
 
         cursor: ArtifactRef | None = checked_tail
-        pending: tuple[ArtifactRef, AttemptReservation] | None = None
-        backwards: list[tuple[ArtifactRef, AttemptReservation, ArtifactRef, AttemptOutcome]] = []
+        pending: tuple[ArtifactRef, _contracts.AttemptReservation] | None = None
+        backwards: list[
+            tuple[
+                ArtifactRef,
+                _contracts.AttemptReservation,
+                ArtifactRef,
+                _contracts.AttemptOutcome,
+            ]
+        ] = []
         seen: set[str] = set()
 
-        if cursor.media_type == ATTEMPT_RESERVATION_MEDIA_TYPE:
+        if cursor.media_type == _contracts.ATTEMPT_RESERVATION_MEDIA_TYPE:
             reservation = self._load_reservation(cursor)
             pending = (cursor, reservation)
             seen.add(cursor.sha256)
             cursor = reservation.previous_outcome_ref
-        elif cursor.media_type != ATTEMPT_OUTCOME_MEDIA_TYPE:
+        elif cursor.media_type != _contracts.ATTEMPT_OUTCOME_MEDIA_TYPE:
             raise AttemptLedgerIntegrityError("attempt ledger tail declares the wrong media type")
 
         while cursor is not None:
-            if cursor.media_type != ATTEMPT_OUTCOME_MEDIA_TYPE:
+            if cursor.media_type != _contracts.ATTEMPT_OUTCOME_MEDIA_TYPE:
                 raise AttemptLedgerIntegrityError(
                     "attempt outcome link declares the wrong media type"
                 )
@@ -583,7 +467,7 @@ class AttemptLedger:
                     "attempt ledger link does not match prior outcome"
                 )
             charged_tokens += outcome.charged_tokens
-            poisoned = outcome.disposition is AttemptDisposition.POISONED
+            poisoned = outcome.disposition is _contracts.AttemptDisposition.POISONED
             previous_outcome_ref = outcome_ref
 
         pending_tokens = 0
@@ -606,7 +490,7 @@ class AttemptLedger:
         if not poisoned and encumbered_tokens > self._budget.max_total_tokens:
             raise AttemptLedgerIntegrityError("attempt chain exceeds its hard token budget")
 
-        return AttemptLedgerState(
+        return _contracts.AttemptLedgerState(
             ledger_id=self._ledger_id,
             budget=self._budget,
             tail_ref=checked_tail,
@@ -622,8 +506,8 @@ class AttemptLedger:
 
     def _verify_pair(
         self,
-        reservation: AttemptReservation,
-        outcome: AttemptOutcome,
+        reservation: _contracts.AttemptReservation,
+        outcome: _contracts.AttemptOutcome,
     ) -> None:
         if reservation.ledger_id != self._ledger_id or outcome.ledger_id != self._ledger_id:
             raise AttemptLedgerIntegrityError("attempt artifact belongs to another ledger")
@@ -636,12 +520,12 @@ class AttemptLedger:
             raise AttemptLedgerIntegrityError("reservation and outcome sequences differ")
         if reservation.reserved_tokens > self._budget.max_tokens_per_attempt:
             raise AttemptLedgerIntegrityError("reservation exceeds the per-attempt ceiling")
-        if outcome.disposition is AttemptDisposition.SETTLED:
+        if outcome.disposition is _contracts.AttemptDisposition.SETTLED:
             if outcome.reported_tokens > reservation.reserved_tokens:
                 raise AttemptLedgerIntegrityError("settled usage exceeds its reservation")
             if outcome.charged_tokens != outcome.reported_tokens:
                 raise AttemptLedgerIntegrityError("settled charge does not match actual usage")
-        elif outcome.disposition is AttemptDisposition.BURNED:
+        elif outcome.disposition is _contracts.AttemptDisposition.BURNED:
             if outcome.reported_tokens > reservation.reserved_tokens:
                 raise AttemptLedgerIntegrityError(
                     "an overrun must poison rather than burn the reservation"
@@ -670,19 +554,19 @@ class AttemptLedger:
                     "attempt outcome token usage does not match its execution"
                 )
             if (
-                outcome.disposition is AttemptDisposition.SETTLED
+                outcome.disposition is _contracts.AttemptDisposition.SETTLED
                 and execution.status.value != "completed"
             ):
                 raise AttemptLedgerIntegrityError(
                     "settled outcome does not reference a completed execution"
                 )
 
-    def _load_reservation(self, ref: ArtifactRef) -> AttemptReservation:
-        if ref.media_type != ATTEMPT_RESERVATION_MEDIA_TYPE:
+    def _load_reservation(self, ref: ArtifactRef) -> _contracts.AttemptReservation:
+        if ref.media_type != _contracts.ATTEMPT_RESERVATION_MEDIA_TYPE:
             raise AttemptLedgerIntegrityError("reservation ref declares the wrong media type")
         try:
-            loaded = self._repository.get_json(ref, AttemptReservation)
-            reservation = AttemptReservation.model_validate(loaded, strict=True)
+            loaded = self._repository.get_json(ref, _contracts.AttemptReservation)
+            reservation = _contracts.AttemptReservation.model_validate(loaded, strict=True)
         except Exception as exc:
             raise AttemptLedgerIntegrityError("attempt reservation cannot be verified") from exc
         if reservation.ledger_id != self._ledger_id:
@@ -693,12 +577,12 @@ class AttemptLedger:
             raise AttemptLedgerIntegrityError("reservation exceeds the per-attempt ceiling")
         return reservation
 
-    def _load_outcome(self, ref: ArtifactRef) -> AttemptOutcome:
-        if ref.media_type != ATTEMPT_OUTCOME_MEDIA_TYPE:
+    def _load_outcome(self, ref: ArtifactRef) -> _contracts.AttemptOutcome:
+        if ref.media_type != _contracts.ATTEMPT_OUTCOME_MEDIA_TYPE:
             raise AttemptLedgerIntegrityError("outcome ref declares the wrong media type")
         try:
-            loaded = self._repository.get_json(ref, AttemptOutcome)
-            outcome = AttemptOutcome.model_validate(loaded, strict=True)
+            loaded = self._repository.get_json(ref, _contracts.AttemptOutcome)
+            outcome = _contracts.AttemptOutcome.model_validate(loaded, strict=True)
         except Exception as exc:
             raise AttemptLedgerIntegrityError("attempt outcome cannot be verified") from exc
         if outcome.ledger_id != self._ledger_id:
@@ -717,17 +601,9 @@ class AttemptLedger:
 
 
 __all__ = [
-    "ATTEMPT_OUTCOME_MEDIA_TYPE",
-    "ATTEMPT_RESERVATION_MEDIA_TYPE",
-    "MODEL_EXECUTION_MEDIA_TYPE",
     "AttemptAccountingError",
-    "AttemptBudget",
     "AttemptBudgetExceeded",
-    "AttemptDisposition",
     "AttemptLedger",
     "AttemptLedgerIntegrityError",
-    "AttemptLedgerState",
-    "AttemptOutcome",
-    "AttemptReservation",
     "AttemptReservationError",
 ]

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from spiral_harness.core import canonical_json_bytes, sha256_bytes
+from spiral_harness.core.canonical import canonical_json_bytes, sha256_bytes
 from spiral_harness.core.models import ArtifactRef
 from spiral_harness.evidence.models import (
     DiagnosticCluster,

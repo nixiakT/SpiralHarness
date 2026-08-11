@@ -32,6 +32,11 @@ from spiral_harness.core.canonical import canonical_json_bytes
 from spiral_harness.core.experiment import EXPERIMENT_MANIFEST_MEDIA_TYPE
 from spiral_harness.core.lifecycle import CandidateState
 from spiral_harness.core.models import ArtifactRef, ImmutableModel, NonEmptyStr, Sha256
+from spiral_harness.evolution.models import (
+    SearchPolicy,
+    SearchRunManifest,
+    SearchStoppingPolicy,
+)
 from spiral_harness.experiments.baselines import BaselineKind
 from spiral_harness.experiments.controller import (
     TERMINAL_TRANSITION_AUTHORIZATION_MEDIA_TYPE,
@@ -795,15 +800,6 @@ class SearchJournal:
                 "controller manifest ref declares the wrong media type"
             )
         self.manifest = self.store.get_json(self.controller_manifest_ref, SearchControllerManifest)
-        # Lazy import keeps this lower-level journal import-cycle safe when the
-        # experiments package re-exports it.  The typed run manifest is still
-        # strictly replayed and joined before any event can be written.
-        from spiral_harness.evolution.models import (
-            SearchPolicy,
-            SearchRunManifest,
-            SearchStoppingPolicy,
-        )
-
         search_run = self.store.get_json(self.manifest.search_run_ref, SearchRunManifest)
         expected_run_coordinates = (
             self.manifest.study_ref,

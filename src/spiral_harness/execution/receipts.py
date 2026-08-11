@@ -3,7 +3,7 @@
 Receipts make the controller's logical evaluation coordinate explicit without
 allowing model executions to become an accounting authority.  Reported and
 charged token fields are copied into a receipt for auditability, but replay
-loads the referenced :class:`~spiral_harness.execution.attempts.AttemptOutcome`
+loads the referenced :class:`~spiral_harness.execution.contracts.AttemptOutcome`
 and derives usage from that artifact again.  In particular, a timeout that
 reports zero tokens still charges its complete burned reservation.
 """
@@ -18,23 +18,21 @@ from pydantic import Field, model_validator
 
 from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.models import ArtifactRef, ImmutableModel, Sha256
-from spiral_harness.execution.attempts import (
+from spiral_harness.execution.attempts import AttemptLedger
+from spiral_harness.execution.contracts import (
     ATTEMPT_OUTCOME_MEDIA_TYPE,
     ATTEMPT_RESERVATION_MEDIA_TYPE,
     MODEL_EXECUTION_MEDIA_TYPE,
     AttemptDisposition,
-    AttemptLedger,
     AttemptOutcome,
     AttemptReservation,
-)
-from spiral_harness.execution.model import (
     CandidateTask,
     ExecutionStatus,
-    FixedModelRunner,
     ModelExecution,
     ModelExecutionRecord,
     PromptHarness,
 )
+from spiral_harness.execution.model import FixedModelRunner
 from spiral_harness.execution.schedule import (
     SCHEDULE_PREFLIGHT_MEDIA_TYPE,
     EvaluationBatchSchedule,
@@ -558,7 +556,7 @@ def replay_trusted_usage(
         ATTEMPT_OUTCOME_MEDIA_TYPE,
         "live final ledger tail",
     )
-    if isinstance(receipt_refs, (str, bytes, bytearray)):
+    if isinstance(receipt_refs, str | bytes | bytearray):
         raise TypeError("receipt_refs must be an iterable of ArtifactRef values")
     try:
         supplied_refs = tuple(receipt_refs)

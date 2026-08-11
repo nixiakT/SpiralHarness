@@ -5,7 +5,8 @@ from dataclasses import FrozenInstanceError
 import pytest
 from pydantic import ValidationError
 
-from spiral_harness.core import (
+from spiral_harness.core.canonical import canonical_json_bytes, canonical_sha256
+from spiral_harness.core.models import (
     ArtifactRef,
     BudgetPolicy,
     CandidateMutation,
@@ -13,8 +14,6 @@ from spiral_harness.core import (
     HarnessComponentRef,
     HarnessManifest,
     MutationHypothesis,
-    canonical_json_bytes,
-    canonical_sha256,
 )
 
 

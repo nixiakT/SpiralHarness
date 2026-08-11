@@ -20,6 +20,7 @@ from spiral_harness.core.models import (
     NonEmptyStr,
     Sha256,
 )
+from spiral_harness.evolution.seeds import derive_strategy_seed
 from spiral_harness.experiments.baselines import (
     BASELINE_STUDY_PLAN_MEDIA_TYPE,
     BaselineKind,
@@ -364,8 +365,6 @@ class SearchRunManifest(ImmutableModel):
 
     @model_validator(mode="after")
     def _validate_manifest(self) -> Self:
-        from spiral_harness.evolution.seeds import derive_strategy_seed
-
         for field_name in (
             "baseline_study_plan_ref",
             "experiment_ref",

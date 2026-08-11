@@ -79,12 +79,10 @@ from spiral_harness.experiments.baselines import (
     plan_four_baselines,
 )
 from spiral_harness.experiments.study import StudyRunKey, expected_run_keys
-from spiral_harness.storage import ArtifactStore
-from spiral_harness.verification import (
-    GateConfig,
-    TrustedGateBatchService,
-    TrustedMechanismEvidenceService,
-)
+from spiral_harness.storage.artifact_store import ArtifactStore
+from spiral_harness.verification.artifacts import TrustedGateBatchService
+from spiral_harness.verification.mechanism import TrustedMechanismEvidenceService
+from spiral_harness.verification.models import GateConfig
 
 HARNESS_MANIFEST_MEDIA_TYPE = "application/vnd.spiral-harness.manifest+json"
 CANDIDATE_MANIFEST_MEDIA_TYPE = "application/vnd.spiral-harness.candidate-manifest.v1+json"

@@ -7,32 +7,34 @@ import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from spiral_harness.execution.attempts import (
-    AttemptBudget,
     AttemptBudgetExceeded,
-    AttemptDisposition,
     AttemptLedger,
+)
+from spiral_harness.execution.contracts import (
+    AttemptBudget,
+    AttemptDisposition,
     AttemptOutcome,
     AttemptReservation,
-)
-from spiral_harness.execution.model import (
-    BackendFingerprintMismatchError,
     BackendResponse,
     BackendTokenUsage,
     CandidateTask,
     ExecutionErrorClass,
     ExecutionStatus,
-    FixedModelRunner,
     FrozenModelSpec,
     InferenceConfig,
     ModelExecution,
     ModelExecutionRecord,
     PromptHarness,
+)
+from spiral_harness.execution.model import (
+    BackendFingerprintMismatchError,
+    FixedModelRunner,
     ReplayBackend,
     materialize_request,
     paired_execution_fingerprint,
     replay_key,
 )
-from spiral_harness.storage import ArtifactStore
+from spiral_harness.storage.artifact_store import ArtifactStore
 
 BACKEND_FINGERPRINT = "replay-backend@sha256:fixed-v1"
 

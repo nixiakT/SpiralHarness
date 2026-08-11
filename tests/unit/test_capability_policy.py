@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from spiral_harness.core import canonical_json_bytes
-from spiral_harness.execution import (
+from spiral_harness.core.canonical import canonical_json_bytes
+from spiral_harness.execution.policy import (
     CapabilityGrant,
     CapabilityKind,
     CapabilityPolicy,

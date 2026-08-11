@@ -7,56 +7,64 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from spiral_harness.core import (
+from spiral_harness.core.experiment import (
     EXPERIMENT_MANIFEST_MEDIA_TYPE,
     PROMOTION_GATE_IMPLEMENTATION_FINGERPRINT,
     PROTOCOL_MANIFEST_MEDIA_TYPE,
-    ArtifactRef,
-    BudgetPolicy,
     CandidateManifest,
-    CandidateMutation,
-    CandidateState,
-    ComponentKind,
     ExperimentManifest,
-    HarnessComponentRef,
-    HarnessManifest,
-    MutationHypothesis,
     MutationPolicy,
     ProtocolManifest,
     ProtocolPartition,
     ProtocolSplit,
 )
-from spiral_harness.execution import CAPABILITY_POLICY_MEDIA_TYPE, CapabilityPolicy
-from spiral_harness.experiments import (
+from spiral_harness.core.lifecycle import CandidateState
+from spiral_harness.core.models import (
+    ArtifactRef,
+    BudgetPolicy,
+    CandidateMutation,
+    ComponentKind,
+    HarnessComponentRef,
+    HarnessManifest,
+    MutationHypothesis,
+)
+from spiral_harness.execution.policy import CAPABILITY_POLICY_MEDIA_TYPE, CapabilityPolicy
+from spiral_harness.experiments.admission import (
     ADMISSION_REPORT_MEDIA_TYPE,
+    CandidateAdmissionService,
+)
+from spiral_harness.experiments.decision import (
     GATE_EVALUATION_MANIFEST_MEDIA_TYPE,
     TERMINAL_DECISION_REPORT_MEDIA_TYPE,
-    CandidateAdmissionService,
     GateEvaluationManifest,
     TerminalDecisionError,
     TerminalDecisionReport,
     TerminalDecisionService,
 )
-from spiral_harness.harness import HarnessRegistry
-from spiral_harness.storage import ArtifactStore
-from spiral_harness.verification import (
-    ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE,
+from spiral_harness.harness.registry import HarnessRegistry
+from spiral_harness.storage.artifact_store import ArtifactStore
+from spiral_harness.verification.artifacts import (
     GATE_TRIAL_BATCH_MEDIA_TYPE,
-    AttestedMechanismEvidence,
-    Decision,
     GateBatchVerificationCapability,
-    GateConfig,
-    GateDecision,
     GateTrialArm,
     GateTrialBatch,
     GateTrialBatchContent,
+    TrustedGateBatchService,
+)
+from spiral_harness.verification.gate import PromotionGate
+from spiral_harness.verification.mechanism import (
+    ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE,
+    AttestedMechanismEvidence,
+    MechanismEvidenceVerificationCapability,
+    TrustedMechanismEvidenceService,
+)
+from spiral_harness.verification.models import (
+    Decision,
+    GateConfig,
+    GateDecision,
     MechanismCheck,
     MechanismEvidence,
-    MechanismEvidenceVerificationCapability,
-    PromotionGate,
     TrialObservation,
-    TrustedGateBatchService,
-    TrustedMechanismEvidenceService,
 )
 
 _STATE_BY_DECISION = {

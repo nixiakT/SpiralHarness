@@ -5,27 +5,32 @@ import itertools
 import pytest
 from pydantic import ValidationError
 
-from spiral_harness.core import ArtifactRef, ComponentKind, canonical_sha256
-from spiral_harness.evolution import (
-    PROMPT_MUTATION_CATALOGUE_MEDIA_TYPE,
-    PROMPT_PROPOSAL_MEDIA_TYPE,
+from spiral_harness.core.canonical import canonical_sha256
+from spiral_harness.core.models import ArtifactRef, ComponentKind
+from spiral_harness.evolution.models import (
     CandidateScreen,
     CandidateScreenFailure,
     CandidateScreenStatus,
     Nomination,
+)
+from spiral_harness.evolution.seeds import (
+    derive_strategy_seed,
+    uniform_without_replacement_indices,
+)
+from spiral_harness.evolution.strategies import (
+    PROMPT_MUTATION_CATALOGUE_MEDIA_TYPE,
+    PROMPT_PROPOSAL_MEDIA_TYPE,
     PromptMutationCatalogue,
     PromptMutationEntry,
     StrategyPermissionError,
-    derive_strategy_seed,
     make_search_policy,
     make_strategy_plugin_manifest,
     nominate_candidate,
     proposals_from_random_selection,
     sample_random_valid,
-    uniform_without_replacement_indices,
     validate_strategy_permissions,
 )
-from spiral_harness.experiments import BaselineKind, FrozenMutationPolicy
+from spiral_harness.experiments.baselines import BaselineKind, FrozenMutationPolicy
 
 
 def ref(character: str, media_type: str = "application/json", *, size: int = 32) -> ArtifactRef:

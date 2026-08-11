@@ -21,10 +21,10 @@ from spiral_harness.core.models import (
     ImmutableModel,
     Sha256,
 )
-from spiral_harness.execution import CapabilityPolicy
-from spiral_harness.harness import HarnessRegistry, HarnessRegistryError
-from spiral_harness.storage import ArtifactRepository
-from spiral_harness.verification import GateConfig
+from spiral_harness.execution.policy import CapabilityPolicy
+from spiral_harness.harness.registry import HarnessRegistry, HarnessRegistryError
+from spiral_harness.storage.protocol import ArtifactRepository
+from spiral_harness.verification.models import GateConfig
 
 _ModelT = TypeVar("_ModelT", bound=BaseModel)
 

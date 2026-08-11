@@ -41,7 +41,7 @@ from spiral_harness.evolution.replay_setup import (
 )
 from spiral_harness.execution.attempts import AttemptLedger
 from spiral_harness.experiments.baselines import BaselineKind, FeedbackType
-from spiral_harness.harness import HarnessRegistry
+from spiral_harness.harness.registry import HarnessRegistry
 
 
 class ReplayRuntime:

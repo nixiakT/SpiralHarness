@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from spiral_harness.core.models import ArtifactRef
-from spiral_harness.execution.attempts import (
+from spiral_harness.execution.contracts import (
     ATTEMPT_OUTCOME_MEDIA_TYPE,
     AttemptBudget,
     AttemptLedgerState,
@@ -20,7 +20,7 @@ from spiral_harness.execution.schedule import (
     preflight_attempt_budget,
     publish_schedule_preflight,
 )
-from spiral_harness.storage import ArtifactStore
+from spiral_harness.storage.artifact_store import ArtifactStore
 
 
 def batch(**updates: object) -> EvaluationBatchSchedule:

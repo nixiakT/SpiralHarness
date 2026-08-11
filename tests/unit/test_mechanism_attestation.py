@@ -4,8 +4,8 @@ import pytest
 from pydantic import ValidationError
 from test_terminal_decision import build_graph
 
-from spiral_harness.core import ArtifactRef
-from spiral_harness.verification import (
+from spiral_harness.core.models import ArtifactRef
+from spiral_harness.verification.mechanism import (
     AttestedMechanismEvidence,
     MechanismEvidenceAttestationError,
     MechanismEvidenceContent,

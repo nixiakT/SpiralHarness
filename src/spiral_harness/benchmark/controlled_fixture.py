@@ -11,8 +11,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from spiral_harness.core import ArtifactRef, canonical_sha256, sha256_bytes
-from spiral_harness.verification import TrialObservation
+from spiral_harness.core.canonical import canonical_sha256, sha256_bytes
+from spiral_harness.core.models import ArtifactRef
+from spiral_harness.verification.models import TrialObservation
 
 FIXTURE_KIND = "synthetic-controlled-fault-v1"
 FIXTURE_SEED = 1729

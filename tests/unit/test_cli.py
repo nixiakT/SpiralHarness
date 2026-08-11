@@ -5,9 +5,9 @@ from typer.testing import CliRunner
 
 from spiral_harness import __version__
 from spiral_harness import cli as cli_module
-from spiral_harness.benchmark import GSM8K_PROVENANCE
+from spiral_harness.benchmark.datasets import GSM8K_PROVENANCE
 from spiral_harness.cli import app
-from spiral_harness.core import ProtocolPartition
+from spiral_harness.core.experiment import ProtocolPartition
 
 
 def test_version_option() -> None:

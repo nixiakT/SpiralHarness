@@ -412,6 +412,23 @@ src/spiral_harness/
   experiments/     # experiment/search/study controllers, gate replay, four-condition protocol
 ```
 
+`src/spiral_harness` is one package path, not two nested application layers:
+`src` is the distribution build root and `spiral_harness` is the Python import
+namespace. GitHub and VS Code compact single-child directories into the label
+`src/spiral_harness`; that display does not indicate an empty directory. Keeping
+the build root prevents a checkout-local package from masking a broken wheel.
+Every domain directory above contains implemented code; future memory, tool,
+service, and UI directories are added only with their first real module.
+
+Domain `__init__.py` files do not aggregate implementation symbols. Internal
+and test code imports each symbol from its owning leaf module, so importing a
+small contract does not eagerly load controllers, replay fixtures, or workflow
+composition. Architecture tests reject package-barrel imports, local dynamic
+imports, dependency cycles, import-only forwarding modules, and accidental
+second package roots. The root package remains the intentionally small public
+entry point for package metadata; the CLI is exposed through the installed
+`spiral` command.
+
 The target dependency direction is inward: infrastructure modules implement
 interfaces declared in the core/domain layer; `evolution` and benchmark
 adapters do not own storage or gate policy; `experiments` composes services but

@@ -32,6 +32,14 @@ from spiral_harness.evolution.models import (
     SearchStoppingPolicy,
     StrategyPluginManifest,
 )
+from spiral_harness.evolution.orchestrator import (
+    AUTOMATIC_SEARCH_LOOP_RESULT_MEDIA_TYPE,
+    SEARCH_RUN_ADMISSION_REPORT_MEDIA_TYPE,
+    AutomaticSearchLoop,
+    AutomaticSearchLoopResult,
+    SearchRunAdmissionExpectation,
+    SearchRunAdmissionService,
+)
 from spiral_harness.experiments.baselines import (
     BASELINE_STUDY_PLAN_MEDIA_TYPE,
     BaselineKind,
@@ -66,13 +74,6 @@ STUDY_BARRIER_CLOSURE_MEDIA_TYPE = "application/vnd.spiral-harness.study-barrier
 STUDY_SEALED_AUTHORIZATION_MEDIA_TYPE = (
     "application/vnd.spiral-harness.study-sealed-authorization.v1+json"
 )
-_SEARCH_RUN_ADMISSION_REPORT_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.search-run-admission-report.v1+json"
-)
-_AUTOMATIC_SEARCH_LOOP_RESULT_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.automatic-search-loop-result.v1+json"
-)
-
 _EVENT_ATTESTATION_DOMAIN = b"spiral-harness:study-journal-event-attestation:v1\x00"
 _EVENT_ATTESTOR_ID_DOMAIN = b"spiral-harness:study-journal-event-attestor-id:v1\x00"
 
@@ -253,12 +254,12 @@ class StudyRunClosure(ImmutableModel):
             (self.search_run_ref, SEARCH_RUN_MANIFEST_MEDIA_TYPE, "search_run_ref"),
             (
                 self.search_run_admission_report_ref,
-                _SEARCH_RUN_ADMISSION_REPORT_MEDIA_TYPE,
+                SEARCH_RUN_ADMISSION_REPORT_MEDIA_TYPE,
                 "search_run_admission_report_ref",
             ),
             (
                 self.automatic_search_result_ref,
-                _AUTOMATIC_SEARCH_LOOP_RESULT_MEDIA_TYPE,
+                AUTOMATIC_SEARCH_LOOP_RESULT_MEDIA_TYPE,
                 "automatic_search_result_ref",
             ),
             (
@@ -892,19 +893,6 @@ class StudyJournal:
         if actual != expected:
             raise StudyJournalIntegrityError("run closure belongs to a foreign study or key")
         try:
-            from spiral_harness.evolution.orchestrator import (
-                AUTOMATIC_SEARCH_LOOP_RESULT_MEDIA_TYPE,
-                SEARCH_RUN_ADMISSION_REPORT_MEDIA_TYPE,
-                AutomaticSearchLoopResult,
-                SearchRunAdmissionExpectation,
-                SearchRunAdmissionService,
-            )
-
-            if (
-                AUTOMATIC_SEARCH_LOOP_RESULT_MEDIA_TYPE != _AUTOMATIC_SEARCH_LOOP_RESULT_MEDIA_TYPE
-                or SEARCH_RUN_ADMISSION_REPORT_MEDIA_TYPE != _SEARCH_RUN_ADMISSION_REPORT_MEDIA_TYPE
-            ):
-                raise ValueError("automatic-search proof media type constants drifted")
             SearchRunAdmissionService(self.store).verify_report(
                 report_ref=closure.search_run_admission_report_ref,
                 search_run_ref=closure.search_run_ref,
@@ -1239,8 +1227,6 @@ class StudyController:
             raise TypeError("search_controller must be an exact SearchController")
         if type(experiment_controller) is not ExperimentController:
             raise TypeError("experiment_controller must be an exact ExperimentController")
-        from spiral_harness.evolution.orchestrator import AutomaticSearchLoop
-
         if type(automatic_search_loop) is not AutomaticSearchLoop:
             raise TypeError("automatic_search_loop must be an exact AutomaticSearchLoop")
         automatic_result_ref = ArtifactRef.model_validate(automatic_search_result_ref)
@@ -1528,8 +1514,6 @@ class StudyController:
                     f"live experiment selection re-verification failed: {exc}"
                 ) from exc
             try:
-                from spiral_harness.evolution.orchestrator import AutomaticSearchLoop
-
                 if type(live.automatic_search_loop) is not AutomaticSearchLoop:
                     raise TypeError("automatic-search capability changed type")
                 automatic_result = AutomaticSearchLoop.verify_execution(

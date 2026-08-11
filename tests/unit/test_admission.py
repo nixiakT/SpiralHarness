@@ -6,33 +6,35 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
-from spiral_harness.core import (
+from spiral_harness.core.canonical import canonical_sha256
+from spiral_harness.core.experiment import (
     PROTOCOL_MANIFEST_MEDIA_TYPE,
-    ArtifactRef,
-    BudgetPolicy,
     CandidateManifest,
-    CandidateMutation,
-    ComponentKind,
     ExperimentManifest,
-    HarnessComponentRef,
-    HarnessManifest,
-    MutationHypothesis,
     MutationPolicy,
     ProtocolManifest,
     ProtocolPartition,
     ProtocolSplit,
-    canonical_sha256,
 )
-from spiral_harness.execution import CAPABILITY_POLICY_MEDIA_TYPE, CapabilityPolicy
-from spiral_harness.experiments import (
+from spiral_harness.core.models import (
+    ArtifactRef,
+    BudgetPolicy,
+    CandidateMutation,
+    ComponentKind,
+    HarnessComponentRef,
+    HarnessManifest,
+    MutationHypothesis,
+)
+from spiral_harness.execution.policy import CAPABILITY_POLICY_MEDIA_TYPE, CapabilityPolicy
+from spiral_harness.experiments.admission import (
     ADMISSION_REPORT_MEDIA_TYPE,
     AdmissionReport,
     CandidateAdmissionError,
     CandidateAdmissionService,
 )
-from spiral_harness.harness import HarnessRegistry
-from spiral_harness.storage import ArtifactStore
-from spiral_harness.verification import GateConfig
+from spiral_harness.harness.registry import HarnessRegistry
+from spiral_harness.storage.artifact_store import ArtifactStore
+from spiral_harness.verification.models import GateConfig
 
 _PROTOCOL_MEDIA_TYPE = PROTOCOL_MANIFEST_MEDIA_TYPE
 _EXPERIMENT_MEDIA_TYPE = "application/vnd.spiral-harness.experiment-manifest.v1+json"

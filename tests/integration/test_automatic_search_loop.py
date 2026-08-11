@@ -14,7 +14,7 @@ from spiral_harness.evolution.replay_study import (
 )
 from spiral_harness.experiments.baselines import BaselineKind
 from spiral_harness.experiments.study import StudyState
-from spiral_harness.storage import ArtifactStore
+from spiral_harness.storage.artifact_store import ArtifactStore
 
 
 def test_four_by_two_automatic_loops_cross_the_complete_study_barrier(
