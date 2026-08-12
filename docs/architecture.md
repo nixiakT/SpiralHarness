@@ -8,10 +8,11 @@
 > controlled fixture, producer-attested mechanism/gate-evidence closure, and a
 > semantic experiment controller with budget accounting and typed
 > selection/sealed closure. The M1 foundation adds a pinned GSM8K adapter,
-> provider-neutral fixed/replay runner, pre-execution attempt accounting, the
-> frozen four-condition baseline protocol, receipt-backed exploration screens,
-> bounded diagnosis/proposal/search orchestration, and a study-level all-run
-> barrier. A first declarative skill slice adds canonical package loading,
+> provider-neutral fixed/replay runner, pre-execution attempt accounting, a
+> trusted GATE batch execution bridge, the frozen four-condition baseline
+> protocol, receipt-backed exploration screens, bounded diagnosis/proposal/search
+> orchestration, and a study-level all-run barrier. A first declarative skill
+> slice adds canonical package loading,
 > declared-generated rules-only revision admission, exact prompt/skill
 > materialization, exact settled skill request inclusion/replay, a
 > protocol-bound verification policy, and candidate-bound matched-control
@@ -116,14 +117,19 @@ controller performs the semantic authorization.
 
 The M1 foundation adds a byte-pinned GSM8K registry/downloader, a trusted
 question-only adapter with frozen exploration/gate/sealed membership, a
-provider-neutral score-free runner, and a pre-execution reservation/outcome
-ledger. It also freezes the static, random-valid, prompt-only, and
+provider-neutral score-free runner, a pre-execution reservation/outcome ledger,
+and a trusted benchmark batch runner that joins complete GATE schedules to
+score-free executions, adapter-owned grading, receipt replay, and signed
+parent/candidate gate batches. The runner rejects protocol/benchmark/grader,
+split, roster, model-spec, and attestor drift before invoking the backend. It
+also freezes the static, random-valid, prompt-only, and
 evidence-targeted comparison contract. The automatic-search kernel now consumes
 that contract through exact run manifests, scoped strategy views, typed
 diagnosis/proposal artifacts, receipt-backed exploration screens, one-candidate
 gate nominations, aggregate-only feedback, and immutable search/study journals.
 The GSM8K runner path and the automatic loop are each replayable, but a
-credentialed live provider and a reportable end-to-end study are not yet wired.
+credentialed live provider, sealed evaluator service, and reportable end-to-end
+study are not yet wired.
 
 The declarative skill slice stores one complete canonical JSON `SkillPackage`
 per revision. The package binds metadata, ordered rules, procedure, examples,

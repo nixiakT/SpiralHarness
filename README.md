@@ -124,6 +124,10 @@ The first M1 benchmark/runner foundation now also includes:
   ledger boundary, and process-local writer epoch before a paired batch, with
   receipt replay rejecting reconstructed historical writers, recomputing the
   model fingerprint, and requiring both arms to share the same task bytes;
+- a trusted benchmark batch runner that executes a complete GATE schedule with
+  the fixed runner, keeps grading inside the adapter, signs parent/candidate
+  gate batches, and fails before backend calls if the protocol, split, roster,
+  model spec, or attestor identity drifts;
 - an immutable v3 attempt reservation/outcome ledger whose records bind the
   originating writer epoch, reserve before a backend call, settle successes,
   burn uncertain failures, poison known token overruns, and make reopened tails
