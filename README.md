@@ -48,10 +48,10 @@ The repository does not track placeholder directories or `.gitkeep` files.
 The M0.2 verification and experiment-control kernel includes:
 
 - immutable schemas for harness manifests and atomic candidate mutations;
-- an exact-media v3 protocol and frozen experiment manifests binding split,
+- an exact-media v4 protocol and frozen experiment manifests binding split,
   model, full credential-free model-spec fingerprint, runtime, grader,
-  mechanism-evidence and gate-batch attestors, gate, mutation policy, stopping
-  rule, and evaluation budget;
+  mechanism-evidence and gate-batch attestors, optional skill-verification
+  policy, gate, mutation policy, stopping rule, and evaluation budget;
 - canonical typed-artifact reads that reject aliases, omitted defaults, and
   validator normalization when those would create a second content identity;
 - an atomic mutation registry whose safe default remains prompt-only and that
@@ -161,7 +161,20 @@ The first declarative skill execution slice now adds:
   embeds the complete credential-free frozen model specification. The preflight
   certificate fixes that specification for the whole paired batch, and receipt
   publication/replay automatically reconstruct the request from the manifest,
-  prompt, and package CAS artifacts.
+  prompt, and package CAS artifacts;
+- a protocol-bound `SkillVerificationPolicy` that freezes the evidence profile,
+  model/runtime/grader coordinates, trusted request-inclusion verifier,
+  claim-specific producer/verifier/config identities, independent claim and
+  aggregate attestors, typed probe roster, deterministic neutral-rule builder,
+  and future evidence thresholds;
+- a candidate-bound `SkillMechanismPlan` that replays the exact experiment,
+  protocol, mutation, package and harness lineage; reconstructs a matched sham
+  package and harness; and freezes matched treatment-vs-revert and
+  treatment-vs-placebo schedules before probe execution. Existing semantic
+  rule order must be preserved, and every seed-affecting schedule coordinate is
+  fixed by the policy roster;
+- controller lifecycle binding and replay of that plan before entering probes,
+  again before gate authorization, and again when gate history is consumed.
 
 The automatic-search control kernel now adds:
 
@@ -220,22 +233,25 @@ artifacts are strictly parsed and bound to reservations, but are assertions of
 the trusted in-process runner rather than cryptographic producer attestations.
 
 The skill slice establishes package integrity, direct/existence-only reference
-closure, immediate revision admission, and exact settled skill request
-inclusion/replay as a prerequisite only. On a settled attempt, replay rejoins
-the exact rules disclosure and canonical request to the completed execution,
-attempt outcome, receipt, and ledger. It does not prove delivery to a remote
-provider, model attention or activation, adherence, behavior change, downstream
-benefit, or generalization, and it produces no skill promotion authority. The
-automatic strategy grammar, finite catalogue, and proposal contracts remain
-prompt-only; there is no general skill router or skill search proposal.
-Consequently this repository does not yet demonstrate a skill gain.
+closure, immediate revision admission, exact settled request inclusion/replay,
+and candidate-bound matched-control preregistration. The new policy and plan
+freeze intended authorities, opaque probe/config artifacts, thresholds, and
+execution coordinates; they do not yet run or attest those probes. In
+particular, the slice does not prove remote-provider delivery, model attention
+or activation, adherence, behavior change, downstream benefit, or
+generalization. Dedicated evidence producers and verifiers are not yet wired,
+and generic mechanism signatures for every reserved skill claim remain
+quarantined, so no skill can reach promotion. The automatic strategy grammar,
+finite catalogue, and proposal contracts remain prompt-only; there is no
+general skill router or skill search proposal. Consequently this repository
+does not yet demonstrate a skill gain.
 
 The next implementation stages are:
 
-1. use exact settled skill request inclusion/replay only as a prerequisite for
-   independent provider-delivery and runtime-activation evidence, then add
-   adherence and behavior probes plus parent-revert and placebo interventions
-   before allowing a skill candidate to reach the gate;
+1. execute the preregistered matched schedules and add independently attested,
+   replayable provider-delivery, runtime-activation, adherence, behavior,
+   revert, and placebo evidence producers before unquarantining any skill gate
+   check;
 2. extend the bounded search grammar to skill proposals only after that
    verification path is fail-closed, then connect the replayable conditions to
    a credentialed fixed-model provider and preregistered reportable study;

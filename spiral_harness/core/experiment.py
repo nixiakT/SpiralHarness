@@ -28,7 +28,7 @@ _MEDIA_TYPE_RE = re.compile(rf"^{_MIME_TOKEN}/{_MIME_TOKEN}$")
 PROMOTION_GATE_IMPLEMENTATION_FINGERPRINT = (
     "spiral-harness.verification.promotion-gate:paired-bootstrap:v1"
 )
-PROTOCOL_MANIFEST_MEDIA_TYPE = "application/vnd.spiral-harness.protocol-manifest.v3+json"
+PROTOCOL_MANIFEST_MEDIA_TYPE = "application/vnd.spiral-harness.protocol-manifest.v4+json"
 EXPERIMENT_MANIFEST_MEDIA_TYPE = "application/vnd.spiral-harness.experiment-manifest.v2+json"
 CANDIDATE_MANIFEST_MEDIA_TYPE = "application/vnd.spiral-harness.candidate-manifest.v2+json"
 
@@ -148,7 +148,7 @@ class MutationPolicy(ImmutableModel):
 class ProtocolManifest(ImmutableModel):
     """Freeze every trusted input that can affect an evaluation result."""
 
-    schema_version: Literal["3"] = "3"
+    schema_version: Literal["4"] = "4"
     benchmark_fingerprint: NonEmptyStr = Field(
         validation_alias=AliasChoices("benchmark_fingerprint", "benchmark")
     )
@@ -171,6 +171,7 @@ class ProtocolManifest(ImmutableModel):
     capability_policy_ref: ArtifactRef = Field(
         validation_alias=AliasChoices("capability_policy_ref", "capability_policy")
     )
+    skill_verification_policy_ref: ArtifactRef | None = None
     grader_fingerprint: NonEmptyStr = Field(
         validation_alias=AliasChoices("grader_fingerprint", "grader")
     )
@@ -224,6 +225,11 @@ class ProtocolManifest(ImmutableModel):
             raise ValueError("split partitions must refer to distinct manifests")
         _require_json_ref(self.gate_config_ref, field_name="gate_config_ref")
         _require_json_ref(self.capability_policy_ref, field_name="capability_policy_ref")
+        if self.skill_verification_policy_ref is not None:
+            _require_json_ref(
+                self.skill_verification_policy_ref,
+                field_name="skill_verification_policy_ref",
+            )
         if self.budget.max_evaluations is None:
             raise ValueError("protocol budget must cap max_evaluations")
         return self
@@ -259,7 +265,7 @@ class ExperimentManifest(ImmutableModel):
         if self.search_budget.max_evaluations is None:
             raise ValueError("search_budget must cap max_evaluations")
         if self.protocol_ref.media_type != PROTOCOL_MANIFEST_MEDIA_TYPE:
-            raise ValueError("protocol_ref must declare the exact protocol manifest v3 media type")
+            raise ValueError("protocol_ref must declare the exact protocol manifest v4 media type")
         if self.seed_harness_ref.media_type != HARNESS_MANIFEST_MEDIA_TYPE:
             raise ValueError(
                 "seed_harness_ref must declare the exact harness manifest v2 media type"

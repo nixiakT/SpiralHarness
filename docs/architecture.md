@@ -13,10 +13,11 @@
 > bounded diagnosis/proposal/search orchestration, and a study-level all-run
 > barrier. A first declarative skill slice adds canonical package loading,
 > declared-generated rules-only revision admission, exact prompt/skill
-> materialization, and exact settled skill request inclusion/replay as a
-> prerequisite. It does not yet add skill proposals, search, provider-delivery
-> evidence, model attention/activation, adherence/behavior verification,
-> downstream benefit/generalization evidence, or a skill promotion result.
+> materialization, exact settled skill request inclusion/replay, a
+> protocol-bound verification policy, and candidate-bound matched-control
+> preregistration. It does not yet execute or attest provider-delivery,
+> activation, adherence, behavior, revert, or placebo probes, nor add skill
+> proposals/search, downstream benefit/generalization evidence, or promotion.
 > These trust boundaries remain in-process: there is no OS sandbox,
 > network/filesystem/process isolation, cross-process durable compare-and-swap
 > or lease, or live provider. The multi-condition fixture is not a reportable
@@ -166,12 +167,13 @@ deliberately rejects any lifecycle tail supplied to a new controller:
 structural journal replay is not semantic authorization. Automatic search
 likewise rejects a partially open or previously completed run when a fresh
 loop instance cannot reconstruct process-local optimizer capabilities and call
-counts. The next integration boundary is to use exact settled skill request
-inclusion/replay as a prerequisite for independently captured provider-delivery
-and runtime-activation evidence, then test adherence and the predeclared
-behavior change with parent-revert and placebo interventions. Only after that
-path feeds the existing mechanism-evidence and promotion gates should the
-bounded grammar gain skill proposals. A
+counts. The skill verification policy and candidate plan now retain settled
+request inclusion as a prerequisite, separate six claim authorities, and
+freeze matched revert/placebo construction and schedules. The next integration
+boundary is to execute those schedules and independently capture and replay
+provider-delivery, runtime-activation, adherence, behavior, revert, and placebo
+evidence. Only after that path feeds the existing mechanism-evidence and
+promotion gates should the bounded grammar gain skill proposals. A
 credentialed live fixed-model study remains a separate subsequent boundary.
 
 ## 3. Artifact model and lineage
@@ -187,12 +189,14 @@ Core artifacts are:
 
 | Artifact | Required references |
 | --- | --- |
-| `ProtocolManifest` v3 | split refs, gate-config and capability-policy refs, gate implementation and mechanism/batch-attestor identities, full model-spec fingerprint, grader/runtime/model settings, budgets |
+| `ProtocolManifest` v4 | split refs, gate-config, capability-policy and optional skill-verification-policy refs, gate implementation and mechanism/batch-attestor identities, full model-spec fingerprint, grader/runtime/model settings, budgets |
 | `ExperimentManifest` | protocol hash, seed harness, objectives, baselines, stopping rule |
 | `HarnessSnapshot` | typed component name → component artifact hash |
 | `HarnessPatch` | parent snapshot, changed component(s), canonical before/after hashes |
 | `SkillPackage` | direct parent ref (existence only unless it is the immediate revision edge being checked), fixed model/runtime compatibility, normalized SPDX expression, package-declared source class, provenance/compliance refs (existence only), notices, and declarative content |
 | `SkillDisclosure` | exact package, disclosure level, renderer, exposed sections, context bytes, hash, and size |
+| `SkillVerificationPolicy` | protocol/model coordinates, request-inclusion verifier, six separated claim authorities/config refs, aggregate authority, probe roster, neutral-rule builder, and evidence thresholds |
+| `SkillMechanismPlan` | exact experiment/candidate/mutation/package/harness joins, deterministic placebo control, and matched revert/placebo schedules |
 | `ModelRequest` v2 | task, exact harness-manifest ref, base prompt, optional skill disclosure, resolved prompt and hashes, user prompt, and seed |
 | `ModelExecution` v2 | complete frozen model spec, exact request, score-free output/status/usage, paired execution identity, and request hash |
 | `AttemptReservation` / `AttemptOutcome` v3 | ledger and budget identity, originating writer epoch, contiguous chain links, reserved/reported/charged usage, disposition, and execution ref |
@@ -446,8 +450,13 @@ supports three projections, while scheduled materialization always uses
 `rules`; manifest resolution, disclosure materialization, and backend-request
 construction are replayable. They do not establish provider delivery, model
 attention or activation, adherence, behavior change, benefit, or generalization,
-and they provide no promotion authority. The automatic proposal
-catalogue and strategy grammar remain prompt-only. Arbitrary Python,
+and they provide no promotion authority. A protocol-bound policy and
+candidate-bound plan now preregister separated claim authorities, probe/config
+references, a deterministic matched sham, and complete matched schedule
+coordinates. These are preregistration artifacts, not probe results; all
+reserved skill checks remain quarantined until dedicated producers and replay
+verifiers exist. The automatic proposal catalogue and strategy grammar remain
+prompt-only. Arbitrary Python,
 tool implementation changes, package metadata rewrites, and combined
 prompt+skill edits are not classified as this M1 skill operation.
 
@@ -511,8 +520,10 @@ four matched strategy conditions across multiple independent run seeds through
 the same bounded controller path and study barrier. It remains explicitly
 non-reportable. Skill integration tests establish canonical package loading,
 direct-edge revision admission, exact rules-only materialization, and
-exact settled skill request inclusion/replay; they do not establish remote
-provider delivery, model attention or activation, skill adherence, a causal
-behavior change, benchmark benefit, or generalization, and they confer no
-promotion authority. A live provider, OS isolation, and durable multi-process
-coordination remain future integration and hardening work.
+exact settled skill request inclusion/replay. They also exercise Protocol v4
+policy binding, candidate-bound matched-control construction, complete schedule
+freezing, adversarial artifact joins, and lifecycle replay. They do not execute
+or attest remote-provider delivery, model activation, skill adherence, causal
+behavior, revert/placebo outcomes, benchmark benefit, or generalization, and
+they confer no promotion authority. A live provider, OS isolation, and durable
+multi-process coordination remain future integration and hardening work.

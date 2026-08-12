@@ -100,6 +100,7 @@ from spiral_harness.verification.artifacts import (
 from spiral_harness.verification.gate import PromotionGate
 from spiral_harness.verification.mechanism import (
     ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE,
+    REQUIRED_SKILL_MECHANISM_IDS,
     RESERVED_SKILL_MECHANISM_IDS,
     AttestedMechanismEvidence,
     TrustedMechanismEvidenceService,
@@ -1042,11 +1043,11 @@ def test_skill_candidate_generic_checks_cannot_bypass_reserved_mechanism_quarant
         ref for ref in event.evidence_refs if ref.media_type == PROBE_REJECTION_REPORT_MEDIA_TYPE
     )
     report = graph.store.get_json(report_ref, ProbeRejectionReport)
-    reserved = tuple(sorted(RESERVED_SKILL_MECHANISM_IDS))
+    required = tuple(sorted(REQUIRED_SKILL_MECHANISM_IDS))
     assert report.error_code is ProbeRejectionCode.REQUIRED_CHECK_MISSING
-    assert report.required_checks == ("activation", *reserved)
+    assert report.required_checks == ("activation", *required)
     assert report.failed_checks == ()
-    assert report.missing_checks == reserved
+    assert report.missing_checks == required
 
 
 def test_skill_candidate_legacy_signed_reserved_checks_remain_missing(
@@ -1102,11 +1103,11 @@ def test_skill_candidate_legacy_signed_reserved_checks_remain_missing(
         ref for ref in event.evidence_refs if ref.media_type == PROBE_REJECTION_REPORT_MEDIA_TYPE
     )
     report = graph.store.get_json(report_ref, ProbeRejectionReport)
-    reserved = tuple(sorted(RESERVED_SKILL_MECHANISM_IDS))
+    required = tuple(sorted(REQUIRED_SKILL_MECHANISM_IDS))
     assert report.error_code is ProbeRejectionCode.REQUIRED_CHECK_MISSING
-    assert report.required_checks == ("activation", *reserved)
+    assert report.required_checks == ("activation", *required)
     assert report.failed_checks == ()
-    assert report.missing_checks == reserved
+    assert report.missing_checks == required
 
 
 @pytest.mark.parametrize(

@@ -6,10 +6,17 @@ from test_terminal_decision import build_graph
 
 from spiral_harness.core.models import ArtifactRef
 from spiral_harness.verification.mechanism import (
+    LEGACY_SKILL_REQUEST_ACTIVATION_MECHANISM_ID,
+    REQUIRED_SKILL_MECHANISM_IDS,
     RESERVED_SKILL_MECHANISM_IDS,
     SKILL_ADHERENCE_MECHANISM_ID,
     SKILL_BEHAVIOR_MECHANISM_ID,
+    SKILL_PLACEBO_CONTROL_MECHANISM_ID,
+    SKILL_PROVIDER_DELIVERY_MECHANISM_ID,
     SKILL_REQUEST_ACTIVATION_MECHANISM_ID,
+    SKILL_REQUEST_INCLUSION_MECHANISM_ID,
+    SKILL_REVERT_CONTROL_MECHANISM_ID,
+    SKILL_RUNTIME_ACTIVATION_MECHANISM_ID,
     AttestedMechanismEvidence,
     MechanismEvidenceAttestationError,
     MechanismEvidenceContent,
@@ -18,11 +25,26 @@ from spiral_harness.verification.mechanism import (
 )
 from spiral_harness.verification.models import MechanismCheck, MechanismEvidence
 
-_RESERVED_NAME_VARIANTS = (
-    *sorted(RESERVED_SKILL_MECHANISM_IDS),
-    SKILL_REQUEST_ACTIVATION_MECHANISM_ID.upper(),
-    f" {SKILL_ADHERENCE_MECHANISM_ID} ",
-    f"\t{SKILL_BEHAVIOR_MECHANISM_ID.title()}\n",
+_REQUIRED_IDS = frozenset(
+    {
+        SKILL_REQUEST_INCLUSION_MECHANISM_ID,
+        SKILL_PROVIDER_DELIVERY_MECHANISM_ID,
+        SKILL_RUNTIME_ACTIVATION_MECHANISM_ID,
+        SKILL_ADHERENCE_MECHANISM_ID,
+        SKILL_BEHAVIOR_MECHANISM_ID,
+        SKILL_REVERT_CONTROL_MECHANISM_ID,
+        SKILL_PLACEBO_CONTROL_MECHANISM_ID,
+    }
+)
+_RESERVED_NAME_VARIANTS = tuple(
+    variant
+    for mechanism_id in sorted(RESERVED_SKILL_MECHANISM_IDS)
+    for variant in (
+        mechanism_id,
+        mechanism_id.upper(),
+        f" {mechanism_id} ",
+        f"\t{mechanism_id.title()}\n",
+    )
 )
 
 
@@ -59,6 +81,16 @@ def create_from_content(graph, content: MechanismEvidenceContent):
         source_refs=content.source_refs,
         evidence=content.evidence,
     )
+
+
+def test_skill_mechanism_taxonomy_separates_required_ids_from_legacy_quarantine() -> None:
+    assert REQUIRED_SKILL_MECHANISM_IDS == _REQUIRED_IDS
+    assert (
+        _REQUIRED_IDS | {LEGACY_SKILL_REQUEST_ACTIVATION_MECHANISM_ID}
+        == RESERVED_SKILL_MECHANISM_IDS
+    )
+    assert SKILL_REQUEST_ACTIVATION_MECHANISM_ID == LEGACY_SKILL_REQUEST_ACTIVATION_MECHANISM_ID
+    assert LEGACY_SKILL_REQUEST_ACTIVATION_MECHANISM_ID not in REQUIRED_SKILL_MECHANISM_IDS
 
 
 def test_mechanism_content_canonicalizes_sources_and_rejects_duplicates(tmp_path) -> None:

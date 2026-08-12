@@ -67,7 +67,8 @@ def test_protocol_requires_exploration_and_gate_and_canonicalizes_splits() -> No
         split(ProtocolPartition.EXPLORATION, "a"),
     )
 
-    assert manifest.schema_version == "3"
+    assert manifest.schema_version == "4"
+    assert manifest.skill_verification_policy_ref is None
     assert [item.partition for item in manifest.splits] == [
         ProtocolPartition.EXPLORATION,
         ProtocolPartition.GATE,
@@ -102,6 +103,26 @@ def test_protocol_rejects_duplicate_partitions_and_split_manifests() -> None:
             split(ProtocolPartition.EXPLORATION, "a"),
             split(ProtocolPartition.GATE, "a"),
         )
+
+
+def test_protocol_requires_skill_verification_policy_to_be_json_when_present() -> None:
+    values = protocol(
+        split(ProtocolPartition.EXPLORATION, "a"),
+        split(ProtocolPartition.GATE, "b"),
+    ).model_dump()
+    policy_ref = artifact(
+        "c",
+        media_type="application/vnd.spiral-harness.skill-verification-policy+json",
+    )
+    values["skill_verification_policy_ref"] = policy_ref
+
+    manifest = ProtocolManifest.model_validate(values)
+
+    assert manifest.skill_verification_policy_ref == policy_ref
+
+    values["skill_verification_policy_ref"] = artifact("c", media_type="text/plain")
+    with pytest.raises(ValidationError, match="skill_verification_policy_ref"):
+        ProtocolManifest.model_validate(values)
 
 
 def test_protocol_is_strict_frozen_and_forbids_unregistered_fields() -> None:

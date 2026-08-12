@@ -30,16 +30,31 @@ from spiral_harness.verification.models import MechanismEvidence
 ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE = (
     "application/vnd.spiral-harness.attested-mechanism-evidence.v1+json"
 )
-SKILL_REQUEST_ACTIVATION_MECHANISM_ID = "skill_request_activation"
+LEGACY_SKILL_REQUEST_ACTIVATION_MECHANISM_ID = "skill_request_activation"
+# Compatibility alias only.  Request inclusion was historically mislabeled as
+# activation; the legacy ID remains quarantined and can never authorize a skill.
+SKILL_REQUEST_ACTIVATION_MECHANISM_ID = LEGACY_SKILL_REQUEST_ACTIVATION_MECHANISM_ID
+SKILL_REQUEST_INCLUSION_MECHANISM_ID = "skill_request_inclusion"
+SKILL_PROVIDER_DELIVERY_MECHANISM_ID = "skill_provider_delivery"
+SKILL_RUNTIME_ACTIVATION_MECHANISM_ID = "skill_runtime_activation"
 SKILL_ADHERENCE_MECHANISM_ID = "skill_adherence"
 SKILL_BEHAVIOR_MECHANISM_ID = "skill_behavior"
-RESERVED_SKILL_MECHANISM_IDS = frozenset(
+SKILL_REVERT_CONTROL_MECHANISM_ID = "skill_revert_control"
+SKILL_PLACEBO_CONTROL_MECHANISM_ID = "skill_placebo_control"
+REQUIRED_SKILL_MECHANISM_IDS = frozenset(
     {
-        SKILL_REQUEST_ACTIVATION_MECHANISM_ID,
+        SKILL_REQUEST_INCLUSION_MECHANISM_ID,
+        SKILL_PROVIDER_DELIVERY_MECHANISM_ID,
+        SKILL_RUNTIME_ACTIVATION_MECHANISM_ID,
         SKILL_ADHERENCE_MECHANISM_ID,
         SKILL_BEHAVIOR_MECHANISM_ID,
+        SKILL_REVERT_CONTROL_MECHANISM_ID,
+        SKILL_PLACEBO_CONTROL_MECHANISM_ID,
     }
 )
+RESERVED_SKILL_MECHANISM_IDS = REQUIRED_SKILL_MECHANISM_IDS | {
+    LEGACY_SKILL_REQUEST_ACTIVATION_MECHANISM_ID
+}
 
 _ATTESTATION_DOMAIN = b"spiral-harness:mechanism-evidence-attestation:v1\x00"
 _ATTESTOR_ID_DOMAIN = b"spiral-harness:mechanism-evidence-attestor-id:v1\x00"
@@ -268,10 +283,17 @@ class TrustedMechanismEvidenceService:
 
 __all__ = [
     "ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE",
+    "LEGACY_SKILL_REQUEST_ACTIVATION_MECHANISM_ID",
+    "REQUIRED_SKILL_MECHANISM_IDS",
     "RESERVED_SKILL_MECHANISM_IDS",
     "SKILL_ADHERENCE_MECHANISM_ID",
     "SKILL_BEHAVIOR_MECHANISM_ID",
+    "SKILL_PLACEBO_CONTROL_MECHANISM_ID",
+    "SKILL_PROVIDER_DELIVERY_MECHANISM_ID",
     "SKILL_REQUEST_ACTIVATION_MECHANISM_ID",
+    "SKILL_REQUEST_INCLUSION_MECHANISM_ID",
+    "SKILL_REVERT_CONTROL_MECHANISM_ID",
+    "SKILL_RUNTIME_ACTIVATION_MECHANISM_ID",
     "AttestedMechanismEvidence",
     "MechanismEvidenceAttestationError",
     "MechanismEvidenceContent",

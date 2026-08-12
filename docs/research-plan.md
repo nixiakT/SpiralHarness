@@ -181,23 +181,28 @@ certificate fixes the exact spec, clean ledger boundary, and process-local
 writer epoch before the batch; trusted replay rejects historical writer
 reconstruction, recomputes the execution fingerprints, and rejects unequal
 parent/candidate task bytes. The automatic proposal grammar and finite
-catalogue remain prompt-only, however;
-there is no general skill router, skill proposal/search path, trusted
-skill-specific adherence/behavior check, parent-revert/placebo gate, or live
-provider result. These package and request guarantees therefore do not
-demonstrate a skill gain.
+catalogue remain prompt-only, however; there is no general skill router,
+skill proposal/search path, trusted skill-specific evidence producer, executed
+parent-revert/placebo gate, or live-provider result. These package and request
+guarantees therefore do not demonstrate a skill gain.
 
 The current runner establishes exact settled skill request inclusion/replay as
 a prerequisite: on a settled attempt it can rejoin the canonical rules-bearing
 request to the completed execution, attempt outcome, receipt, and ledger. That
 does not prove remote-provider delivery, model attention or activation,
 adherence, behavior change, downstream benefit, or generalization, and it
-provides no skill promotion authority. The next skill-verification stages will
-add independent provider-delivery and runtime-activation evidence, test
-adherence and the predeclared behavior change, and add parent-revert and placebo
-interventions before a skill candidate can enter the promotion gate. Only then
-should automatic skill proposals be added. A credentialed fixed-model provider
-and preregistered live study remain necessary for an empirical result.
+provides no skill promotion authority. Protocol v4 now freezes a
+`SkillVerificationPolicy`, separated claim authorities/configs, complete probe
+schedule coordinates, evidence thresholds, and deterministic neutral-rule
+construction. A candidate-bound `SkillMechanismPlan` replays the exact lineage
+and reconstructs matched parent-revert and placebo controls at probe entry,
+gate entry, and later gate-history consumption. This is preregistration only:
+the next stage must
+execute those schedules and independently produce, attest, and replay provider
+delivery, runtime activation, adherence, behavior, revert, and placebo
+evidence before reserved skill checks can be unquarantined. Only then should
+automatic skill proposals be added. A credentialed fixed-model provider and
+preregistered live study remain necessary for an empirical result.
 
 ### M2 — Multi-component evolution
 

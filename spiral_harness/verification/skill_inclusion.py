@@ -55,6 +55,9 @@ SETTLED_SKILL_REQUEST_INCLUSION_MEDIA_TYPE = (
     "application/vnd.spiral-harness.settled-skill-request-inclusion.v1+json"
 )
 SETTLED_SKILL_REQUEST_INCLUSION_CLAIM = "skill-disclosure-present-in-settled-request"
+SKILL_REQUEST_INCLUSION_VERIFIER_FINGERPRINT = sha256_bytes(
+    b"spiral-harness/settled-skill-request-inclusion-verifier/v1"
+)
 
 
 class SkillRequestInclusionError(ValueError):
@@ -588,6 +591,7 @@ def verify_settled_skill_request_inclusion(
 __all__ = [
     "SETTLED_SKILL_REQUEST_INCLUSION_CLAIM",
     "SETTLED_SKILL_REQUEST_INCLUSION_MEDIA_TYPE",
+    "SKILL_REQUEST_INCLUSION_VERIFIER_FINGERPRINT",
     "SettledSkillRequestInclusionEvidence",
     "SettledSkillRequestObservation",
     "SkillRequestInclusionError",

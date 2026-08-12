@@ -279,7 +279,7 @@ def test_admission_reaches_seed_and_joins_current_candidate(tmp_path: Path) -> N
     )
 
 
-def test_admission_rejects_v3_protocol_payload_labeled_as_v1_media(tmp_path: Path) -> None:
+def test_admission_rejects_v4_protocol_payload_labeled_as_v1_media(tmp_path: Path) -> None:
     fixture = _fixture(tmp_path)
     mislabeled_ref = fixture.store.put_json(
         fixture.protocol,

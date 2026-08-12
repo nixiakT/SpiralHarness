@@ -45,6 +45,7 @@ from spiral_harness.verification.artifacts import (
 )
 from spiral_harness.verification.mechanism import (
     ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE,
+    REQUIRED_SKILL_MECHANISM_IDS,
     RESERVED_SKILL_MECHANISM_IDS,
     AttestedMechanismEvidence,
     MechanismEvidenceVerificationCapability,
@@ -77,6 +78,11 @@ from .lifecycle import (
     SealedRunAuthorization,
     SelectionClosure,
     SelectionReason,
+)
+from .skill_probes import (
+    SkillProbePreregistrationError,
+    replay_probe_preregistration_refs,
+    resolve_probe_preregistration,
 )
 
 EXPERIMENT_USAGE_CLAIM_MEDIA_TYPE = "application/vnd.spiral-harness.experiment-usage-claim.v1+json"
@@ -352,20 +358,7 @@ class TerminalCompletion(ImmutableModel):
 
 
 class ExperimentController:
-    """Sole semantic transition writer for one explicitly frozen experiment.
-
-    The controller never accepts a caller-reported evaluation count.  It loads
-    both exact-media gate trial batches and charges every observation in both
-    arms against both the experiment and protocol ``max_evaluations`` limits.
-
-    The optional usage tail supports controller re-instantiation and read-only
-    replay only while the original in-memory gate-batch and mechanism-evidence
-    verification capabilities remain available.  This is not process-restart
-    recovery.  Candidate lifecycle heads intentionally remain process-local in
-    M0.2; callers must register candidates through this instance.  Durable
-    multi-process head discovery and locking are future distributed-controller
-    work, not a property of content addressing alone.
-    """
+    """Single process-local writer for a frozen experiment and its checked budgets."""
 
     def __init__(
         self,
@@ -377,10 +370,7 @@ class ExperimentController:
         usage_tail_ref: ArtifactRef | None = None,
         experiment_tail_ref: ArtifactRef | None = None,
     ) -> None:
-        # These process-local objects are verification capabilities, not
-        # extension points.  Accepting a subclass would let caller code
-        # override ``attestor_id`` and ``verify`` while still satisfying an
-        # ``isinstance`` check.
+        # Exact types keep subclasses from overriding attestor identity or verify().
         if type(gate_batch_verifier) is not GateBatchVerificationCapability:
             raise TypeError("gate_batch_verifier must be a GateBatchVerificationCapability")
         if type(mechanism_evidence_verifier) is not MechanismEvidenceVerificationCapability:
@@ -601,15 +591,7 @@ class ExperimentController:
         previous_tail_ref: ArtifactRef,
         analysis_plan_ref: ArtifactRef,
     ) -> ArtifactRef:
-        """Close selection from controller-owned heads for search orchestration.
-
-        The lower-level compatibility API accepts explicit champion and usage
-        references so old callers can prove their expected view.  An automatic
-        search loop must not reconstruct those values from plugin output.  This
-        method projects the only current candidate/usage heads owned by this
-        controller and leaves the caller responsible solely for supplying the
-        analysis plan already frozen in its typed search-run manifest.
-        """
+        """Close selection from controller-owned champion and usage heads."""
 
         champion_candidate_ref = self._champion_candidate_ref
         champion_candidate_tail_ref = (
@@ -630,14 +612,7 @@ class ExperimentController:
         self,
         tail_ref: ArtifactRef,
     ) -> SelectionClosure:
-        """Re-authenticate this controller's exact current selection closure.
-
-        Study-level orchestration must not treat a caller-authored
-        :class:`SelectionClosure` as evidence.  This read-only capability
-        replays the current controller-owned lifecycle branch and rejoins the
-        closure with champion, candidate, usage, and analysis heads without
-        starting sealed evaluation.
-        """
+        """Replay and rejoin the current controller-owned selection closure."""
 
         checked_ref = ArtifactRef.model_validate(tail_ref)
         events = self._require_experiment_tail(
@@ -1024,6 +999,7 @@ class ExperimentController:
         *,
         candidate_ref: ArtifactRef,
         previous_tail_ref: ArtifactRef,
+        skill_mechanism_plan_ref: ArtifactRef | None = None,
     ) -> ArtifactRef:
         """Enter the preregistered mechanism-probe stage."""
 
@@ -1033,12 +1009,22 @@ class ExperimentController:
             previous_tail_ref,
             expected_state=CandidateState.VALID,
         )
+        try:
+            evidence_refs = resolve_probe_preregistration(
+                self._repository,
+                experiment_ref=self.experiment_ref,
+                protocol_ref=self.protocol_ref,
+                candidate_ref=candidate_ref,
+                plan_ref=skill_mechanism_plan_ref,
+            )
+        except SkillProbePreregistrationError as exc:
+            raise ExperimentControllerError(f"probe preregistration failed: {exc}") from exc
         return self._append_candidate_event(
             candidate_ref=candidate_ref,
             previous_tail_ref=previous_tail_ref,
             from_state=CandidateState.VALID,
             to_state=CandidateState.RUNNING_PROBES,
-            evidence_refs=(),
+            evidence_refs=evidence_refs,
             reason="candidate entered preregistered mechanism probes",
         )
 
@@ -1049,19 +1035,24 @@ class ExperimentController:
         previous_tail_ref: ArtifactRef,
         mechanism_evidence_ref: ArtifactRef,
     ) -> ArtifactRef:
-        """Resolve probe evidence into ``RUNNING_GATE`` or ``REJECTED``.
-
-        The transition is derived exclusively from the loaded mechanism
-        artifact and frozen gate config.  Callers cannot report their own
-        passed/failed boolean.
-        """
+        """Replay preregistration and resolve probes into a gate or rejection."""
 
         self._require_searching()
-        self._require_current_tail(
+        events = self._require_current_tail(
             candidate_ref,
             previous_tail_ref,
             expected_state=CandidateState.RUNNING_PROBES,
         )
+        try:
+            replay_probe_preregistration_refs(
+                self._repository,
+                experiment_ref=self.experiment_ref,
+                protocol_ref=self.protocol_ref,
+                candidate_ref=candidate_ref,
+                evidence_refs=events[-1].evidence_refs,
+            )
+        except SkillProbePreregistrationError as exc:
+            raise ExperimentControllerError(f"probe history replay failed: {exc}") from exc
         candidate = self._load(candidate_ref, CandidateManifest, "candidate manifest")
         evidence, required, failed, missing = self._mechanism_status(
             candidate_ref,
@@ -1165,9 +1156,7 @@ class ExperimentController:
             prior_evaluations=usage.total_evaluations,
         )
 
-        # These objects are written before the lifecycle event, but no mutable
-        # head is published until every append succeeds.  A crash can therefore
-        # leave unreachable CAS objects, never an authorized partial state.
+        # Publish the mutable head only after every immutable object exists.
         claim = ExperimentUsageClaim(
             experiment_ref=self.experiment_ref,
             protocol_ref=self.protocol_ref,
@@ -1732,8 +1721,8 @@ class ExperimentController:
         )
         if states != expected_states:
             raise ExperimentControllerError("usage claim source is not a canonical gate history")
-        if events[0].evidence_refs or events[2].evidence_refs:
-            raise ExperimentControllerError("controller-empty lifecycle stages contain evidence")
+        if events[0].evidence_refs:
+            raise ExperimentControllerError("registered lifecycle stage contains evidence")
         if len(events[1].evidence_refs) != 1 or len(events[3].evidence_refs) != 1:
             raise ExperimentControllerError("admission and mechanism stages require exact evidence")
 
@@ -1741,6 +1730,16 @@ class ExperimentController:
         candidate = self._load(candidate_ref, CandidateManifest, "candidate manifest")
         if candidate.experiment_ref != self.experiment_ref:
             raise ExperimentControllerError("candidate history belongs to another experiment")
+        try:
+            replay_probe_preregistration_refs(
+                self._repository,
+                experiment_ref=self.experiment_ref,
+                protocol_ref=self.protocol_ref,
+                candidate_ref=candidate_ref,
+                evidence_refs=events[2].evidence_refs,
+            )
+        except SkillProbePreregistrationError as exc:
+            raise ExperimentControllerError(f"probe history replay failed: {exc}") from exc
         admission_report_ref = events[1].evidence_refs[0]
         try:
             self._admission.verify_report(
@@ -1852,7 +1851,7 @@ class ExperimentController:
         mutation = self._load(candidate.mutation_ref, CandidateMutation, "candidate mutation")
         is_skill_mutation = mutation.after.kind is ComponentKind.SKILL
         if is_skill_mutation:
-            skill_required = sorted(RESERVED_SKILL_MECHANISM_IDS)
+            skill_required = sorted(REQUIRED_SKILL_MECHANISM_IDS)
             required = tuple(dict.fromkeys((*required, *skill_required)))
         by_name = {
             check.name: check

@@ -33,9 +33,11 @@ symmetric verification capabilities nevertheless run in the same process as
 the controlled fixture. A deny-by-default capability schema is bound into the
 protocol and checked at admission, but it is not OS enforcement. M0.2 has no
 enforced network, filesystem, or process isolation and no worker sandbox.
-The protocol schema is version 3 and is accepted only under its exact v3 media
-type. Version 3 adds the full model-spec fingerprint needed to authorize a
-scheduled preflight; a payload under another version's media type fails closed.
+The protocol schema is version 4 and is accepted only under its exact v4 media
+type. Version 4 adds an optional JSON reference that freezes the skill
+verification policy; prompt-only protocols persist it as `null`. The full
+model-spec fingerprint remains bound for scheduled preflight authorization,
+and a payload under another version's media type fails closed.
 
 ## 2. Data boundaries
 
@@ -113,6 +115,24 @@ ledger. This establishes exact settled skill request inclusion/replay as a
 prerequisite only. It does not prove remote-provider delivery, model attention
 or activation, adherence, behavior change, downstream benefit, or
 generalization, and it creates no skill mechanism check or promotion authority.
+
+Protocol v4 may additionally bind a `SkillVerificationPolicy`. Before a skill
+candidate enters `RUNNING_PROBES`, its `SkillMechanismPlan` must exactly rejoin
+that policy with the experiment, candidate, atomic rules revision, parent and
+child harnesses, typed exploration probe roster, deterministic neutral rules,
+matched placebo package/harness, and both treatment-vs-revert and
+treatment-vs-placebo schedules. The schedules share every coordinate except the
+control harness, including `study`, `kind`, `query`, task/seed axes, retries,
+and token ceilings. The controller records the plan in the lifecycle and
+replays it again before gate authorization and when gate history is consumed.
+
+This layer freezes the exploration-split identity, roster and opaque
+claim/probe configuration artifacts by hash; the generic controller does not
+yet parse benchmark-specific split membership or derive claim outcomes from
+those configs. Evidence thresholds, including token-distance limits, are also
+preregistered but not yet consumed. Dedicated producers must later rejoin typed
+task membership, apply every threshold, and emit replayable terminal evidence
+before any reserved skill check can be unquarantined.
 
 ## 4. Matched evaluation
 
@@ -201,8 +221,16 @@ As with gate batches, this HMAC authenticates the trusted producer's complete
 assertion but does not re-execute its sources to derive each check boolean.
 Typed capture bundles and trusted probe replay remain runner-stage hardening.
 
-The skill path has not yet entered this mechanism-evidence boundary. Its next
-fail-closed integration is:
+The skill path now has a fail-closed preregistration boundary, but it has not
+yet entered terminal mechanism-evidence production. The policy separates the
+generic mechanism signer, aggregate skill signer, and six claim-specific
+attestors, producers, verifiers, domains, and configs for provider delivery,
+runtime activation, adherence, behavior, revert, and placebo. Request inclusion
+remains live-ledger re-derived and cannot be assigned a claim attestor. The
+candidate plan also reconstructs its matched sham and freezes the two control
+schedules. These artifacts authorize no positive claim by themselves.
+
+The next integration must:
 
 1. retain exact settled skill request inclusion/replay, including
    `HarnessMaterializer.verify_execution_request`, as a prerequisite rather
@@ -211,13 +239,13 @@ fail-closed integration is:
    activation observable;
 3. obtain independent evidence for rule adherence and the predeclared behavior
    change rather than inferring either from request inclusion;
-4. run matched parent-revert and placebo interventions; and
+4. execute the already frozen matched parent-revert and placebo interventions;
 5. submit those concrete sources through `TrustedMechanismEvidenceService` and
    the existing promotion gate.
 
-Until all five steps are present, request-inclusion evidence has no promotion
-authority and a skill cannot be promoted on the basis of its package/request
-binding.
+Until all five steps are present, request-inclusion and preregistration
+artifacts have no promotion authority. Generic signed checks using any reserved
+skill ID are filtered, so a skill remains fail-closed at the mechanism gate.
 
 ## 6. Promotion gate
 
@@ -342,7 +370,7 @@ M0.2 validates the promotion protocol against deterministic synthetic tasks.
 M1 now supplies a pinned real GSM8K adapter and provider-neutral score-free
 runner with replay backend, plus a bounded prompt-only automatic-search kernel.
 The declarative skill slice reaches admission, materialized backend requests,
-and receipt replay, but not automatic skill search, a live-model study, or a
-verified skill gain. The controlled fixture remains evidence about verifier
-plumbing and fail-closed behavior, not evidence of agent capability
-improvement.
+receipt replay, and matched-control preregistration, but not dedicated skill
+evidence production, automatic skill search, a live-model study, or a verified
+skill gain. The controlled fixture remains evidence about verifier plumbing and
+fail-closed behavior, not evidence of agent capability improvement.
