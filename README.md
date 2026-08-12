@@ -132,6 +132,11 @@ The first M1 benchmark/runner foundation now also includes:
   condition/search-run seed and converts receipt-backed runner usage into
   budget-checked baseline usage reports without treating them as final fairness
   attestations;
+- a trusted baseline GATE runner that executes those plan-derived schedules
+  with a fresh exact-budget attempt ledger per batch, publishes canonical usage
+  report artifacts, and validates the four condition reports together while
+  still marking them as structural usage evidence rather than reportable
+  benchmark gains;
 - an immutable v3 attempt reservation/outcome ledger whose records bind the
   originating writer epoch, reserve before a backend call, settle successes,
   burn uncertain failures, poison known token overruns, and make reopened tails

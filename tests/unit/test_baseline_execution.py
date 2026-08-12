@@ -209,6 +209,22 @@ def test_rejects_schedule_that_would_exceed_full_plan_budget() -> None:
         )
 
 
+def test_rejects_gate_schedule_parent_that_differs_from_plan_seed_harness() -> None:
+    plan = study_plan()
+
+    with pytest.raises(BaselineExecutionBindingError, match="plan seed harness"):
+        derive_baseline_gate_schedule(
+            plan,
+            kind=BaselineKind.PROMPT_ONLY,
+            search_run_seed=101,
+            query=0,
+            parent_harness_ref=ref("d", HARNESS_MANIFEST_MEDIA_TYPE),
+            candidate_harness_ref=ref("c", HARNESS_MANIFEST_MEDIA_TYPE),
+            task_ids=("task-a",),
+            token_ceiling_per_attempt=64,
+        )
+
+
 def test_rejects_incomplete_or_drifted_gate_usage() -> None:
     plan = study_plan()
     parent_ref = plan.arms[0].context.seed_harness_ref

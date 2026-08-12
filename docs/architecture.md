@@ -121,11 +121,14 @@ provider-neutral score-free runner, a pre-execution reservation/outcome ledger,
 and a trusted benchmark batch runner that joins complete GATE schedules to
 score-free executions, adapter-owned grading, receipt replay, and signed
 parent/candidate gate batches. A separate baseline execution binding derives
-those GATE schedules from the four-condition plan and summarizes receipt-backed
-usage into budget-checked baseline reports. The runner rejects
+those GATE schedules from the four-condition plan, and the trusted baseline
+GATE runner executes each derived schedule under a fresh exact-budget attempt
+ledger before publishing canonical usage report artifacts. The runner rejects
 protocol/benchmark/grader, split, roster, model-spec, and attestor drift before
 invoking the backend. It also freezes the static, random-valid, prompt-only, and
-evidence-targeted comparison contract. The automatic-search kernel now consumes
+evidence-targeted comparison contract, but these artifacts remain structural
+usage evidence rather than reportable benchmark-gain attestations. The
+automatic-search kernel now consumes
 that contract through exact run manifests, scoped strategy views, typed
 diagnosis/proposal artifacts, receipt-backed exploration screens, one-candidate
 gate nominations, aggregate-only feedback, and immutable search/study journals.

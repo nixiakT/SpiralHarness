@@ -161,12 +161,16 @@ model/inference/runtime profile and controller-owned invocation ceilings.
 for one condition/search-run seed from the persisted `BaselineStudyPlan`. It
 freezes the plan fingerprint into the schedule study label, uses the baseline
 kind as the schedule kind, preserves the plan's paired repeat seeds, derives a
-separate schedule master seed, and rejects schedules whose full gate axis would
-exceed the condition's evaluation or token ceiling. Its usage summarizer accepts
-only complete settled `TrustedBenchmarkBatchRunner` usage for every frozen
-search-run seed before producing a budget-checked `BaselineUsageReport`. That
-report remains a structural aggregate input, not a final attestation that a
-four-condition comparison is reportable.
+separate schedule master seed, requires the parent harness to equal the frozen
+seed harness, and rejects schedules whose full gate axis would exceed the
+condition's evaluation or token ceiling. `TrustedBaselineGateRunner` then
+executes every derived search-run schedule through `TrustedBenchmarkBatchRunner`
+with a fresh exact-budget attempt ledger per batch, publishes a canonical
+baseline usage-report artifact, and can validate the four condition reports
+together. Its usage summarizer accepts only complete settled runner usage for
+every frozen search-run seed before producing a budget-checked
+`BaselineUsageReport`. That report remains a structural aggregate input, not a
+final attestation that a four-condition comparison is reportable.
 
 The exact loop and its remaining trust limitations are specified in
 [`search-protocol.md`](search-protocol.md).

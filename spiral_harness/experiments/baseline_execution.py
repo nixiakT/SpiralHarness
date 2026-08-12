@@ -62,6 +62,7 @@ def derive_baseline_gate_schedule(
     _require_search_run_seed(arm, search_run_seed)
     parent_ref = _require_harness_ref(parent_harness_ref, field_name="parent_harness_ref")
     candidate_ref = _require_harness_ref(candidate_harness_ref, field_name="candidate_harness_ref")
+    _require_plan_seed_harness(arm, parent_ref)
 
     schedule = EvaluationBatchSchedule(
         study=baseline_gate_study_label(checked_plan),
@@ -200,6 +201,13 @@ def _require_harness_ref(ref: ArtifactRef, *, field_name: str) -> ArtifactRef:
     if checked.media_type != HARNESS_MANIFEST_MEDIA_TYPE:
         raise BaselineExecutionBindingError(f"{field_name} must be a harness manifest")
     return checked
+
+
+def _require_plan_seed_harness(arm: BaselineArmPlan, parent_ref: ArtifactRef) -> None:
+    if parent_ref != arm.context.seed_harness_ref:
+        raise BaselineExecutionBindingError(
+            f"{arm.kind.value} parent_harness_ref must equal the plan seed harness"
+        )
 
 
 def _require_plan_can_cover_full_gate_axis(
