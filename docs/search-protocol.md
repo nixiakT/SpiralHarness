@@ -186,6 +186,13 @@ then joins the `BaselineGateStudyClosure` to the study's protocol, GATE split,
 and seed harness. It remains structural and non-reportable; final sealed scoring
 is a later producer.
 
+For the deterministic replay fixture, that acceptance is now wrapped by a
+`ReplayStudyGateResult`. The wrapper is the artifact an upper-level controller
+can consume: it reloads the replay study result, replays the accepted GATE
+closure, reloads sealed authorization, and verifies each authorized run closure
+against the exact automatic-search summary. It is still a fixture package, not a
+reportable score.
+
 This is a logical, in-process capability barrier. It detects if an experiment
 was moved into sealed execution before study authorization, but it cannot
 physically stop other code in the same interpreter from retaining and calling

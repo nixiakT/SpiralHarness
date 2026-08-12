@@ -192,5 +192,12 @@ requires its protocol ref, GATE split ref, and parent/seed harness ref to match
 the experiments registered behind the study barrier. A closure that is
 self-consistent but produced for another protocol boundary is rejected.
 
+The replay fixture then publishes a `ReplayStudyGateResult` as the upper-level
+consumption boundary. It does not add score authority. Instead, it reloads the
+non-reportable replay study result, verifies the accepted GATE evidence, reloads
+the sealed authorization, and joins all eight authorized run closures back to
+their recorded automatic-search summaries. Tampering with that join, or
+attempting to pair an acceptance from another study, fails closed.
+
 The exact loop and its remaining trust limitations are specified in
 [`search-protocol.md`](search-protocol.md).
