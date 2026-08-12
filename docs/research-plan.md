@@ -182,8 +182,8 @@ writer epoch before the batch; trusted replay rejects historical writer
 reconstruction, recomputes the execution fingerprints, and rejects unequal
 parent/candidate task bytes. The automatic proposal grammar and finite
 catalogue remain prompt-only, however; there is no general skill router,
-skill proposal/search path, trusted skill-specific evidence producer, executed
-parent-revert/placebo gate, or live-provider result. These package and request
+skill proposal/search path, trusted skill-specific claim producer, scored
+parent-revert/placebo study, or live-provider result. These package and request
 guarantees therefore do not demonstrate a skill gain.
 
 The current runner establishes exact settled skill request inclusion/replay as
@@ -196,13 +196,19 @@ provides no skill promotion authority. Protocol v4 now freezes a
 schedule coordinates, evidence thresholds, and deterministic neutral-rule
 construction. A candidate-bound `SkillMechanismPlan` replays the exact lineage
 and reconstructs matched parent-revert and placebo controls at probe entry,
-gate entry, and later gate-history consumption. This is preregistration only:
-the next stage must
-execute those schedules and independently produce, attest, and replay provider
-delivery, runtime activation, adherence, behavior, revert, and placebo
-evidence before reserved skill checks can be unquarantined. Only then should
-automatic skill proposals be added. A credentialed fixed-model provider and
-preregistered live study remain necessary for an empirical result.
+gate entry, and later gate-history consumption. A live controller can now
+authorize one score-free, process-local revert-then-placebo plumbing run over
+the frozen tasks. Its distinct runner/ledger wrappers close only the exact
+task, request-construction, receipt, and accounting chain while the original
+controller capability and live ledger writers remain available. They do not
+attest provider delivery or backend/runtime reset, and the shadow report has no
+activation, adherence, behavior, effect, or promotion authority. The next
+stage must run a new preregistered scored matched claim-capture study under the
+same frozen construction and independently produce, attest, and replay provider
+delivery, runtime activation, adherence, behavior, revert, and placebo evidence
+before reserved skill checks can be unquarantined. Only then should automatic
+skill proposals be added. A credentialed fixed-model provider and preregistered
+live study remain necessary for an empirical result.
 
 ### M2 — Multi-component evolution
 

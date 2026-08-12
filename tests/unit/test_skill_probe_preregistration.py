@@ -44,6 +44,23 @@ from spiral_harness.experiments.controller import (
     ExperimentController,
     ExperimentControllerError,
 )
+from spiral_harness.experiments.skill_probe_authorization import (
+    SKILL_PROBE_EXECUTION_AUTHORIZATION_MEDIA_TYPE,
+    SkillProbeExecutionAuthorization,
+    SkillProbeExecutionAuthorizationCapability,
+    SkillProbeExecutionAuthorizationError,
+    TrustedSkillProbeExecutionAuthority,
+    TrustedSkillProbeExecutionAuthorizationService,
+    _ConsumedSkillProbeExecutionAuthorizationError,
+    _load_exact_authorization,
+)
+from spiral_harness.experiments.skill_probe_closure import (
+    MATCHED_SKILL_PROBE_CLOSURE_MEDIA_TYPE,
+)
+from spiral_harness.experiments.skill_probe_execution import (
+    MATCHED_SKILL_PROBE_EXECUTION_ORDER_FINGERPRINT,
+    MATCHED_SKILL_PROBE_RESET_FINGERPRINT,
+)
 from spiral_harness.experiments.skill_probes import (
     SkillProbePreregistrationError,
     replay_probe_preregistration_refs,
@@ -67,9 +84,10 @@ from spiral_harness.verification.mechanism import (
     REQUIRED_SKILL_MECHANISM_IDS,
     TrustedMechanismEvidenceService,
 )
-from spiral_harness.verification.models import GateConfig
+from spiral_harness.verification.models import GateConfig, MechanismEvidence
 from spiral_harness.verification.skill_plan import (
     ATTESTED_SKILL_MECHANISM_CLAIMS,
+    CONTROLLED_SKILL_PROBE_TASK_MEDIA_TYPE,
     NEUTRAL_SKILL_RULES_MEDIA_TYPE,
     SKILL_ADHERENCE_PROBE_MEDIA_TYPE,
     SKILL_BEHAVIOR_PROBE_MEDIA_TYPE,
@@ -78,6 +96,7 @@ from spiral_harness.verification.skill_plan import (
     SKILL_PLACEBO_CONTROL_MEDIA_TYPE,
     SKILL_PROBE_ROSTER_MEDIA_TYPE,
     SKILL_VERIFICATION_POLICY_MEDIA_TYPE,
+    ControlledSkillProbeTask,
     NeutralSkillRules,
     SkillClaimAuthority,
     SkillEvidenceProfile,
@@ -91,13 +110,13 @@ from spiral_harness.verification.skill_plan import (
 _SKILL_ID = "verify-arithmetic"
 _CHANGED_RULE_ID = "solve-once"
 _MODEL = "fixed-model-v1"
-_MODEL_SPEC = "9" * 64
 _INFERENCE = "temperature=0;seed=paired"
 _RUNTIME = "fixed-runtime-v1"
 _GRADER = "fixed-grader-v1"
 _PROBE_GRADER = "skill-probe-grader-v1"
-_RESET = "fresh-context-reset-v1"
-_EXECUTION_ORDER = "revert-then-placebo-counterbalanced-v1"
+_MODEL_SPEC = "9" * 64
+_RESET = MATCHED_SKILL_PROBE_RESET_FINGERPRINT
+_EXECUTION_ORDER = MATCHED_SKILL_PROBE_EXECUTION_ORDER_FINGERPRINT
 _GATE_MEDIA_TYPE = "application/vnd.spiral-harness.gate-config+json"
 
 
@@ -128,6 +147,8 @@ class ProbeFixture:
     mechanism_service: TrustedMechanismEvidenceService
     exploration_ref: ArtifactRef
     gate_split_ref: ArtifactRef
+    task: ControlledSkillProbeTask
+    task_ref: ArtifactRef
     roster: SkillProbeRoster
     roster_ref: ArtifactRef
     neutral: NeutralSkillRules
@@ -230,6 +251,12 @@ def _probe_fixture(root: Path) -> ProbeFixture:
         {"probe_id": "behavior-1", "task_id": "probe-task-1"},
         SKILL_BEHAVIOR_PROBE_MEDIA_TYPE,
     )
+    task = ControlledSkillProbeTask(
+        task_id="probe-task-1",
+        question="What is 17 + 25?",
+    )
+    task_ref = _put(store, task, CONTROLLED_SKILL_PROBE_TASK_MEDIA_TYPE)
+    assert task_ref == task.artifact_ref
     roster = SkillProbeRoster(
         evidence_profile=SkillEvidenceProfile.CONTROLLED_REPLAY,
         exploration_split_ref=exploration_ref,
@@ -238,6 +265,7 @@ def _probe_fixture(root: Path) -> ProbeFixture:
         query=0,
         master_seed=71,
         task_ids=("probe-task-1",),
+        task_refs=(task_ref,),
         search_runs=(0,),
         repeat_seeds=(11, 12),
         max_attempts_per_cell=1,
@@ -524,6 +552,8 @@ def _probe_fixture(root: Path) -> ProbeFixture:
         mechanism_service=mechanism_service,
         exploration_ref=exploration_ref,
         gate_split_ref=gate_split_ref,
+        task=task,
+        task_ref=task_ref,
         roster=roster,
         roster_ref=roster_ref,
         neutral=neutral,
@@ -574,8 +604,65 @@ def _verify(graph: ProbeFixture, plan_ref: ArtifactRef) -> SkillMechanismPlan:
     )
 
 
+def _controller_at_probes(
+    graph: ProbeFixture,
+) -> tuple[ExperimentController, ArtifactRef, ArtifactRef]:
+    admission = CandidateAdmissionService(graph.store).admit(
+        candidate_ref=graph.candidate_ref,
+        experiment_ref=graph.experiment_ref,
+    )
+    admission_ref = _put(graph.store, admission, ADMISSION_REPORT_MEDIA_TYPE)
+    controller = ExperimentController(
+        graph.store,
+        experiment_ref=graph.experiment_ref,
+        gate_batch_verifier=graph.gate_batch_service.verification_capability,
+        mechanism_evidence_verifier=graph.mechanism_service.verification_capability,
+    )
+    frozen = controller.freeze_experiment()
+    controller.start_search(previous_tail_ref=frozen)
+    registered = controller.register_candidate(candidate_ref=graph.candidate_ref)
+    valid = controller.admit_candidate(
+        candidate_ref=graph.candidate_ref,
+        previous_tail_ref=registered,
+        admission_report_ref=admission_ref,
+    )
+    probes = controller.start_probes(
+        candidate_ref=graph.candidate_ref,
+        previous_tail_ref=valid,
+        skill_mechanism_plan_ref=graph.plan_ref,
+    )
+    return controller, valid, probes
+
+
 def _persist_plan(graph: ProbeFixture, plan: SkillMechanismPlan) -> ArtifactRef:
     return _put(graph.store, plan, SKILL_MECHANISM_PLAN_MEDIA_TYPE)
+
+
+def _rebind_probe_roster(
+    graph: ProbeFixture,
+    roster: SkillProbeRoster,
+) -> tuple[ArtifactRef, ArtifactRef, ArtifactRef, ArtifactRef]:
+    roster_ref = _put(graph.store, roster, SKILL_PROBE_ROSTER_MEDIA_TYPE)
+    policy = _replace(graph.policy, task_roster_ref=roster_ref)
+    policy_ref = _put(graph.store, policy, SKILL_VERIFICATION_POLICY_MEDIA_TYPE)
+    protocol = _replace(graph.protocol, skill_verification_policy_ref=policy_ref)
+    protocol_ref = _put(graph.store, protocol, PROTOCOL_MANIFEST_MEDIA_TYPE)
+    experiment = _replace(graph.experiment, protocol_ref=protocol_ref)
+    experiment_ref = _put(graph.store, experiment, EXPERIMENT_MANIFEST_MEDIA_TYPE)
+    candidate = _replace(graph.candidate, experiment_ref=experiment_ref)
+    candidate_ref = _put(graph.store, candidate, CANDIDATE_MANIFEST_MEDIA_TYPE)
+    plan = _replace(
+        graph.plan,
+        experiment_ref=experiment_ref,
+        protocol_ref=protocol_ref,
+        candidate_ref=candidate_ref,
+        policy_ref=policy_ref,
+        policy_fingerprint=policy.fingerprint,
+        probe_roster_ref=roster_ref,
+        probe_roster_fingerprint=roster.fingerprint,
+    )
+    plan_ref = _persist_plan(graph, plan)
+    return protocol_ref, experiment_ref, candidate_ref, plan_ref
 
 
 def _rebind_gate_config(
@@ -658,6 +745,77 @@ def test_verifies_complete_plan_and_controller_binds_it_to_probe_lifecycle(
         )
 
 
+@pytest.mark.parametrize("forbidden_field", ("answer", "gold"))
+def test_controlled_probe_task_cannot_represent_trusted_answers(
+    forbidden_field: str,
+) -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        ControlledSkillProbeTask.model_validate(
+            {
+                "task_id": "probe-task-1",
+                "question": "What is 17 + 25?",
+                forbidden_field: "42",
+            },
+            strict=True,
+        )
+
+
+def test_roster_requires_one_unique_typed_task_ref_per_task_id(
+    graph: ProbeFixture,
+) -> None:
+    with pytest.raises(ValidationError, match="duplicate artifacts"):
+        _replace(graph.roster, task_refs=(graph.task_ref, graph.task_ref))
+    second_task = ControlledSkillProbeTask(
+        task_id="probe-task-2",
+        question="What is 19 + 23?",
+    )
+    second_ref = _put(
+        graph.store,
+        second_task,
+        CONTROLLED_SKILL_PROBE_TASK_MEDIA_TYPE,
+    )
+    with pytest.raises(ValidationError, match="exactly one artifact per task_id"):
+        _replace(graph.roster, task_refs=(graph.task_ref, second_ref))
+    with pytest.raises(ValidationError, match="controlled-skill-probe-task"):
+        _replace(graph.roster, task_refs=graph.roster.adherence_probe_refs)
+
+
+def test_replay_rejects_same_task_id_with_question_replaced_after_freeze(
+    graph: ProbeFixture,
+) -> None:
+    replacement = _replace(graph.task, question="What is 18 + 24?")
+    replacement_ref = _put(
+        graph.store,
+        replacement,
+        CONTROLLED_SKILL_PROBE_TASK_MEDIA_TYPE,
+    )
+    graph.store.path_for(graph.task_ref).write_bytes(graph.store.get_bytes(replacement_ref))
+
+    with pytest.raises(
+        SkillProbePreregistrationError,
+        match="controlled skill probe task cannot be loaded exactly",
+    ):
+        _verify(graph, graph.plan_ref)
+
+
+def test_replay_rejects_foreign_task_ref_even_with_the_exact_media_type(
+    graph: ProbeFixture,
+) -> None:
+    foreign_task = ControlledSkillProbeTask(
+        task_id="foreign-probe-task",
+        question="What is 10 + 32?",
+    )
+    foreign_ref = _put(
+        graph.store,
+        foreign_task,
+        CONTROLLED_SKILL_PROBE_TASK_MEDIA_TYPE,
+    )
+    roster = _replace(graph.roster, task_refs=(foreign_ref,))
+
+    with pytest.raises(SkillProbePreregistrationError, match="frozen roster task IDs"):
+        _verify_rebound(graph, _rebind_probe_roster(graph, roster))
+
+
 def test_controller_replays_probe_plan_before_gate_authorization(
     graph: ProbeFixture,
 ) -> None:
@@ -698,6 +856,325 @@ def test_controller_replays_probe_plan_before_gate_authorization(
             candidate_ref=graph.candidate_ref,
             previous_tail_ref=forged_tail,
             mechanism_evidence_ref=graph.policy_ref,
+        )
+
+
+def test_controller_issues_current_process_local_skill_probe_execution_grant(
+    graph: ProbeFixture,
+) -> None:
+    controller, _, probes = _controller_at_probes(graph)
+
+    authorization_ref = controller.issue_skill_probe_execution_authorization(
+        candidate_ref=graph.candidate_ref,
+        running_probes_tail_ref=probes,
+    )
+    repeated_ref = controller.issue_skill_probe_execution_authorization(
+        candidate_ref=graph.candidate_ref,
+        running_probes_tail_ref=probes,
+    )
+    authorization = _load_exact_authorization(graph.store, authorization_ref)
+
+    assert authorization_ref.media_type == SKILL_PROBE_EXECUTION_AUTHORIZATION_MEDIA_TYPE
+    assert repeated_ref == authorization_ref
+    assert authorization == graph.store.get_json(
+        authorization_ref,
+        SkillProbeExecutionAuthorization,
+    )
+    assert authorization.experiment_ref == graph.experiment_ref
+    assert authorization.protocol_ref == graph.protocol_ref
+    assert authorization.candidate_ref == graph.candidate_ref
+    assert authorization.plan_ref == graph.plan_ref
+    assert authorization.running_probes_tail_ref == probes
+
+    assert not hasattr(controller, "skill_probe_execution_authorization_capability")
+    assert not hasattr(controller, "skill_probe_execution_authority")
+    assert not hasattr(controller, "register_skill_probe_execution_closure")
+
+
+@pytest.mark.parametrize(
+    ("privileged_type", "message"),
+    (
+        (
+            SkillProbeExecutionAuthorizationCapability,
+            "verification capabilities are created only by the trusted service",
+        ),
+        (
+            TrustedSkillProbeExecutionAuthority,
+            "execution authorities are created only by the trusted service",
+        ),
+        (
+            TrustedSkillProbeExecutionAuthorizationService,
+            "authorization services are created only by controller composition",
+        ),
+    ),
+)
+def test_skill_probe_execution_privileges_cannot_be_publicly_constructed(
+    privileged_type: type[object],
+    message: str,
+) -> None:
+    with pytest.raises(TypeError, match=message):
+        privileged_type()
+
+
+def test_uninitialized_skill_probe_capability_fails_with_stable_trust_error() -> None:
+    shell = object.__new__(SkillProbeExecutionAuthorizationCapability)
+
+    with pytest.raises(
+        SkillProbeExecutionAuthorizationError,
+        match="authorization capability is not initialized/trusted",
+    ):
+        shell.verify_skill_probe_execution_authorization(
+            ArtifactRef(sha256="0" * 64, size=0, media_type="application/json")
+        )
+
+
+def test_started_skill_probe_grant_does_not_authenticate_an_unregistered_closure(
+    graph: ProbeFixture,
+) -> None:
+    controller, _, probes = _controller_at_probes(graph)
+    authorization_ref = controller.issue_skill_probe_execution_authorization(
+        candidate_ref=graph.candidate_ref,
+        running_probes_tail_ref=probes,
+    )
+    capability = controller._skill_probe_authorizations.verification_capability
+    authority = controller._skill_probe_authorizations.execution_authority
+    closure_ref = _put(
+        graph.store,
+        {"closure": "not controller-registered"},
+        MATCHED_SKILL_PROBE_CLOSURE_MEDIA_TYPE,
+    )
+
+    authority.begin_skill_probe_execution(authorization_ref)
+
+    with pytest.raises(SkillProbeExecutionAuthorizationError, match="not registered"):
+        capability.verify_registered_skill_probe_execution_closure(
+            authorization_ref,
+            closure_ref,
+        )
+
+
+@pytest.mark.parametrize("repeat_exact_ref", (True, False))
+def test_started_skill_probe_grant_registers_exactly_one_closure(
+    graph: ProbeFixture,
+    repeat_exact_ref: bool,
+) -> None:
+    controller, _, probes = _controller_at_probes(graph)
+    authorization_ref = controller.issue_skill_probe_execution_authorization(
+        candidate_ref=graph.candidate_ref,
+        running_probes_tail_ref=probes,
+    )
+    capability = controller._skill_probe_authorizations.verification_capability
+    authority = controller._skill_probe_authorizations.execution_authority
+    first_closure_ref = _put(
+        graph.store,
+        {"closure": "first"},
+        MATCHED_SKILL_PROBE_CLOSURE_MEDIA_TYPE,
+    )
+    second_closure_ref = (
+        first_closure_ref
+        if repeat_exact_ref
+        else _put(
+            graph.store,
+            {"closure": "second"},
+            MATCHED_SKILL_PROBE_CLOSURE_MEDIA_TYPE,
+        )
+    )
+
+    authorization = authority.begin_skill_probe_execution(authorization_ref)
+    assert (
+        authority.register_skill_probe_execution_closure(
+            authorization_ref,
+            first_closure_ref,
+        )
+        == authorization
+    )
+    assert (
+        capability.verify_registered_skill_probe_execution_closure(
+            authorization_ref,
+            first_closure_ref,
+        )
+        == authorization
+    )
+
+    with pytest.raises(SkillProbeExecutionAuthorizationError, match="already registered"):
+        authority.register_skill_probe_execution_closure(
+            authorization_ref,
+            second_closure_ref,
+        )
+    if second_closure_ref != first_closure_ref:
+        with pytest.raises(SkillProbeExecutionAuthorizationError, match="binds another closure"):
+            capability.verify_registered_skill_probe_execution_closure(
+                authorization_ref,
+                second_closure_ref,
+            )
+
+
+def test_skill_probe_execution_grant_rejects_stale_and_advanced_heads(
+    graph: ProbeFixture,
+) -> None:
+    controller, valid, probes = _controller_at_probes(graph)
+
+    with pytest.raises(ExperimentControllerError, match="stale, foreign"):
+        controller.issue_skill_probe_execution_authorization(
+            candidate_ref=graph.candidate_ref,
+            running_probes_tail_ref=valid,
+        )
+
+    authorization_ref = controller.issue_skill_probe_execution_authorization(
+        candidate_ref=graph.candidate_ref,
+        running_probes_tail_ref=probes,
+    )
+    controller._candidate_tails[graph.candidate_ref.sha256] = valid
+    with pytest.raises(
+        SkillProbeExecutionAuthorizationError,
+        match="current controller head",
+    ):
+        controller._skill_probe_authorizations.verification_capability.verify_skill_probe_execution_authorization(
+            authorization_ref
+        )
+
+
+def test_begin_distinguishes_a_grant_consumed_before_current_head_replay(
+    graph: ProbeFixture,
+) -> None:
+    controller, valid, probes = _controller_at_probes(graph)
+    authorization_ref = controller.issue_skill_probe_execution_authorization(
+        candidate_ref=graph.candidate_ref,
+        running_probes_tail_ref=probes,
+    )
+    authority = controller._skill_probe_authorizations.execution_authority
+    controller._candidate_tails[graph.candidate_ref.sha256] = valid
+
+    with pytest.raises(
+        _ConsumedSkillProbeExecutionAuthorizationError,
+        match="verification failed after execution started",
+    ) as consumed:
+        authority.begin_skill_probe_execution(authorization_ref)
+    assert isinstance(consumed.value.__cause__, SkillProbeExecutionAuthorizationError)
+
+    with pytest.raises(SkillProbeExecutionAuthorizationError, match="already started"):
+        authority.begin_skill_probe_execution(authorization_ref)
+
+
+def test_skill_probe_execution_grant_is_invalid_after_real_lifecycle_advance(
+    graph: ProbeFixture,
+) -> None:
+    controller, _, probes = _controller_at_probes(graph)
+    authorization_ref = controller.issue_skill_probe_execution_authorization(
+        candidate_ref=graph.candidate_ref,
+        running_probes_tail_ref=probes,
+    )
+    source_ref = _put(
+        graph.store,
+        {"probe": "failed closed before gate"},
+        "application/vnd.spiral-harness.probe-source.v1+json",
+    )
+    evidence = graph.mechanism_service.create(
+        protocol_ref=graph.protocol_ref,
+        protocol=graph.protocol,
+        candidate_ref=graph.candidate_ref,
+        candidate_harness_ref=graph.child_ref,
+        source_refs=(source_ref,),
+        evidence=MechanismEvidence(
+            candidate_harness_id=graph.child_ref.sha256,
+            checks=(),
+        ),
+    )
+    evidence_ref = _put(
+        graph.store,
+        evidence,
+        "application/vnd.spiral-harness.attested-mechanism-evidence.v1+json",
+    )
+    controller.start_gate(
+        candidate_ref=graph.candidate_ref,
+        previous_tail_ref=probes,
+        mechanism_evidence_ref=evidence_ref,
+    )
+
+    with pytest.raises(
+        SkillProbeExecutionAuthorizationError,
+        match="current controller head",
+    ):
+        controller._skill_probe_authorizations.verification_capability.verify_skill_probe_execution_authorization(
+            authorization_ref
+        )
+
+
+def test_skill_probe_execution_grant_rejects_fork_and_foreign_controller(
+    graph: ProbeFixture,
+) -> None:
+    controller, valid, probes = _controller_at_probes(graph)
+    authorization_ref = controller.issue_skill_probe_execution_authorization(
+        candidate_ref=graph.candidate_ref,
+        running_probes_tail_ref=probes,
+    )
+    forked_tail = CandidateJournal(graph.store).append(
+        stream_id=f"candidate/{graph.candidate_ref.sha256}",
+        previous_entry_ref=valid,
+        event=CandidateLifecycleEvent(
+            candidate_ref=graph.candidate_ref,
+            from_state=CandidateState.VALID,
+            to_state=CandidateState.RUNNING_PROBES,
+            evidence_refs=(graph.plan_ref,),
+            reason="structurally valid sibling branch",
+        ),
+    )
+
+    with pytest.raises(ExperimentControllerError, match="stale, foreign"):
+        controller.issue_skill_probe_execution_authorization(
+            candidate_ref=graph.candidate_ref,
+            running_probes_tail_ref=forked_tail,
+        )
+
+    foreign = ExperimentController(
+        graph.store,
+        experiment_ref=graph.experiment_ref,
+        gate_batch_verifier=graph.gate_batch_service.verification_capability,
+        mechanism_evidence_verifier=graph.mechanism_service.verification_capability,
+    )
+    with pytest.raises(SkillProbeExecutionAuthorizationError, match="not issued"):
+        foreign._skill_probe_authorizations.verification_capability.verify_skill_probe_execution_authorization(
+            authorization_ref
+        )
+
+    same_path_repository = ArtifactStore(graph.store.root)
+    same_path_controller = ExperimentController(
+        same_path_repository,
+        experiment_ref=graph.experiment_ref,
+        gate_batch_verifier=graph.gate_batch_service.verification_capability,
+        mechanism_evidence_verifier=graph.mechanism_service.verification_capability,
+    )
+    assert (
+        same_path_controller._skill_probe_authorizations.verification_capability.repository
+        is not graph.store
+    )
+    with pytest.raises(SkillProbeExecutionAuthorizationError, match="not issued"):
+        same_path_controller._skill_probe_authorizations.verification_capability.verify_skill_probe_execution_authorization(
+            authorization_ref
+        )
+
+
+def test_skill_probe_execution_grant_replays_admission_and_exact_plan(
+    graph: ProbeFixture,
+) -> None:
+    controller, valid, _ = _controller_at_probes(graph)
+    forged_tail = CandidateJournal(graph.store).append(
+        stream_id=f"candidate/{graph.candidate_ref.sha256}",
+        previous_entry_ref=valid,
+        event=CandidateLifecycleEvent(
+            candidate_ref=graph.candidate_ref,
+            from_state=CandidateState.VALID,
+            to_state=CandidateState.RUNNING_PROBES,
+            evidence_refs=(graph.policy_ref,),
+            reason="policy substituted for plan",
+        ),
+    )
+    controller._candidate_tails[graph.candidate_ref.sha256] = forged_tail
+
+    with pytest.raises(ExperimentControllerError, match="wrong skill mechanism plan"):
+        controller.issue_skill_probe_execution_authorization(
+            candidate_ref=graph.candidate_ref,
+            running_probes_tail_ref=forged_tail,
         )
 
 
@@ -1062,7 +1539,6 @@ def test_prompt_candidate_cannot_supply_a_skill_mechanism_plan(graph: ProbeFixtu
         ("task_ids", ("candidate-picked-task",)),
         ("search_runs", (3,)),
         ("repeat_seeds", (99,)),
-        ("max_attempts_per_cell", 2),
         ("token_ceiling_per_attempt", 257),
     ),
 )
@@ -1085,6 +1561,16 @@ def test_every_seed_and_budget_schedule_coordinate_is_frozen_by_the_roster(
 
     with pytest.raises(SkillProbePreregistrationError, match="policy roster"):
         _verify(graph, _persist_plan(graph, plan))
+
+
+def test_skill_probe_roster_rejects_retry_semantics_not_defined_by_v1(
+    graph: ProbeFixture,
+) -> None:
+    values = graph.roster.model_dump(mode="python", round_trip=True, warnings="none")
+    values["max_attempts_per_cell"] = 2
+
+    with pytest.raises(ValidationError):
+        SkillProbeRoster.model_validate(values, strict=True)
 
 
 def test_placebo_path_rejects_semantic_reordering_of_existing_rules(

@@ -126,6 +126,33 @@ control harness, including `study`, `kind`, `query`, task/seed axes, retries,
 and token ceilings. The controller records the plan in the lifecycle and
 replays it again before gate authorization and when gate history is consumed.
 
+The implemented executor requires a one-shot capability issued by the same
+live controller that owns the current `RUNNING_PROBES` head. The grant binds
+the exact experiment, protocol, candidate, plan, lifecycle tail, and repository
+object; stale, foreign, reconstructed, or already consumed grants fail closed.
+In one process, the executor runs the frozen revert schedule before the frozen
+placebo schedule. Each arm receives a new process-local fixed-model runner
+wrapper, a distinct writer epoch and attempt ledger, and its own ledger-bound
+preflight certificate. Parent and candidate cells execute in preregistered
+paired order over exact `ControlledSkillProbeTask` artifacts, whose schema
+freezes only task ID and question and cannot represent an answer or gold label.
+The caller supplies both backend objects. Their required object inequality
+prevents direct reuse, but does not attest provider-session independence or
+reset caches, connections, remote sessions, process globals, or runtime state.
+The frozen reset fingerprint identifies the agreed wrapper-construction path;
+it is not evidence that an external reset occurred.
+
+The resulting `MatchedSkillProbeClosure` replays both live ledgers, receipts,
+usage, task bytes, and candidate request-inclusion evidence and rejects
+cross-arm reuse. This reverification requires the original controller
+verification capability, exact registered closure ref, and both original live
+ledger writers. A reconstructed controller/writer epoch or CAS artifacts alone
+cannot reproduce the same semantic check, so this is not a durable standalone
+certificate. Its companion `SkillProbeShadowReport` reports only exact request
+inclusion. Both are explicitly non-promoting: process-local execution records
+do not attest remote-provider delivery, runtime activation, adherence, behavior
+change, a revert/placebo causal effect, downstream benefit, or generalization.
+
 This layer freezes the exploration-split identity, roster and opaque
 claim/probe configuration artifacts by hash; the generic controller does not
 yet parse benchmark-specific split membership or derive claim outcomes from
@@ -221,14 +248,20 @@ As with gate batches, this HMAC authenticates the trusted producer's complete
 assertion but does not re-execute its sources to derive each check boolean.
 Typed capture bundles and trusted probe replay remain runner-stage hardening.
 
-The skill path now has a fail-closed preregistration boundary, but it has not
-yet entered terminal mechanism-evidence production. The policy separates the
-generic mechanism signer, aggregate skill signer, and six claim-specific
-attestors, producers, verifiers, domains, and configs for provider delivery,
-runtime activation, adherence, behavior, revert, and placebo. Request inclusion
-remains live-ledger re-derived and cannot be assigned a claim attestor. The
-candidate plan also reconstructs its matched sham and freezes the two control
-schedules. These artifacts authorize no positive claim by themselves.
+The skill path now has fail-closed preregistration plus one
+controller-authorized, process-local matched execution, but it has not entered
+terminal mechanism-evidence production. The policy separates the generic
+mechanism signer, aggregate skill signer, and six claim-specific attestors,
+producers, verifiers, domains, and configs for provider delivery, runtime
+activation, adherence, behavior, revert, and placebo. Request inclusion remains
+live-ledger re-derived and cannot be assigned a claim attestor. The candidate
+plan reconstructs its matched sham and freezes the two control schedules; the
+executor consumes a one-shot grant, runs revert before placebo with distinct
+process-local ledger writers and preflights, and publishes a non-promoting
+closure over exact tasks, receipts, usage, and request inclusion. The shadow
+report is only a request-inclusion audit summary and does not enter mechanism
+evidence or the promotion gate. Neither successful execution nor this shadow
+closure establishes any claim-specific outcome or control effect.
 
 The next integration must:
 
@@ -239,13 +272,16 @@ The next integration must:
    activation observable;
 3. obtain independent evidence for rule adherence and the predeclared behavior
    change rather than inferring either from request inclusion;
-4. execute the already frozen matched parent-revert and placebo interventions;
-5. submit those concrete sources through `TrustedMechanismEvidenceService` and
-   the existing promotion gate.
+4. run a new preregistered scored matched claim-capture study under the same
+   frozen construction, with provider-delivery, runtime/adherence/behavior
+   capture and replayable revert/placebo scoring;
+5. submit those concrete claim sources through
+   `TrustedMechanismEvidenceService` and the existing promotion gate.
 
-Until all five steps are present, request-inclusion and preregistration
-artifacts have no promotion authority. Generic signed checks using any reserved
-skill ID are filtered, so a skill remains fail-closed at the mechanism gate.
+Until all five steps are present, request inclusion, preregistration, local
+execution, and the shadow closure have no promotion authority. Generic signed
+checks using any reserved skill ID are filtered, so a skill remains fail-closed
+at the mechanism gate.
 
 ## 6. Promotion gate
 
@@ -370,7 +406,16 @@ M0.2 validates the promotion protocol against deterministic synthetic tasks.
 M1 now supplies a pinned real GSM8K adapter and provider-neutral score-free
 runner with replay backend, plus a bounded prompt-only automatic-search kernel.
 The declarative skill slice reaches admission, materialized backend requests,
-receipt replay, and matched-control preregistration, but not dedicated skill
-evidence production, automatic skill search, a live-model study, or a verified
-skill gain. The controlled fixture remains evidence about verifier plumbing and
-fail-closed behavior, not evidence of agent capability improvement.
+receipt replay, matched-control preregistration, and one controller-authorized
+process-local revert-then-placebo execution with distinct process-local ledgers and
+preflights. While the original capability and live ledger writers remain
+available, its closure re-derives the exact process-local receipts, accounting,
+tasks, and request construction. The current tasks carry no gold labels and the
+run captures no claim outcomes, so formal scored effects cannot be recovered
+post hoc from these outputs. It does not establish provider delivery,
+activation, adherence, behavior, control effect, benefit, or generalization,
+and it cannot authorize promotion.
+Dedicated skill evidence production, automatic skill search, a live-model
+study, and a verified skill gain remain absent. The controlled fixture remains
+evidence about verifier plumbing and fail-closed behavior, not evidence of
+agent capability improvement.

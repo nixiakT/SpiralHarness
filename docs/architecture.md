@@ -15,9 +15,13 @@
 > declared-generated rules-only revision admission, exact prompt/skill
 > materialization, exact settled skill request inclusion/replay, a
 > protocol-bound verification policy, and candidate-bound matched-control
-> preregistration. It does not yet execute or attest provider-delivery,
-> activation, adherence, behavior, revert, or placebo probes, nor add skill
-> proposals/search, downstream benefit/generalization evidence, or promotion.
+> preregistration. A live-controller capability now authorizes one process-local
+> revert-then-placebo execution with distinct runner/ledger wrappers, preflights,
+> and writer epochs; its closure replays exact typed tasks and request inclusion
+> only while the original capability and live ledger writers remain available.
+> This is non-promoting execution plumbing, not evidence of provider delivery,
+> activation, adherence, behavior, revert/placebo effect, downstream benefit,
+> or generalization. Skill proposals/search and skill promotion remain absent.
 > These trust boundaries remain in-process: there is no OS sandbox,
 > network/filesystem/process isolation, cross-process durable compare-and-swap
 > or lease, or live provider. The multi-condition fixture is not a reportable
@@ -159,6 +163,34 @@ It does not prove remote-provider delivery, model attention or activation,
 adherence, behavior change, downstream benefit, or generalization, and it
 creates no skill mechanism check or promotion authority.
 
+For the frozen skill plan, the live `ExperimentController` can issue a one-shot
+`SkillProbeExecutionAuthorization` only at the exact current
+`RUNNING_PROBES` head. The process-local capability replays admission and plan
+bindings and rejects a different repository object, stale or foreign branch,
+reconstructed controller, or second consumption. The executor deterministically
+runs revert before placebo. It constructs a new process-local runner wrapper,
+ledger-bound preflight, writer epoch, and attempt ledger for each arm, while
+preserving preregistered parent/candidate pairing and exact
+`ControlledSkillProbeTask` ID/question bytes.
+
+The two backend session objects are supplied by the caller. Rejecting direct
+object reuse does not establish provider independence or reset caches,
+connections, remote sessions, process globals, or any other backend/runtime
+state. The plan's `reset_fingerprint` identifies this agreed construction path;
+it is not a replayable reset attestation.
+
+`MatchedSkillProbeClosure` rejoins the authorization, plan, schedules, live
+ledgers, preflights, receipts, usage, typed tasks, and per-arm candidate request
+inclusion, and rejects cross-arm reuse. Reverification requires the original
+controller verification capability, the exact registered closure ref, and both
+original live ledger writers. Reconstructing a controller or writer epoch, or
+retaining only CAS artifacts, cannot provide the same semantic verification;
+the closure is not a durable standalone certificate. `SkillProbeShadowReport`
+exposes only the fixed request-inclusion claim. Both artifacts are
+non-promoting. They do not attest provider delivery, runtime activation,
+adherence, behavior, a revert/placebo causal effect, downstream benefit, or
+generalization.
+
 These controllers are single-process, single-writer implementations with
 caller-held content-addressed tails. They reject stale tails and duplicate
 charges inside that process, but they do not provide durable cross-process
@@ -167,14 +199,20 @@ deliberately rejects any lifecycle tail supplied to a new controller:
 structural journal replay is not semantic authorization. Automatic search
 likewise rejects a partially open or previously completed run when a fresh
 loop instance cannot reconstruct process-local optimizer capabilities and call
-counts. The skill verification policy and candidate plan now retain settled
-request inclusion as a prerequisite, separate six claim authorities, and
-freeze matched revert/placebo construction and schedules. The next integration
-boundary is to execute those schedules and independently capture and replay
-provider-delivery, runtime-activation, adherence, behavior, revert, and placebo
-evidence. Only after that path feeds the existing mechanism-evidence and
-promotion gates should the bounded grammar gain skill proposals. A
-credentialed live fixed-model study remains a separate subsequent boundary.
+counts. Python private fields, name mangling, and restricted constructors are
+trusted composition conventions, not hostile-code containment; all code in the
+interpreter belongs to the trusted computing base. The skill verification
+policy and candidate plan retain settled request inclusion as a prerequisite,
+separate six claim authorities, and freeze matched revert/placebo construction
+and schedules. The controller-authorized local
+executor now closes those score-free schedules, but its shadow artifacts do not
+assert claim outcomes or effects. The next integration boundary is to
+run a new preregistered scored matched claim-capture study under the same frozen
+construction, with provider-delivery, runtime-activation, adherence, behavior,
+effect, and replayable scoring capture. Only after that path feeds the existing
+mechanism-evidence and promotion gates should the bounded grammar gain skill
+proposals. A credentialed live fixed-model study remains a separate subsequent
+boundary.
 
 ## 3. Artifact model and lineage
 
@@ -197,6 +235,9 @@ Core artifacts are:
 | `SkillDisclosure` | exact package, disclosure level, renderer, exposed sections, context bytes, hash, and size |
 | `SkillVerificationPolicy` | protocol/model coordinates, request-inclusion verifier, six separated claim authorities/config refs, aggregate authority, probe roster, neutral-rule builder, and evidence thresholds |
 | `SkillMechanismPlan` | exact experiment/candidate/mutation/package/harness joins, deterministic placebo control, and matched revert/placebo schedules |
+| `ControlledSkillProbeTask` / `SkillProbeRoster` | exact score-free task ID/question artifacts and typed exploration roster consumed by both matched schedules |
+| `SkillProbeExecutionAuthorization` | one-shot process-local controller grant bound to the exact experiment/protocol/candidate/plan and current `RUNNING_PROBES` tail |
+| `MatchedSkillProbeClosure` / `SkillProbeShadowReport` | distinct process-local per-arm preflight/ledger/receipt/usage closure, verifiable only with the original capability and live ledger writers, plus request-inclusion-only shadow evidence with no promotion authority |
 | `ModelRequest` v2 | task, exact harness-manifest ref, base prompt, optional skill disclosure, resolved prompt and hashes, user prompt, and seed |
 | `ModelExecution` v2 | complete frozen model spec, exact request, score-free output/status/usage, paired execution identity, and request hash |
 | `AttemptReservation` / `AttemptOutcome` v3 | ledger and budget identity, originating writer epoch, contiguous chain links, reserved/reported/charged usage, disposition, and execution ref |
@@ -448,15 +489,17 @@ every other package field. It verifies that direct revision edge, not
 recursively typed historical lineage or authenticated provenance. The loader
 supports three projections, while scheduled materialization always uses
 `rules`; manifest resolution, disclosure materialization, and backend-request
-construction are replayable. They do not establish provider delivery, model
-attention or activation, adherence, behavior change, benefit, or generalization,
-and they provide no promotion authority. A protocol-bound policy and
-candidate-bound plan now preregister separated claim authorities, probe/config
-references, a deterministic matched sham, and complete matched schedule
-coordinates. These are preregistration artifacts, not probe results; all
-reserved skill checks remain quarantined until dedicated producers and replay
-verifiers exist. The automatic proposal catalogue and strategy grammar remain
-prompt-only. Arbitrary Python,
+construction are replayable. A protocol-bound policy and candidate-bound plan
+preregister separated claim authorities, probe/config references, a
+deterministic matched sham, and complete matched schedule coordinates. The live
+controller can authorize one process-local revert-then-placebo run; independent
+preflights and distinct process-local ledger writers re-derive exact tasks,
+receipts, usage, and candidate request inclusion while those live objects remain
+available. That non-promoting closure does not establish provider delivery,
+model attention or activation, adherence, behavior change, revert/placebo
+effect, benefit, or generalization. All reserved skill checks remain
+quarantined until dedicated producers and replay verifiers exist. The automatic
+proposal catalogue and strategy grammar remain prompt-only. Arbitrary Python,
 tool implementation changes, package metadata rewrites, and combined
 prompt+skill edits are not classified as this M1 skill operation.
 
@@ -522,8 +565,13 @@ non-reportable. Skill integration tests establish canonical package loading,
 direct-edge revision admission, exact rules-only materialization, and
 exact settled skill request inclusion/replay. They also exercise Protocol v4
 policy binding, candidate-bound matched-control construction, complete schedule
-freezing, adversarial artifact joins, and lifecycle replay. They do not execute
-or attest remote-provider delivery, model activation, skill adherence, causal
-behavior, revert/placebo outcomes, benchmark benefit, or generalization, and
-they confer no promotion authority. A live provider, OS isolation, and durable
-multi-process coordination remain future integration and hardening work.
+freezing, adversarial artifact joins, and lifecycle replay. They exercise
+controller-authorized local revert-then-placebo execution, independent
+preflight and distinct process-local ledger closure, exact typed tasks, request
+inclusion, adversarial cross-arm rejection, and one-shot authorization. They do
+not attest remote
+provider delivery, model activation, skill adherence, causal behavior,
+revert/placebo effects, benchmark benefit, or generalization. The resulting
+shadow evidence confers no promotion authority. A live provider, OS isolation,
+and durable multi-process coordination remain future integration and hardening
+work.

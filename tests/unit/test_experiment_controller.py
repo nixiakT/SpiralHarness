@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event, Lock
 from types import SimpleNamespace
 
 import pytest
@@ -15,6 +17,7 @@ from test_terminal_decision import (
     store_forged_score_attack,
 )
 
+import spiral_harness.experiments.controller as controller_module
 from spiral_harness.core.experiment import (
     CANDIDATE_MANIFEST_MEDIA_TYPE,
     EXPERIMENT_MANIFEST_MEDIA_TYPE,
@@ -42,21 +45,26 @@ from spiral_harness.experiments.admission import (
     CandidateAdmissionService,
 )
 from spiral_harness.experiments.controller import (
+    ExperimentBudgetError,
+    ExperimentController,
+    ExperimentControllerError,
+    StaleControllerTailError,
+)
+from spiral_harness.experiments.controller_artifacts import (
     ADMISSION_FAILURE_REPORT_MEDIA_TYPE,
     EXPERIMENT_USAGE_ENTRY_MEDIA_TYPE,
+    EXPERIMENT_USAGE_ENTRY_V1_MEDIA_TYPE,
     PROBE_REJECTION_REPORT_MEDIA_TYPE,
     SUPERSEDED_CANDIDATE_REPORT_MEDIA_TYPE,
     TERMINAL_TRANSITION_AUTHORIZATION_MEDIA_TYPE,
     AdmissionFailureCode,
     AdmissionFailureReport,
-    ExperimentBudgetError,
-    ExperimentController,
-    ExperimentControllerError,
     ExperimentUsageClaim,
     ExperimentUsageEntry,
+    ExperimentUsageEntryV1,
     ProbeRejectionCode,
     ProbeRejectionReport,
-    StaleControllerTailError,
+    SkillProbeSettlementKind,
     SupersededCandidateReport,
     TerminalTransitionAuthorization,
 )
@@ -90,7 +98,7 @@ from spiral_harness.skills.package import (
     SkillRule,
     SkillSourceKind,
 )
-from spiral_harness.storage.journal import CandidateJournal
+from spiral_harness.storage.journal import CandidateJournal, JournalEntry
 from spiral_harness.verification.artifacts import (
     GATE_TRIAL_BATCH_MEDIA_TYPE,
     GateBatchExecutionContext,
@@ -796,6 +804,246 @@ def test_controller_owns_complete_semantic_path_usage_and_exact_terminal_branch(
         match="was not published by this controller branch",
     ):
         controller.verify_terminal_authorization(forged_ref)
+
+
+def test_terminal_paths_accept_historical_v1_gate_usage_entry(tmp_path: Path) -> None:
+    graph = build_graph(tmp_path)
+    controller = controller_for(graph)
+    _, _, _, gate_tail = advance_to_gate(graph, controller)
+    completion = controller.complete_evidence(
+        candidate_ref=graph.candidate_ref,
+        previous_tail_ref=gate_tail,
+        evaluation_ref=graph.evaluation_ref,
+        previous_usage_tail_ref=None,
+    )
+    written_v2 = graph.store.get_json(completion.usage_tail_ref, ExperimentUsageEntry)
+    historical_v1 = ExperimentUsageEntryV1(
+        experiment_ref=written_v2.experiment_ref,
+        protocol_ref=written_v2.protocol_ref,
+        sequence=written_v2.sequence,
+        claim_ref=written_v2.claim_ref,
+        cumulative_evaluations=written_v2.cumulative_evaluations,
+        cumulative_tokens=written_v2.cumulative_tokens,
+        cumulative_tool_calls=written_v2.cumulative_tool_calls,
+        cumulative_wall_time_seconds=written_v2.cumulative_wall_time_seconds,
+        cumulative_cost_usd=written_v2.cumulative_cost_usd,
+        previous_entry_ref=None,
+    )
+    v1_tail = graph.store.put_json(
+        historical_v1,
+        media_type=EXPERIMENT_USAGE_ENTRY_V1_MEDIA_TYPE,
+    )
+    evidence_entry = graph.store.get_json(completion.candidate_tail_ref, JournalEntry)
+    evidence_event = graph.store.get_json(
+        evidence_entry.event_ref,
+        CandidateLifecycleEvent,
+    ).model_copy(update={"evidence_refs": (graph.evaluation_ref, v1_tail)})
+    v1_event_ref = graph.store.put_json(
+        evidence_event,
+        media_type=evidence_entry.event_ref.media_type,
+    )
+    v1_candidate_tail = graph.store.put_json(
+        evidence_entry.model_copy(update={"event_ref": v1_event_ref}),
+        media_type=completion.candidate_tail_ref.media_type,
+    )
+    controller._candidate_tails[graph.candidate_ref.sha256] = v1_candidate_tail
+    controller._usage_tail_ref = v1_tail
+
+    _, report_ref = store_terminal_report(graph)
+    terminal = controller.finalize_candidate(
+        candidate_ref=graph.candidate_ref,
+        previous_tail_ref=v1_candidate_tail,
+        terminal_decision_report_ref=report_ref,
+    )
+    authorization = controller.verify_terminal_authorization(terminal.authorization_ref)
+
+    assert authorization.usage_entry_ref == v1_tail
+
+
+def test_concurrent_gate_completion_is_serialized_without_usage_fork(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = add_sealed_split(build_graph(tmp_path), max_evaluations=40)
+    sibling = another_candidate(graph)
+    controller = controller_for(graph)
+    _, _, _, first_gate_tail = advance_to_gate(graph, controller)
+    _, _, _, sibling_gate_tail = advance_to_gate(sibling, controller)
+
+    original = controller._complete_evidence
+    first_body_entered = Event()
+    release_first_body = Event()
+    second_body_entered = Event()
+    body_count_lock = Lock()
+    body_count = 0
+
+    def observed_body(**kwargs: object):
+        nonlocal body_count
+        with body_count_lock:
+            body_count += 1
+            position = body_count
+        if position == 1:
+            first_body_entered.set()
+            assert release_first_body.wait(timeout=5)
+        else:
+            second_body_entered.set()
+        return original(**kwargs)
+
+    monkeypatch.setattr(controller, "_complete_evidence", observed_body)
+
+    def complete_first():
+        return controller.complete_evidence(
+            candidate_ref=graph.candidate_ref,
+            previous_tail_ref=first_gate_tail,
+            evaluation_ref=graph.evaluation_ref,
+            previous_usage_tail_ref=None,
+        )
+
+    second_started = Event()
+
+    def complete_sibling():
+        second_started.set()
+        return controller.complete_evidence(
+            candidate_ref=sibling.candidate_ref,
+            previous_tail_ref=sibling_gate_tail,
+            evaluation_ref=sibling.evaluation_ref,
+            previous_usage_tail_ref=None,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first_future = pool.submit(complete_first)
+        assert first_body_entered.wait(timeout=5)
+        sibling_future = pool.submit(complete_sibling)
+        assert second_started.wait(timeout=5)
+        assert not second_body_entered.wait(timeout=0.1)
+        release_first_body.set()
+
+        first = first_future.result(timeout=5)
+        with pytest.raises(StaleControllerTailError, match="usage tail is stale"):
+            sibling_future.result(timeout=5)
+
+    usage_after_race = controller.current_usage()
+    assert usage_after_race.entry_count == 1
+    assert usage_after_race.candidate_refs == (graph.candidate_ref,)
+    assert controller.usage_tail_ref == first.usage_tail_ref
+
+    sibling_completion = controller.complete_evidence(
+        candidate_ref=sibling.candidate_ref,
+        previous_tail_ref=sibling_gate_tail,
+        evaluation_ref=sibling.evaluation_ref,
+        previous_usage_tail_ref=first.usage_tail_ref,
+    )
+    final_usage = controller.current_usage()
+    assert final_usage.entry_count == 2
+    assert set(final_usage.candidate_refs) == {graph.candidate_ref, sibling.candidate_ref}
+    sibling_entry = graph.store.get_json(
+        sibling_completion.usage_tail_ref,
+        ExperimentUsageEntry,
+    )
+    assert sibling_entry.previous_entry_ref == first.usage_tail_ref
+
+
+def test_probe_execution_lock_is_reentrant_for_usage_callback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = build_graph(tmp_path)
+    controller = controller_for(graph)
+    callback_entered = Event()
+    sentinel = object()
+
+    def reenter_usage(*args: object) -> None:
+        del args
+        assert controller.current_usage().entry_count == 0
+        callback_entered.set()
+
+    def fake_execute(repository: object, **kwargs: object) -> object:
+        assert repository is graph.store
+        reserve_usage = kwargs["reserve_usage"]
+        assert callable(reserve_usage)
+        reserve_usage(object(), object(), object())
+        return sentinel
+
+    monkeypatch.setattr(controller, "_reserve_skill_probe_usage", reenter_usage)
+    monkeypatch.setattr(controller_module, "_execute_matched_skill_probes", fake_execute)
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(
+            controller.execute_matched_skill_probes,
+            authorization_ref=graph.candidate_ref,
+            model_spec=object(),
+            revert_backend=object(),
+            placebo_backend=object(),
+        )
+        assert future.result(timeout=5) is sentinel
+
+    assert callback_entered.is_set()
+
+
+def test_probe_settlement_failure_surfaces_and_blocks_later_usage_claims(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = build_graph(tmp_path)
+    controller = controller_for(graph)
+    frozen_tail = controller.freeze_experiment()
+    controller.start_search(previous_tail_ref=frozen_tail)
+    settlement_calls = 0
+
+    def fail_settlement(**kwargs: object) -> ArtifactRef:
+        nonlocal settlement_calls
+        settlement_calls += 1
+        assert kwargs["tail_ref"] is None
+        raise RuntimeError("usage store unavailable")
+
+    def fake_execute(repository: object, **kwargs: object) -> object:
+        assert repository is graph.store
+        settle_usage = kwargs["settle_usage"]
+        assert callable(settle_usage)
+        settle_usage(
+            graph.candidate_ref,
+            graph.candidate_ref,
+            None,
+            graph.candidate_ref,
+            None,
+            SkillProbeSettlementKind.FAILED,
+            None,
+        )
+        raise AssertionError("settlement failure must escape execution")
+
+    monkeypatch.setattr(controller._usage_ledger, "settle_skill_probe", fail_settlement)
+    monkeypatch.setattr(controller_module, "_execute_matched_skill_probes", fake_execute)
+
+    with pytest.raises(
+        ExperimentControllerError,
+        match="skill-probe usage settlement publication failed: usage store unavailable",
+    ):
+        controller.execute_matched_skill_probes(
+            authorization_ref=graph.candidate_ref,
+            model_spec=object(),
+            revert_backend=object(),
+            placebo_backend=object(),
+        )
+
+    assert settlement_calls == 1
+    assert controller.current_usage().entry_count == 0
+    assert controller.query_usage(None).entry_count == 0
+    with pytest.raises(ExperimentControllerError, match="usage accounting is blocked"):
+        controller._reserve_skill_probe_usage(
+            graph.candidate_ref,
+            object(),
+            object(),
+        )
+    with pytest.raises(ExperimentControllerError, match="usage accounting is blocked"):
+        controller.register_candidate(candidate_ref=graph.candidate_ref)
+    with pytest.raises(ExperimentControllerError, match="usage accounting is blocked"):
+        controller.execute_matched_skill_probes(
+            authorization_ref=graph.candidate_ref,
+            model_spec=object(),
+            revert_backend=object(),
+            placebo_backend=object(),
+        )
+    assert settlement_calls == 1
 
 
 def test_controller_requires_the_protocol_frozen_gate_batch_capability(tmp_path: Path) -> None:

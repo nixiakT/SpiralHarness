@@ -26,7 +26,7 @@ from spiral_harness.experiments.baselines import (
     BaselineKind,
     FrozenMutationPolicy,
 )
-from spiral_harness.experiments.controller import (
+from spiral_harness.experiments.controller_artifacts import (
     EXPERIMENT_USAGE_ENTRY_MEDIA_TYPE,
     SUPERSEDED_CANDIDATE_REPORT_MEDIA_TYPE,
     TERMINAL_TRANSITION_AUTHORIZATION_MEDIA_TYPE,

@@ -31,6 +31,7 @@ from spiral_harness.core.models import (
     NonEmptyStr,
     Sha256,
 )
+from spiral_harness.execution.contracts import CandidateTask
 from spiral_harness.execution.schedule import EvaluationBatchSchedule, EvaluationPhase
 from spiral_harness.skills.package import (
     SKILL_PACKAGE_MEDIA_TYPE,
@@ -44,6 +45,9 @@ from spiral_harness.verification.skill_inclusion import (
 
 SKILL_VERIFICATION_POLICY_MEDIA_TYPE = (
     "application/vnd.spiral-harness.skill-verification-policy.v1+json"
+)
+CONTROLLED_SKILL_PROBE_TASK_MEDIA_TYPE = (
+    "application/vnd.spiral-harness.controlled-skill-probe-task.v1+json"
 )
 SKILL_PROBE_ROSTER_MEDIA_TYPE = "application/vnd.spiral-harness.skill-probe-roster.v1+json"
 SKILL_ADHERENCE_PROBE_MEDIA_TYPE = "application/vnd.spiral-harness.skill-adherence-probe.v1+json"
@@ -161,6 +165,31 @@ class SkillClaimAuthority(ImmutableModel):
         return self
 
 
+class ControlledSkillProbeTask(ImmutableModel):
+    """The complete candidate-facing probe task; gold is not representable."""
+
+    schema_version: Literal["1"] = "1"
+    task_id: NonEmptyStr
+    question: NonEmptyStr
+
+    @field_validator("task_id", "question", mode="before")
+    @classmethod
+    def task_text_is_exact(cls, value: object) -> object:
+        if isinstance(value, str) and (not value or value != value.strip()):
+            raise ValueError("controlled skill probe task text must be exact and non-empty")
+        return value
+
+    @property
+    def artifact_ref(self) -> ArtifactRef:
+        return _artifact_ref(self, CONTROLLED_SKILL_PROBE_TASK_MEDIA_TYPE)
+
+    @property
+    def candidate_task(self) -> CandidateTask:
+        """Return the exact score-free task view accepted by the fixed runner."""
+
+        return CandidateTask(task_id=self.task_id, question=self.question)
+
+
 class SkillProbeRoster(ImmutableModel):
     """Typed exploration split used by both matched probe schedules."""
 
@@ -173,6 +202,7 @@ class SkillProbeRoster(ImmutableModel):
     query: Annotated[int, Field(ge=0, strict=True)]
     master_seed: Annotated[int, Field(ge=0, strict=True)]
     task_ids: Annotated[tuple[NonEmptyStr, ...], Field(min_length=1)]
+    task_refs: Annotated[tuple[ArtifactRef, ...], Field(min_length=1)]
     search_runs: Annotated[
         tuple[Annotated[int, Field(ge=0, strict=True)], ...],
         Field(min_length=1),
@@ -181,7 +211,7 @@ class SkillProbeRoster(ImmutableModel):
         tuple[Annotated[int, Field(ge=0, strict=True)], ...],
         Field(min_length=1),
     ]
-    max_attempts_per_cell: Annotated[int, Field(ge=1, strict=True)]
+    max_attempts_per_cell: Literal[1] = 1
     token_ceiling_per_attempt: Annotated[int, Field(ge=1, strict=True)]
     adherence_probe_refs: Annotated[tuple[ArtifactRef, ...], Field(min_length=1)]
     behavior_probe_refs: Annotated[tuple[ArtifactRef, ...], Field(min_length=1)]
@@ -205,7 +235,7 @@ class SkillProbeRoster(ImmutableModel):
             raise ValueError("probe roster integer axes must not contain duplicates")
         return ordered
 
-    @field_validator("adherence_probe_refs", "behavior_probe_refs")
+    @field_validator("task_refs", "adherence_probe_refs", "behavior_probe_refs")
     @classmethod
     def canonicalize_probe_refs(
         cls,
@@ -219,6 +249,12 @@ class SkillProbeRoster(ImmutableModel):
     @model_validator(mode="after")
     def refs_are_typed_and_disjoint(self) -> Self:
         _require_json_ref(self.exploration_split_ref, "exploration_split_ref")
+        for ref in self.task_refs:
+            _require_media_type(
+                ref,
+                CONTROLLED_SKILL_PROBE_TASK_MEDIA_TYPE,
+                "task_ref",
+            )
         for ref in self.adherence_probe_refs:
             _require_media_type(ref, SKILL_ADHERENCE_PROBE_MEDIA_TYPE, "adherence_probe_ref")
         for ref in self.behavior_probe_refs:
@@ -227,6 +263,8 @@ class SkillProbeRoster(ImmutableModel):
         behavior = {ref.sha256 for ref in self.behavior_probe_refs}
         if adherence.intersection(behavior):
             raise ValueError("adherence and behavior probes must be distinct artifacts")
+        if len(self.task_refs) != len(self.task_ids):
+            raise ValueError("task_refs must contain exactly one artifact per task_id")
         return self
 
     @property
@@ -569,6 +607,7 @@ class SkillMechanismPlan(ImmutableModel):
 
 __all__ = [
     "ATTESTED_SKILL_MECHANISM_CLAIMS",
+    "CONTROLLED_SKILL_PROBE_TASK_MEDIA_TYPE",
     "NEUTRAL_SKILL_RULES_MEDIA_TYPE",
     "NEUTRAL_SKILL_RULE_INSTRUCTION",
     "NEUTRAL_SKILL_RULE_RENDERER_FINGERPRINT",
@@ -586,6 +625,7 @@ __all__ = [
     "SKILL_REVERT_CONTROL_EVIDENCE_MEDIA_TYPE",
     "SKILL_RUNTIME_ACTIVATION_EVIDENCE_MEDIA_TYPE",
     "SKILL_VERIFICATION_POLICY_MEDIA_TYPE",
+    "ControlledSkillProbeTask",
     "NeutralSkillRules",
     "SkillClaimAuthority",
     "SkillEvidenceProfile",

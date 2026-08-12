@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from enum import StrEnum
-from typing import Annotated, Literal
-
-from pydantic import Field, model_validator
+from threading import RLock
 
 from spiral_harness.core.canonical import canonical_json_bytes
 from spiral_harness.core.experiment import (
@@ -27,9 +24,9 @@ from spiral_harness.core.models import (
     BudgetPolicy,
     CandidateMutation,
     ComponentKind,
-    ImmutableModel,
-    NonEmptyStr,
 )
+from spiral_harness.execution.contracts import FrozenModelSpec
+from spiral_harness.execution.model import ModelBackend
 from spiral_harness.storage.journal import (
     JOURNAL_ENTRY_MEDIA_TYPE,
     CandidateJournal,
@@ -51,8 +48,32 @@ from spiral_harness.verification.mechanism import (
     MechanismEvidenceVerificationCapability,
 )
 from spiral_harness.verification.models import GateConfig, MechanismEvidence
+from spiral_harness.verification.skill_plan import SkillMechanismPlan
 
 from .admission import CandidateAdmissionError, CandidateAdmissionService
+from .controller_artifacts import (
+    ADMISSION_FAILURE_REPORT_MEDIA_TYPE,
+    EXPERIMENT_USAGE_CLAIM_MEDIA_TYPE,
+    EXPERIMENT_USAGE_ENTRY_MEDIA_TYPE,
+    EXPERIMENT_USAGE_ENTRY_MEDIA_TYPES,
+    EXPERIMENT_USAGE_ENTRY_V1_MEDIA_TYPE,
+    PROBE_REJECTION_REPORT_MEDIA_TYPE,
+    SUPERSEDED_CANDIDATE_REPORT_MEDIA_TYPE,
+    TERMINAL_TRANSITION_AUTHORIZATION_MEDIA_TYPE,
+    AdmissionFailureCode,
+    AdmissionFailureReport,
+    EvidenceCompletion,
+    ExperimentUsage,
+    ExperimentUsageClaim,
+    ExperimentUsageEntry,
+    ExperimentUsageEntryV1,
+    ProbeRejectionCode,
+    ProbeRejectionReport,
+    SkillProbeSettlementKind,
+    SupersededCandidateReport,
+    TerminalCompletion,
+    TerminalTransitionAuthorization,
+)
 from .decision import (
     GATE_EVALUATION_MANIFEST_MEDIA_TYPE,
     TERMINAL_DECISION_REPORT_MEDIA_TYPE,
@@ -60,6 +81,11 @@ from .decision import (
     TerminalDecisionError,
     TerminalDecisionReport,
     TerminalDecisionService,
+)
+from .experiment_usage import (
+    ExperimentUsageBudgetError,
+    ExperimentUsageLedger,
+    ExperimentUsageLedgerError,
 )
 from .lifecycle import (
     EXPERIMENT_COMPLETION_REPORT_MEDIA_TYPE,
@@ -79,23 +105,23 @@ from .lifecycle import (
     SelectionClosure,
     SelectionReason,
 )
+from .skill_probe_authorization import (
+    SkillProbeExecutionAuthorization,
+    SkillProbeExecutionAuthorizationError,
+    _create_trusted_skill_probe_execution_authorization_service,
+    probe_plan_ref_from_history,
+    verify_skill_probe_execution_authorization_history,
+)
+from .skill_probe_closure import VerifiedMatchedSkillProbeResult
+from .skill_probe_execution import (
+    MatchedSkillProbeExecution,
+    _execute_matched_skill_probes,
+    _verify_matched_skill_probe_result,
+)
 from .skill_probes import (
     SkillProbePreregistrationError,
     replay_probe_preregistration_refs,
     resolve_probe_preregistration,
-)
-
-EXPERIMENT_USAGE_CLAIM_MEDIA_TYPE = "application/vnd.spiral-harness.experiment-usage-claim.v1+json"
-EXPERIMENT_USAGE_ENTRY_MEDIA_TYPE = "application/vnd.spiral-harness.experiment-usage-entry.v1+json"
-ADMISSION_FAILURE_REPORT_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.admission-failure-report.v1+json"
-)
-PROBE_REJECTION_REPORT_MEDIA_TYPE = "application/vnd.spiral-harness.probe-rejection-report.v1+json"
-SUPERSEDED_CANDIDATE_REPORT_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.superseded-candidate-report.v1+json"
-)
-TERMINAL_TRANSITION_AUTHORIZATION_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.terminal-transition-authorization.v1+json"
 )
 
 
@@ -109,252 +135,6 @@ class ExperimentBudgetError(ExperimentControllerError):
 
 class StaleControllerTailError(ExperimentControllerError):
     """Raised when a caller tries to append from an old or foreign branch."""
-
-
-class AdmissionFailureCode(StrEnum):
-    """Stable admission failure categories emitted by the trusted controller."""
-
-    REPORT_REPLAY_FAILED = "report_replay_failed"
-    VERIFIER_FAILURE = "verifier_failure"
-
-
-class ProbeRejectionCode(StrEnum):
-    """Stable outcomes that prevent a candidate from entering the gate."""
-
-    REQUIRED_CHECK_FAILED = "required_check_failed"
-    REQUIRED_CHECK_MISSING = "required_check_missing"
-    REQUIRED_CHECKS_FAILED_AND_MISSING = "required_checks_failed_and_missing"
-
-
-class CandidateSupersessionCode(StrEnum):
-    """Stable controller-derived reasons that a local promotion cannot advance champion."""
-
-    PARENT_CHAMPION_ADVANCED = "parent_champion_advanced"
-
-
-class AdmissionFailureReport(ImmutableModel):
-    """Controller-authored evidence for a fail-closed ``INVALID`` transition."""
-
-    schema_version: Literal["1"] = "1"
-    experiment_ref: ArtifactRef
-    candidate_ref: ArtifactRef
-    attempted_admission_report_ref: ArtifactRef
-    error_code: AdmissionFailureCode
-    message: NonEmptyStr
-
-
-class ProbeRejectionReport(ImmutableModel):
-    """Controller-authored evidence that required mechanism checks did not pass."""
-
-    schema_version: Literal["1"] = "1"
-    experiment_ref: ArtifactRef
-    protocol_ref: ArtifactRef
-    candidate_ref: ArtifactRef
-    mechanism_evidence_ref: ArtifactRef
-    error_code: ProbeRejectionCode
-    required_checks: tuple[NonEmptyStr, ...]
-    failed_checks: tuple[NonEmptyStr, ...]
-    missing_checks: tuple[NonEmptyStr, ...]
-
-    @model_validator(mode="after")
-    def rejection_has_a_failed_or_missing_check(self) -> ProbeRejectionReport:
-        if not self.failed_checks and not self.missing_checks:
-            raise ValueError("probe rejection requires a failed or missing check")
-        if set(self.failed_checks).intersection(self.missing_checks):
-            raise ValueError("a required check cannot be both failed and missing")
-        return self
-
-
-class ExperimentUsageClaim(ImmutableModel):
-    """One gate query whose cost was recomputed from immutable trial batches."""
-
-    schema_version: Literal["1"] = "1"
-    experiment_ref: ArtifactRef
-    protocol_ref: ArtifactRef
-    candidate_ref: ArtifactRef
-    running_gate_tail_ref: ArtifactRef
-    evaluation_ref: ArtifactRef
-    parent_batch_ref: ArtifactRef
-    candidate_batch_ref: ArtifactRef
-    evaluation_units: Annotated[int, Field(ge=1, strict=True)]
-    tokens: Annotated[int, Field(ge=0, strict=True)]
-    tool_calls: Annotated[int, Field(ge=0, strict=True)]
-    wall_time_seconds: Annotated[float, Field(ge=0, strict=True)]
-    cost_usd: Annotated[float, Field(ge=0, strict=True)] | None
-
-    @model_validator(mode="after")
-    def references_have_exact_media_types(self) -> ExperimentUsageClaim:
-        expected = (
-            ("running_gate_tail_ref", JOURNAL_ENTRY_MEDIA_TYPE),
-            ("evaluation_ref", GATE_EVALUATION_MANIFEST_MEDIA_TYPE),
-            ("parent_batch_ref", GATE_TRIAL_BATCH_MEDIA_TYPE),
-            ("candidate_batch_ref", GATE_TRIAL_BATCH_MEDIA_TYPE),
-        )
-        for field_name, media_type in expected:
-            if getattr(self, field_name).media_type != media_type:
-                raise ValueError(f"{field_name} must declare {media_type!r}")
-        return self
-
-
-class ExperimentUsageEntry(ImmutableModel):
-    """One immutable link in the experiment-wide evaluation/query ledger."""
-
-    schema_version: Literal["1"] = "1"
-    experiment_ref: ArtifactRef
-    protocol_ref: ArtifactRef
-    sequence: Annotated[int, Field(ge=0, strict=True)]
-    claim_ref: ArtifactRef
-    cumulative_evaluations: Annotated[int, Field(ge=1, strict=True)]
-    cumulative_tokens: Annotated[int, Field(ge=0, strict=True)]
-    cumulative_tool_calls: Annotated[int, Field(ge=0, strict=True)]
-    cumulative_wall_time_seconds: Annotated[float, Field(ge=0, strict=True)]
-    cumulative_cost_usd: Annotated[float, Field(ge=0, strict=True)] | None
-    previous_entry_ref: ArtifactRef | None
-
-    @model_validator(mode="after")
-    def linked_entry_shape_is_valid(self) -> ExperimentUsageEntry:
-        if self.claim_ref.media_type != EXPERIMENT_USAGE_CLAIM_MEDIA_TYPE:
-            raise ValueError("claim_ref declares the wrong experiment usage media type")
-        if (
-            self.previous_entry_ref is not None
-            and self.previous_entry_ref.media_type != EXPERIMENT_USAGE_ENTRY_MEDIA_TYPE
-        ):
-            raise ValueError("previous_entry_ref declares the wrong usage entry media type")
-        if self.sequence == 0 and self.previous_entry_ref is not None:
-            raise ValueError("usage sequence 0 must not have a previous entry")
-        if self.sequence > 0 and self.previous_entry_ref is None:
-            raise ValueError("usage sequence greater than 0 requires a previous entry")
-        return self
-
-
-class ExperimentUsage(ImmutableModel):
-    """Replay-derived query result for one exact experiment usage tail."""
-
-    experiment_ref: ArtifactRef
-    protocol_ref: ArtifactRef
-    tail_ref: ArtifactRef | None
-    entry_refs: tuple[ArtifactRef, ...]
-    claim_refs: tuple[ArtifactRef, ...]
-    candidate_refs: tuple[ArtifactRef, ...]
-    evaluation_refs: tuple[ArtifactRef, ...]
-    query_count: Annotated[int, Field(ge=0, strict=True)]
-    total_evaluations: Annotated[int, Field(ge=0, strict=True)]
-    total_tokens: Annotated[int, Field(ge=0, strict=True)]
-    total_tool_calls: Annotated[int, Field(ge=0, strict=True)]
-    total_wall_time_seconds: Annotated[float, Field(ge=0, strict=True)]
-    total_cost_usd: Annotated[float, Field(ge=0, strict=True)] | None
-    max_evaluations: Annotated[int, Field(ge=0, strict=True)]
-    max_tokens: Annotated[int, Field(ge=0, strict=True)] | None
-    max_tool_calls: Annotated[int, Field(ge=0, strict=True)] | None
-    max_wall_time_seconds: Annotated[float, Field(ge=0, strict=True)] | None
-    max_cost_usd: Annotated[float, Field(ge=0, strict=True)] | None
-    remaining_evaluations: Annotated[int, Field(ge=0, strict=True)]
-    remaining_tokens: Annotated[int, Field(ge=0, strict=True)] | None
-    remaining_tool_calls: Annotated[int, Field(ge=0, strict=True)] | None
-    remaining_wall_time_seconds: Annotated[float, Field(ge=0, strict=True)] | None
-    remaining_cost_usd: Annotated[float, Field(ge=0, strict=True)] | None
-
-
-class EvidenceCompletion(ImmutableModel):
-    """The two published heads resulting from a budgeted gate completion."""
-
-    candidate_tail_ref: ArtifactRef
-    usage_tail_ref: ArtifactRef
-    usage_claim_ref: ArtifactRef
-    total_evaluations: Annotated[int, Field(ge=1, strict=True)]
-    remaining_evaluations: Annotated[int, Field(ge=0, strict=True)]
-
-
-class SupersededCandidateReport(ImmutableModel):
-    """Resolve a valid local PROMOTE after another sibling advanced champion."""
-
-    schema_version: Literal["1"] = "1"
-    experiment_ref: ArtifactRef
-    protocol_ref: ArtifactRef
-    candidate_ref: ArtifactRef
-    evidence_complete_tail_ref: ArtifactRef
-    terminal_decision_report_ref: ArtifactRef
-    decision_ref: ArtifactRef
-    stale_parent_harness_ref: ArtifactRef
-    current_champion_harness_ref: ArtifactRef
-    superseding_candidate_ref: ArtifactRef
-    error_code: CandidateSupersessionCode = CandidateSupersessionCode.PARENT_CHAMPION_ADVANCED
-    gate_terminal_state: Literal[CandidateState.PROMOTED] = CandidateState.PROMOTED
-    resolved_terminal_state: Literal[CandidateState.INCONCLUSIVE] = CandidateState.INCONCLUSIVE
-
-    @model_validator(mode="after")
-    def exact_proof_media_types(self) -> SupersededCandidateReport:
-        expected = (
-            ("evidence_complete_tail_ref", JOURNAL_ENTRY_MEDIA_TYPE),
-            ("terminal_decision_report_ref", TERMINAL_DECISION_REPORT_MEDIA_TYPE),
-        )
-        for field_name, media_type in expected:
-            if getattr(self, field_name).media_type != media_type:
-                raise ValueError(f"{field_name} must declare {media_type!r}")
-        return self
-
-
-class TerminalTransitionAuthorization(ImmutableModel):
-    """Bind a replayed decision to one exact evidence-complete journal branch."""
-
-    schema_version: Literal["1"] = "1"
-    experiment_ref: ArtifactRef
-    protocol_ref: ArtifactRef
-    candidate_ref: ArtifactRef
-    prior_champion_harness_ref: ArtifactRef
-    parent_harness_ref: ArtifactRef
-    child_harness_ref: ArtifactRef
-    evidence_complete_tail_ref: ArtifactRef
-    usage_entry_ref: ArtifactRef
-    evaluation_ref: ArtifactRef
-    terminal_decision_report_ref: ArtifactRef
-    decision_ref: ArtifactRef
-    gate_terminal_state: CandidateState
-    terminal_state: CandidateState
-    superseded_report_ref: ArtifactRef | None = None
-
-    @model_validator(mode="after")
-    def references_and_state_are_terminal(self) -> TerminalTransitionAuthorization:
-        expected = (
-            ("evidence_complete_tail_ref", JOURNAL_ENTRY_MEDIA_TYPE),
-            ("usage_entry_ref", EXPERIMENT_USAGE_ENTRY_MEDIA_TYPE),
-            ("evaluation_ref", GATE_EVALUATION_MANIFEST_MEDIA_TYPE),
-            ("terminal_decision_report_ref", TERMINAL_DECISION_REPORT_MEDIA_TYPE),
-        )
-        for field_name, media_type in expected:
-            if getattr(self, field_name).media_type != media_type:
-                raise ValueError(f"{field_name} must declare {media_type!r}")
-        if self.terminal_state not in {
-            CandidateState.PROMOTED,
-            CandidateState.REJECTED,
-            CandidateState.INCONCLUSIVE,
-        }:
-            raise ValueError("terminal_state is not a gate terminal outcome")
-        if self.gate_terminal_state not in {
-            CandidateState.PROMOTED,
-            CandidateState.REJECTED,
-            CandidateState.INCONCLUSIVE,
-        }:
-            raise ValueError("gate_terminal_state is not a gate terminal outcome")
-        is_superseded = self.superseded_report_ref is not None
-        if is_superseded:
-            if self.superseded_report_ref.media_type != SUPERSEDED_CANDIDATE_REPORT_MEDIA_TYPE:
-                raise ValueError("superseded_report_ref declares the wrong media type")
-            if self.gate_terminal_state is not CandidateState.PROMOTED:
-                raise ValueError("only a local PROMOTE may be superseded")
-            if self.terminal_state is not CandidateState.INCONCLUSIVE:
-                raise ValueError("a superseded local promotion resolves to INCONCLUSIVE")
-        elif self.gate_terminal_state is not self.terminal_state:
-            raise ValueError("terminal state may differ from gate state only when superseded")
-        return self
-
-
-class TerminalCompletion(ImmutableModel):
-    """Published terminal tail and its exact-branch authorization artifact."""
-
-    candidate_tail_ref: ArtifactRef
-    authorization_ref: ArtifactRef
-    superseded_report_ref: ArtifactRef | None = None
 
 
 class ExperimentController:
@@ -383,6 +163,8 @@ class ExperimentController:
                 "experiment_tail_ref must be omitted"
             )
         self._repository = repository
+        self._state_lock = RLock()
+        self._usage_accounting_blocked = False
         self._gate_batch_verifier = gate_batch_verifier
         self._mechanism_evidence_verifier = mechanism_evidence_verifier
         self.experiment_ref = ArtifactRef.model_validate(experiment_ref)
@@ -422,6 +204,20 @@ class ExperimentController:
             gate_batch_verifier=self._gate_batch_verifier,
             mechanism_evidence_verifier=self._mechanism_evidence_verifier,
         )
+        self._usage_ledger = ExperimentUsageLedger(
+            repository,
+            experiment_ref=self.experiment_ref,
+            protocol_ref=self.protocol_ref,
+            budget_limits=self._budget_limits,
+            verify_gate_history=self._verify_running_gate_history,
+            verify_gate_evaluation=self._verify_gate_evaluation,
+        )
+        self._skill_probe_authorizations = (
+            _create_trusted_skill_probe_execution_authorization_service(
+                repository,
+                verify_current=self._verify_current_skill_probe_execution_authorization,
+            )
+        )
         self._candidate_tails: dict[str, ArtifactRef] = {}
         self._candidate_refs: dict[str, ArtifactRef] = {}
         self._champion_harness_ref = self._experiment.seed_harness_ref
@@ -430,7 +226,13 @@ class ExperimentController:
             None if usage_tail_ref is None else ArtifactRef.model_validate(usage_tail_ref)
         )
         # A supplied restart head is not trusted merely because it exists.
-        self._replay_usage(self._usage_tail_ref)
+        # A replayed poison is terminal even for a fresh controller object: a
+        # new process must not turn an immutable poisoned usage head back into
+        # a writable experiment merely because its local flag started false.
+        replayed_usage = self._replay_usage(self._usage_tail_ref)
+        self._usage_accounting_blocked = (
+            replayed_usage.poisoned or not replayed_usage.accounting_complete
+        )
         self._experiment_tail_ref: ArtifactRef | None = None
         self._candidate_resume_blocked = usage_tail_ref is not None
 
@@ -438,7 +240,8 @@ class ExperimentController:
     def usage_tail_ref(self) -> ArtifactRef | None:
         """Return the current caller-held usage head for this writer."""
 
-        return self._usage_tail_ref
+        with self._state_lock:
+            return self._usage_tail_ref
 
     @property
     def experiment_tail_ref(self) -> ArtifactRef | None:
@@ -502,6 +305,27 @@ class ExperimentController:
     ) -> ArtifactRef:
         """Freeze the promoted champion, query head, and sealed analysis plan."""
 
+        with self._state_lock:
+            self._require_accounting_open()
+            return self._close_selection(
+                previous_tail_ref=previous_tail_ref,
+                previous_usage_tail_ref=previous_usage_tail_ref,
+                champion_candidate_ref=champion_candidate_ref,
+                champion_candidate_tail_ref=champion_candidate_tail_ref,
+                champion_harness_ref=champion_harness_ref,
+                analysis_plan_ref=analysis_plan_ref,
+            )
+
+    def _close_selection(
+        self,
+        *,
+        previous_tail_ref: ArtifactRef,
+        previous_usage_tail_ref: ArtifactRef | None,
+        champion_candidate_ref: ArtifactRef | None,
+        champion_candidate_tail_ref: ArtifactRef | None,
+        champion_harness_ref: ArtifactRef,
+        analysis_plan_ref: ArtifactRef,
+    ) -> ArtifactRef:
         self._require_experiment_tail(
             previous_tail_ref,
             expected_state=ExperimentState.SEARCHING,
@@ -593,20 +417,22 @@ class ExperimentController:
     ) -> ArtifactRef:
         """Close selection from controller-owned champion and usage heads."""
 
-        champion_candidate_ref = self._champion_candidate_ref
-        champion_candidate_tail_ref = (
-            None
-            if champion_candidate_ref is None
-            else self._candidate_tails[champion_candidate_ref.sha256]
-        )
-        return self.close_selection(
-            previous_tail_ref=previous_tail_ref,
-            previous_usage_tail_ref=self._usage_tail_ref,
-            champion_candidate_ref=champion_candidate_ref,
-            champion_candidate_tail_ref=champion_candidate_tail_ref,
-            champion_harness_ref=self._champion_harness_ref,
-            analysis_plan_ref=analysis_plan_ref,
-        )
+        with self._state_lock:
+            self._require_accounting_open()
+            champion_candidate_ref = self._champion_candidate_ref
+            champion_candidate_tail_ref = (
+                None
+                if champion_candidate_ref is None
+                else self._candidate_tails[champion_candidate_ref.sha256]
+            )
+            return self._close_selection(
+                previous_tail_ref=previous_tail_ref,
+                previous_usage_tail_ref=self._usage_tail_ref,
+                champion_candidate_ref=champion_candidate_ref,
+                champion_candidate_tail_ref=champion_candidate_tail_ref,
+                champion_harness_ref=self._champion_harness_ref,
+                analysis_plan_ref=analysis_plan_ref,
+            )
 
     def verify_experiment_selection_closure(
         self,
@@ -1098,6 +924,146 @@ class ExperimentController:
             reason="candidate-bound required mechanism checks passed",
         )
 
+    def issue_skill_probe_execution_authorization(
+        self,
+        *,
+        candidate_ref: ArtifactRef,
+        running_probes_tail_ref: ArtifactRef,
+    ) -> ArtifactRef:
+        """Issue one idempotent execution grant for the exact current probe head."""
+
+        self._require_searching()
+        events = self._require_current_tail(
+            candidate_ref,
+            running_probes_tail_ref,
+            expected_state=CandidateState.RUNNING_PROBES,
+        )
+        try:
+            plan_ref = probe_plan_ref_from_history(events)
+            return self._skill_probe_authorizations.issue(
+                experiment_ref=self.experiment_ref,
+                protocol_ref=self.protocol_ref,
+                candidate_ref=ArtifactRef.model_validate(candidate_ref, strict=True),
+                plan_ref=plan_ref,
+                running_probes_tail_ref=ArtifactRef.model_validate(
+                    running_probes_tail_ref,
+                    strict=True,
+                ),
+            )
+        except SkillProbeExecutionAuthorizationError as exc:
+            raise ExperimentControllerError(
+                f"skill-probe execution authorization failed: {exc}"
+            ) from exc
+
+    def execute_matched_skill_probes(
+        self,
+        *,
+        authorization_ref: ArtifactRef,
+        model_spec: FrozenModelSpec,
+        revert_backend: ModelBackend,
+        placebo_backend: ModelBackend,
+    ) -> MatchedSkillProbeExecution:
+        """Reserve global budget, then execute one issued matched probe."""
+
+        with self._state_lock:
+            self._require_accounting_open()
+            return _execute_matched_skill_probes(
+                self._repository,
+                authorization_ref=authorization_ref,
+                execution_authority=self._skill_probe_authorizations.execution_authority,
+                authorization_capability=self._skill_probe_authorizations.verification_capability,
+                model_spec=model_spec,
+                revert_backend=revert_backend,
+                placebo_backend=placebo_backend,
+                reserve_usage=self._reserve_skill_probe_usage,
+                settle_usage=self._settle_skill_probe_usage,
+            )
+
+    def verify_matched_skill_probe_result(
+        self,
+        execution: MatchedSkillProbeExecution,
+    ) -> VerifiedMatchedSkillProbeResult:
+        """Replay one result with this controller's original live ledgers."""
+
+        if type(execution) is not MatchedSkillProbeExecution:
+            raise ExperimentControllerError(
+                "skill-probe execution must be the controller result object"
+            )
+        try:
+            return _verify_matched_skill_probe_result(
+                self._repository,
+                result=execution.result,
+                authorization_capability=(self._skill_probe_authorizations.verification_capability),
+                revert_attempt_ledger=execution.revert_attempt_ledger,
+                placebo_attempt_ledger=execution.placebo_attempt_ledger,
+            )
+        except Exception as exc:
+            raise ExperimentControllerError(
+                f"matched skill-probe result verification failed: {exc}"
+            ) from exc
+
+    def _reserve_skill_probe_usage(
+        self,
+        authorization_ref: ArtifactRef,
+        authorization: SkillProbeExecutionAuthorization,
+        plan: SkillMechanismPlan,
+    ) -> None:
+        """Charge the two schedules conservatively before consuming the grant."""
+        with self._state_lock:
+            self._require_accounting_open()
+            try:
+                self._usage_tail_ref = self._usage_ledger.reserve_skill_probe(
+                    tail_ref=self._usage_tail_ref,
+                    authorization_ref=authorization_ref,
+                    authorization=authorization,
+                    plan=plan,
+                )
+            except ExperimentUsageBudgetError as exc:
+                raise ExperimentBudgetError(str(exc)) from exc
+            except ExperimentUsageLedgerError as exc:
+                raise ExperimentControllerError(str(exc)) from exc
+
+    def _settle_skill_probe_usage(
+        self,
+        authorization_ref: ArtifactRef,
+        revert_preflight_ref: ArtifactRef,
+        revert_terminal_tail_ref: ArtifactRef | None,
+        placebo_preflight_ref: ArtifactRef,
+        placebo_terminal_tail_ref: ArtifactRef | None,
+        terminal_kind: SkillProbeSettlementKind,
+        closure_ref: ArtifactRef | None,
+    ) -> None:
+        """Publish the terminal probe charge or permanently close accounting."""
+
+        with self._state_lock:
+            self._require_accounting_open()
+            try:
+                usage_tail_ref = self._usage_ledger.settle_skill_probe(
+                    tail_ref=self._usage_tail_ref,
+                    authorization_ref=authorization_ref,
+                    revert_preflight_ref=revert_preflight_ref,
+                    revert_terminal_tail_ref=revert_terminal_tail_ref,
+                    placebo_preflight_ref=placebo_preflight_ref,
+                    placebo_terminal_tail_ref=placebo_terminal_tail_ref,
+                    terminal_kind=terminal_kind,
+                    closure_ref=closure_ref,
+                )
+            except ExperimentUsageBudgetError as exc:
+                self._usage_accounting_blocked = True
+                raise ExperimentBudgetError(str(exc)) from exc
+            except ExperimentUsageLedgerError as exc:
+                self._usage_accounting_blocked = True
+                raise ExperimentControllerError(str(exc)) from exc
+            except Exception as exc:
+                self._usage_accounting_blocked = True
+                raise ExperimentControllerError(
+                    f"skill-probe usage settlement publication failed: {exc}"
+                ) from exc
+            self._usage_tail_ref = usage_tail_ref
+            settled_usage = self._replay_usage(usage_tail_ref)
+            if settled_usage.poisoned or not settled_usage.accounting_complete:
+                self._usage_accounting_blocked = True
+
     def complete_evidence(
         self,
         *,
@@ -1108,6 +1074,22 @@ class ExperimentController:
     ) -> EvidenceCompletion:
         """Account a gate query and publish its evidence-complete lifecycle head."""
 
+        with self._state_lock:
+            return self._complete_evidence(
+                candidate_ref=candidate_ref,
+                previous_tail_ref=previous_tail_ref,
+                evaluation_ref=evaluation_ref,
+                previous_usage_tail_ref=previous_usage_tail_ref,
+            )
+
+    def _complete_evidence(
+        self,
+        *,
+        candidate_ref: ArtifactRef,
+        previous_tail_ref: ArtifactRef,
+        evaluation_ref: ArtifactRef,
+        previous_usage_tail_ref: ArtifactRef | None,
+    ) -> EvidenceCompletion:
         self._require_searching()
         events = self._require_current_tail(
             candidate_ref,
@@ -1133,28 +1115,35 @@ class ExperimentController:
             parent_batch_ref=evaluation.parent_batch_ref,
             candidate_batch_ref=evaluation.candidate_batch_ref,
         )
-        tokens, tool_calls, wall_time_seconds, cost_usd = self._resource_charge(
+        tokens, tool_calls, wall_time_seconds, cost_usd = self._usage_ledger.resource_charge(
             parent_batch,
             candidate_batch,
         )
         cumulative = usage.total_evaluations + evaluation_units
         cumulative_tokens = usage.total_tokens + tokens
         cumulative_tool_calls = usage.total_tool_calls + tool_calls
-        cumulative_wall_time = usage.total_wall_time_seconds + wall_time_seconds
+        cumulative_wall_time = (
+            None
+            if usage.total_wall_time_seconds is None
+            else usage.total_wall_time_seconds + wall_time_seconds
+        )
         cumulative_cost = (
             None
             if usage.total_cost_usd is None or cost_usd is None
             else usage.total_cost_usd + cost_usd
         )
-        self._enforce_budget(
-            evaluations=cumulative,
-            tokens=cumulative_tokens,
-            tool_calls=cumulative_tool_calls,
-            wall_time_seconds=cumulative_wall_time,
-            cost_usd=cumulative_cost,
-            requested_evaluations=evaluation_units,
-            prior_evaluations=usage.total_evaluations,
-        )
+        try:
+            self._usage_ledger.enforce_budget(
+                evaluations=cumulative,
+                tokens=cumulative_tokens,
+                tool_calls=cumulative_tool_calls,
+                wall_time_seconds=cumulative_wall_time or 0.0,
+                cost_usd=cumulative_cost,
+                requested_evaluations=evaluation_units,
+                prior_evaluations=usage.total_evaluations,
+            )
+        except ExperimentUsageBudgetError as exc:
+            raise ExperimentBudgetError(str(exc)) from exc
 
         # Publish the mutable head only after every immutable object exists.
         claim = ExperimentUsageClaim(
@@ -1178,7 +1167,7 @@ class ExperimentController:
         entry = ExperimentUsageEntry(
             experiment_ref=self.experiment_ref,
             protocol_ref=self.protocol_ref,
-            sequence=usage.query_count,
+            sequence=usage.entry_count,
             claim_ref=claim_ref,
             cumulative_evaluations=cumulative,
             cumulative_tokens=cumulative_tokens,
@@ -1251,11 +1240,9 @@ class ExperimentController:
             raise ExperimentControllerError(
                 "evidence-complete usage entry is not in the current experiment ledger"
             )
-        usage_entry = self._load(
+        usage_entry = self._load_usage_entry(
             usage_entry_ref,
-            ExperimentUsageEntry,
             "experiment usage entry",
-            expected_media_type=EXPERIMENT_USAGE_ENTRY_MEDIA_TYPE,
         )
         claim = self._load(
             usage_entry.claim_ref,
@@ -1440,11 +1427,9 @@ class ExperimentController:
             raise ExperimentControllerError(
                 "terminal authorization usage entry is not in the controller ledger"
             )
-        usage_entry = self._load(
+        usage_entry = self._load_usage_entry(
             authorization.usage_entry_ref,
-            ExperimentUsageEntry,
             "terminal authorization usage entry",
-            expected_media_type=EXPERIMENT_USAGE_ENTRY_MEDIA_TYPE,
         )
         claim = self._load(
             usage_entry.claim_ref,
@@ -1464,14 +1449,31 @@ class ExperimentController:
     def current_usage(self) -> ExperimentUsage:
         """Replay and query the controller's current experiment usage head."""
 
-        return self._replay_usage(self._usage_tail_ref)
+        with self._state_lock:
+            return self._replay_usage(self._usage_tail_ref)
 
     def query_usage(self, tail_ref: ArtifactRef | None) -> ExperimentUsage:
         """Replay any explicit historical head from this frozen experiment."""
 
-        return self._replay_usage(tail_ref)
+        with self._state_lock:
+            return self._replay_usage(tail_ref)
+
+    def _require_accounting_open(self) -> None:
+        if self._usage_accounting_blocked:
+            raise ExperimentControllerError(
+                "experiment usage accounting is blocked after a settlement failure, "
+                "incomplete accounting, or a poisoned usage entry"
+            )
+        usage = self._replay_usage(self._usage_tail_ref)
+        if usage.poisoned or not usage.accounting_complete:
+            self._usage_accounting_blocked = True
+            raise ExperimentControllerError(
+                "experiment usage accounting is blocked after a settlement failure, "
+                "incomplete accounting, or a poisoned usage entry"
+            )
 
     def _require_searching(self) -> None:
+        self._require_accounting_open()
         if self._experiment_tail_ref is None:
             raise ExperimentControllerError(
                 "experiment must be frozen and opened for search before candidate work"
@@ -1583,62 +1585,6 @@ class ExperimentController:
             )
         return BudgetPolicy.model_validate(effective)
 
-    @staticmethod
-    def _resource_charge(
-        parent_batch: GateTrialBatch,
-        candidate_batch: GateTrialBatch,
-    ) -> tuple[int, int, float, float | None]:
-        observations = (*parent_batch.observations, *candidate_batch.observations)
-        tokens = sum(observation.tokens for observation in observations)
-        tool_calls = sum(observation.tool_calls for observation in observations)
-        wall_time_seconds = sum(observation.latency_ms for observation in observations) / 1_000
-        costs = tuple(observation.cost_usd for observation in observations)
-        cost_usd = (
-            None
-            if any(cost is None for cost in costs)
-            else sum(cost for cost in costs if cost is not None)
-        )
-        return tokens, tool_calls, wall_time_seconds, cost_usd
-
-    def _enforce_budget(
-        self,
-        *,
-        evaluations: int,
-        tokens: int,
-        tool_calls: int,
-        wall_time_seconds: float,
-        cost_usd: float | None,
-        requested_evaluations: int,
-        prior_evaluations: int,
-    ) -> None:
-        limits = self._budget_limits
-        if evaluations > self._max_evaluations:
-            raise ExperimentBudgetError(
-                "gate evaluation would exceed max_evaluations: "
-                f"used={prior_evaluations}, requested={requested_evaluations}, "
-                f"limit={self._max_evaluations}"
-            )
-        checks = (
-            ("max_tokens", tokens, limits.max_tokens),
-            ("max_tool_calls", tool_calls, limits.max_tool_calls),
-            ("max_wall_time_seconds", wall_time_seconds, limits.max_wall_time_seconds),
-        )
-        for field_name, used, limit in checks:
-            if limit is not None and used > limit:
-                raise ExperimentBudgetError(
-                    f"persisted gate usage exceeds {field_name}: used={used}, limit={limit}"
-                )
-        if limits.max_cost_usd is not None:
-            if cost_usd is None:
-                raise ExperimentBudgetError(
-                    "cost ceiling is active but one or more observations omit cost_usd"
-                )
-            if cost_usd > limits.max_cost_usd:
-                raise ExperimentBudgetError(
-                    "persisted gate usage exceeds max_cost_usd: "
-                    f"used={cost_usd}, limit={limits.max_cost_usd}"
-                )
-
     def _require_current_tail(
         self,
         candidate_ref: ArtifactRef,
@@ -1671,6 +1617,35 @@ class ExperimentController:
                 f"candidate is {events[-1].to_state.value!r}; expected {expected_state.value!r}"
             )
         return events
+
+    def _verify_current_skill_probe_execution_authorization(
+        self,
+        authorization: SkillProbeExecutionAuthorization,
+    ) -> None:
+        if authorization.experiment_ref != self.experiment_ref:
+            raise SkillProbeExecutionAuthorizationError(
+                "skill-probe authorization belongs to another experiment"
+            )
+        if authorization.protocol_ref != self.protocol_ref:
+            raise SkillProbeExecutionAuthorizationError(
+                "skill-probe authorization belongs to another protocol"
+            )
+        try:
+            self._require_searching()
+            events = self._require_current_tail(
+                authorization.candidate_ref,
+                authorization.running_probes_tail_ref,
+                expected_state=CandidateState.RUNNING_PROBES,
+            )
+        except ExperimentControllerError as exc:
+            raise SkillProbeExecutionAuthorizationError(
+                f"skill-probe authorization does not bind the current controller head: {exc}"
+            ) from exc
+        verify_skill_probe_execution_authorization_history(
+            self._repository,
+            authorization=authorization,
+            events=events,
+        )
 
     def _append_candidate_event(
         self,
@@ -2005,211 +1980,12 @@ class ExperimentController:
             )
 
     def _replay_usage(self, tail_ref: ArtifactRef | None) -> ExperimentUsage:
-        if tail_ref is None:
-            return ExperimentUsage(
-                experiment_ref=self.experiment_ref,
-                protocol_ref=self.protocol_ref,
-                tail_ref=None,
-                entry_refs=(),
-                claim_refs=(),
-                candidate_refs=(),
-                evaluation_refs=(),
-                query_count=0,
-                total_evaluations=0,
-                total_tokens=0,
-                total_tool_calls=0,
-                total_wall_time_seconds=0.0,
-                total_cost_usd=0.0,
-                max_evaluations=self._max_evaluations,
-                max_tokens=self._budget_limits.max_tokens,
-                max_tool_calls=self._budget_limits.max_tool_calls,
-                max_wall_time_seconds=self._budget_limits.max_wall_time_seconds,
-                max_cost_usd=self._budget_limits.max_cost_usd,
-                remaining_evaluations=self._max_evaluations,
-                remaining_tokens=self._budget_limits.max_tokens,
-                remaining_tool_calls=self._budget_limits.max_tool_calls,
-                remaining_wall_time_seconds=self._budget_limits.max_wall_time_seconds,
-                remaining_cost_usd=self._budget_limits.max_cost_usd,
-            )
-
-        cursor: ArtifactRef | None = ArtifactRef.model_validate(tail_ref)
-        backwards: list[tuple[ArtifactRef, ExperimentUsageEntry]] = []
-        seen_entries: set[str] = set()
-        while cursor is not None:
-            if cursor.sha256 in seen_entries:
-                raise ExperimentControllerError("experiment usage ledger contains a cycle")
-            seen_entries.add(cursor.sha256)
-            entry = self._load(
-                cursor,
-                ExperimentUsageEntry,
-                "experiment usage entry",
-                expected_media_type=EXPERIMENT_USAGE_ENTRY_MEDIA_TYPE,
-            )
-            backwards.append((cursor, entry))
-            cursor = entry.previous_entry_ref
-        entries = tuple(reversed(backwards))
-
-        claim_refs: list[ArtifactRef] = []
-        candidate_refs: list[ArtifactRef] = []
-        evaluation_refs: list[ArtifactRef] = []
-        seen_candidates: set[str] = set()
-        seen_evaluations: set[str] = set()
-        seen_batches: set[str] = set()
-        cumulative = 0
-        cumulative_tokens = 0
-        cumulative_tool_calls = 0
-        cumulative_wall_time = 0.0
-        cumulative_cost: float | None = 0.0
-        previous_entry_ref: ArtifactRef | None = None
-        for sequence, (entry_ref, entry) in enumerate(entries):
-            if entry.sequence != sequence:
-                raise ExperimentControllerError("experiment usage sequence is not contiguous")
-            if entry.previous_entry_ref != previous_entry_ref:
-                raise ExperimentControllerError("experiment usage link does not match prior entry")
-            if entry.experiment_ref != self.experiment_ref:
-                raise ExperimentControllerError("usage entry belongs to another experiment")
-            if entry.protocol_ref != self.protocol_ref:
-                raise ExperimentControllerError("usage entry belongs to another protocol")
-            claim = self._load(
-                entry.claim_ref,
-                ExperimentUsageClaim,
-                "experiment usage claim",
-                expected_media_type=EXPERIMENT_USAGE_CLAIM_MEDIA_TYPE,
-            )
-            if claim.experiment_ref != self.experiment_ref:
-                raise ExperimentControllerError("usage claim belongs to another experiment")
-            if claim.protocol_ref != self.protocol_ref:
-                raise ExperimentControllerError("usage claim belongs to another protocol")
-            if claim.candidate_ref.sha256 in seen_candidates:
-                raise ExperimentControllerError("candidate was charged more than once")
-            if claim.evaluation_ref.sha256 in seen_evaluations:
-                raise ExperimentControllerError("gate evaluation was charged more than once")
-            batch_hashes = {claim.parent_batch_ref.sha256, claim.candidate_batch_ref.sha256}
-            if seen_batches.intersection(batch_hashes):
-                raise ExperimentControllerError("gate trial batch was charged more than once")
-            if len(batch_hashes) != 2:
-                raise ExperimentControllerError("parent and candidate batch refs must differ")
-
-            source_events = self._journal.replay(claim.running_gate_tail_ref)
-            candidate, admission_ref, mechanism_ref = self._verify_running_gate_history(
-                claim.running_gate_tail_ref
-            )
-            if claim.candidate_ref != source_events[0].candidate_ref:
-                raise ExperimentControllerError(
-                    "usage claim source tail belongs to another candidate"
-                )
-            evaluation, parent_batch, candidate_batch, recomputed_units = (
-                self._verify_gate_evaluation(
-                    candidate_ref=claim.candidate_ref,
-                    candidate=candidate,
-                    admission_report_ref=admission_ref,
-                    mechanism_evidence_ref=mechanism_ref,
-                    evaluation_ref=claim.evaluation_ref,
-                )
-            )
-            if evaluation.parent_batch_ref != claim.parent_batch_ref:
-                raise ExperimentControllerError(
-                    "usage claim parent batch does not match evaluation"
-                )
-            if evaluation.candidate_batch_ref != claim.candidate_batch_ref:
-                raise ExperimentControllerError(
-                    "usage claim candidate batch does not match evaluation"
-                )
-            if claim.evaluation_units != recomputed_units:
-                raise ExperimentControllerError(
-                    "usage claim evaluation count does not match persisted batches"
-                )
-            tokens, tool_calls, wall_time_seconds, cost_usd = self._resource_charge(
-                parent_batch,
-                candidate_batch,
-            )
-            if (
-                claim.tokens != tokens
-                or claim.tool_calls != tool_calls
-                or claim.wall_time_seconds != wall_time_seconds
-                or claim.cost_usd != cost_usd
-            ):
-                raise ExperimentControllerError(
-                    "usage claim resources do not match persisted trial batches"
-                )
-            cumulative += recomputed_units
-            cumulative_tokens += tokens
-            cumulative_tool_calls += tool_calls
-            cumulative_wall_time += wall_time_seconds
-            cumulative_cost = (
-                None if cumulative_cost is None or cost_usd is None else cumulative_cost + cost_usd
-            )
-            self._enforce_budget(
-                evaluations=cumulative,
-                tokens=cumulative_tokens,
-                tool_calls=cumulative_tool_calls,
-                wall_time_seconds=cumulative_wall_time,
-                cost_usd=cumulative_cost,
-                requested_evaluations=recomputed_units,
-                prior_evaluations=cumulative - recomputed_units,
-            )
-            cumulative_fields = (
-                ("evaluations", entry.cumulative_evaluations, cumulative),
-                ("tokens", entry.cumulative_tokens, cumulative_tokens),
-                ("tool calls", entry.cumulative_tool_calls, cumulative_tool_calls),
-                ("wall time", entry.cumulative_wall_time_seconds, cumulative_wall_time),
-                ("cost", entry.cumulative_cost_usd, cumulative_cost),
-            )
-            for label, persisted, recomputed in cumulative_fields:
-                if persisted != recomputed:
-                    raise ExperimentControllerError(
-                        f"usage entry cumulative {label} is inconsistent"
-                    )
-
-            claim_refs.append(entry.claim_ref)
-            candidate_refs.append(claim.candidate_ref)
-            evaluation_refs.append(claim.evaluation_ref)
-            seen_candidates.add(claim.candidate_ref.sha256)
-            seen_evaluations.add(claim.evaluation_ref.sha256)
-            seen_batches.update(batch_hashes)
-            previous_entry_ref = entry_ref
-
-        return ExperimentUsage(
-            experiment_ref=self.experiment_ref,
-            protocol_ref=self.protocol_ref,
-            tail_ref=ArtifactRef.model_validate(tail_ref),
-            entry_refs=tuple(entry_ref for entry_ref, _ in entries),
-            claim_refs=tuple(claim_refs),
-            candidate_refs=tuple(candidate_refs),
-            evaluation_refs=tuple(evaluation_refs),
-            query_count=len(entries),
-            total_evaluations=cumulative,
-            total_tokens=cumulative_tokens,
-            total_tool_calls=cumulative_tool_calls,
-            total_wall_time_seconds=cumulative_wall_time,
-            total_cost_usd=cumulative_cost,
-            max_evaluations=self._max_evaluations,
-            max_tokens=self._budget_limits.max_tokens,
-            max_tool_calls=self._budget_limits.max_tool_calls,
-            max_wall_time_seconds=self._budget_limits.max_wall_time_seconds,
-            max_cost_usd=self._budget_limits.max_cost_usd,
-            remaining_evaluations=self._max_evaluations - cumulative,
-            remaining_tokens=(
-                None
-                if self._budget_limits.max_tokens is None
-                else self._budget_limits.max_tokens - cumulative_tokens
-            ),
-            remaining_tool_calls=(
-                None
-                if self._budget_limits.max_tool_calls is None
-                else self._budget_limits.max_tool_calls - cumulative_tool_calls
-            ),
-            remaining_wall_time_seconds=(
-                None
-                if self._budget_limits.max_wall_time_seconds is None
-                else self._budget_limits.max_wall_time_seconds - cumulative_wall_time
-            ),
-            remaining_cost_usd=(
-                None
-                if self._budget_limits.max_cost_usd is None or cumulative_cost is None
-                else self._budget_limits.max_cost_usd - cumulative_cost
-            ),
-        )
+        try:
+            return self._usage_ledger.replay(tail_ref)
+        except ExperimentUsageBudgetError as exc:
+            raise ExperimentBudgetError(str(exc)) from exc
+        except ExperimentUsageLedgerError as exc:
+            raise ExperimentControllerError(str(exc)) from exc
 
     def _reject_duplicate_usage(
         self,
@@ -2247,13 +2023,37 @@ class ExperimentController:
             ref for ref in evidence_refs if ref.media_type == GATE_EVALUATION_MANIFEST_MEDIA_TYPE
         )
         usage_entries = tuple(
-            ref for ref in evidence_refs if ref.media_type == EXPERIMENT_USAGE_ENTRY_MEDIA_TYPE
+            ref for ref in evidence_refs if ref.media_type in EXPERIMENT_USAGE_ENTRY_MEDIA_TYPES
         )
         if len(evidence_refs) != 2 or len(evaluations) != 1 or len(usage_entries) != 1:
             raise ExperimentControllerError(
                 "evidence-complete event must bind exactly one evaluation and usage entry"
             )
         return evaluations[0], usage_entries[0]
+
+    def _load_usage_entry(
+        self,
+        ref: ArtifactRef,
+        label: str,
+    ) -> ExperimentUsageEntryV1 | ExperimentUsageEntry:
+        """Load one frozen usage-entry version from its declared media type."""
+
+        checked_ref = ArtifactRef.model_validate(ref)
+        if checked_ref.media_type == EXPERIMENT_USAGE_ENTRY_V1_MEDIA_TYPE:
+            return self._load(
+                checked_ref,
+                ExperimentUsageEntryV1,
+                label,
+                expected_media_type=EXPERIMENT_USAGE_ENTRY_V1_MEDIA_TYPE,
+            )
+        if checked_ref.media_type == EXPERIMENT_USAGE_ENTRY_MEDIA_TYPE:
+            return self._load(
+                checked_ref,
+                ExperimentUsageEntry,
+                label,
+                expected_media_type=EXPERIMENT_USAGE_ENTRY_MEDIA_TYPE,
+            )
+        raise ExperimentControllerError(f"{label} declares an unsupported version")
 
     def _load[ModelT](
         self,
@@ -2298,26 +2098,8 @@ class ExperimentController:
 
 
 __all__ = [
-    "ADMISSION_FAILURE_REPORT_MEDIA_TYPE",
-    "EXPERIMENT_USAGE_CLAIM_MEDIA_TYPE",
-    "EXPERIMENT_USAGE_ENTRY_MEDIA_TYPE",
-    "PROBE_REJECTION_REPORT_MEDIA_TYPE",
-    "SUPERSEDED_CANDIDATE_REPORT_MEDIA_TYPE",
-    "TERMINAL_TRANSITION_AUTHORIZATION_MEDIA_TYPE",
-    "AdmissionFailureCode",
-    "AdmissionFailureReport",
-    "CandidateSupersessionCode",
-    "EvidenceCompletion",
     "ExperimentBudgetError",
     "ExperimentController",
     "ExperimentControllerError",
-    "ExperimentUsage",
-    "ExperimentUsageClaim",
-    "ExperimentUsageEntry",
-    "ProbeRejectionCode",
-    "ProbeRejectionReport",
     "StaleControllerTailError",
-    "SupersededCandidateReport",
-    "TerminalCompletion",
-    "TerminalTransitionAuthorization",
 ]

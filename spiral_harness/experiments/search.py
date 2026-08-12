@@ -38,7 +38,7 @@ from spiral_harness.evolution.models import (
     SearchStoppingPolicy,
 )
 from spiral_harness.experiments.baselines import BaselineKind
-from spiral_harness.experiments.controller import (
+from spiral_harness.experiments.controller_artifacts import (
     TERMINAL_TRANSITION_AUTHORIZATION_MEDIA_TYPE,
     TerminalTransitionAuthorization,
 )

@@ -26,8 +26,8 @@ from spiral_harness.evolution.controlled_demo import (
     run_controlled_demo,
 )
 from spiral_harness.experiments.admission import AdmissionReport
-from spiral_harness.experiments.controller import (
-    ExperimentController,
+from spiral_harness.experiments.controller import ExperimentController
+from spiral_harness.experiments.controller_artifacts import (
     ExperimentUsageClaim,
     ExperimentUsageEntry,
     TerminalTransitionAuthorization,

@@ -174,7 +174,23 @@ The first declarative skill execution slice now adds:
   rule order must be preserved, and every seed-affecting schedule coordinate is
   fixed by the policy roster;
 - controller lifecycle binding and replay of that plan before entering probes,
-  again before gate authorization, and again when gate history is consumed.
+  again before gate authorization, and again when gate history is consumed;
+- a controller-owned, one-shot process-local execution authorization bound to
+  the exact experiment, protocol, candidate, plan, and current
+  `RUNNING_PROBES` tail. The authorized executor runs the frozen revert arm
+  before the placebo arm, constructing a new process-local runner wrapper,
+  preflight certificate, writer epoch, and attempt ledger for each arm. The two
+  backend objects are caller-supplied; requiring different objects prevents
+  direct reuse but does not attest backend/provider-session or runtime reset;
+- score-free matched parent/candidate execution over exact typed probe tasks,
+  whose schema contains only the frozen task ID and question. Live-ledger
+  replay closes the exact receipts, usage, task bytes, and candidate request
+  inclusion separately for both arms;
+- a non-promoting matched-execution closure and request-inclusion shadow report.
+  While the original controller capability and both live ledger writers remain
+  available, verification re-derives the exact process-local authorization,
+  receipt/accounting, task, and request-construction chain. These artifacts are
+  not durable standalone proofs, and both hard-code `promotion_authority=false`.
 
 The automatic-search control kernel now adds:
 
@@ -206,7 +222,10 @@ and losing an ephemeral key prevents cryptographic replay in another process.
 The signers, grader, and controller therefore remain trusted code in one
 interpreter. The capability policy is a schema/admission contract rather than
 an OS-enforced sandbox; there is no enforced network, filesystem, or process
-isolation.
+isolation. Python private attributes, name mangling, constructor guards, and
+distinct in-process objects are composition checks, not hostile-code security
+boundaries; the entire interpreter and controller composition belong to the
+trusted computing base.
 
 The controllers and attempt ledger use caller-held content-addressed tails and
 one in-process single writer. Experiment-lifecycle resume is rejected because
@@ -234,12 +253,16 @@ the trusted in-process runner rather than cryptographic producer attestations.
 
 The skill slice establishes package integrity, direct/existence-only reference
 closure, immediate revision admission, exact settled request inclusion/replay,
-and candidate-bound matched-control preregistration. The new policy and plan
-freeze intended authorities, opaque probe/config artifacts, thresholds, and
-execution coordinates; they do not yet run or attest those probes. In
-particular, the slice does not prove remote-provider delivery, model attention
-or activation, adherence, behavior change, downstream benefit, or
-generalization. Dedicated evidence producers and verifiers are not yet wired,
+candidate-bound matched-control preregistration, and one controller-authorized
+process-local execution of the revert arm followed by the placebo arm. Each arm
+has a distinct process-local runner/ledger wrapper, preflight, and writer epoch;
+the closure can replay the exact typed task and request-inclusion bindings only
+through the original live capability and ledger writers. This is a score-free
+plumbing and integrity result, not mechanism or efficacy evidence. It does not
+prove remote-provider delivery, model attention or runtime
+activation, adherence, behavior change, a revert/placebo causal effect,
+downstream benefit, or generalization. The shadow report has no promotion
+authority; dedicated claim evidence producers and verifiers are not yet wired,
 and generic mechanism signatures for every reserved skill claim remain
 quarantined, so no skill can reach promotion. The automatic strategy grammar,
 finite catalogue, and proposal contracts remain prompt-only; there is no
@@ -248,10 +271,10 @@ does not yet demonstrate a skill gain.
 
 The next implementation stages are:
 
-1. execute the preregistered matched schedules and add independently attested,
-   replayable provider-delivery, runtime-activation, adherence, behavior,
-   revert, and placebo evidence producers before unquarantining any skill gate
-   check;
+1. run a new preregistered scored matched claim-capture study under the same
+   frozen construction, with replayable provider-delivery, runtime-activation,
+   adherence, behavior, and revert/placebo-effect capture, before
+   unquarantining any skill gate check;
 2. extend the bounded search grammar to skill proposals only after that
    verification path is fail-closed, then connect the replayable conditions to
    a credentialed fixed-model provider and preregistered reportable study;

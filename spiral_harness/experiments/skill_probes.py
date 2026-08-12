@@ -35,11 +35,13 @@ from spiral_harness.verification.mechanism import (
 )
 from spiral_harness.verification.models import GateConfig
 from spiral_harness.verification.skill_plan import (
+    CONTROLLED_SKILL_PROBE_TASK_MEDIA_TYPE,
     NEUTRAL_SKILL_RULES_MEDIA_TYPE,
     SKILL_MECHANISM_PLAN_MEDIA_TYPE,
     SKILL_PLACEBO_CONTROL_MEDIA_TYPE,
     SKILL_PROBE_ROSTER_MEDIA_TYPE,
     SKILL_VERIFICATION_POLICY_MEDIA_TYPE,
+    ControlledSkillProbeTask,
     NeutralSkillRules,
     SkillMechanismPlan,
     SkillPlaceboControl,
@@ -241,6 +243,20 @@ def _verify_policy(
         raise SkillProbePreregistrationError("probe roster uses another evidence profile")
     if len(roster.task_ids) < policy.min_probe_tasks:
         raise SkillProbePreregistrationError("probe roster is below the policy task minimum")
+    tasks = tuple(
+        _load_exact(
+            repository,
+            ref,
+            ControlledSkillProbeTask,
+            media_type=CONTROLLED_SKILL_PROBE_TASK_MEDIA_TYPE,
+            label="controlled skill probe task",
+        )
+        for ref in roster.task_refs
+    )
+    if tuple(sorted(task.task_id for task in tasks)) != roster.task_ids:
+        raise SkillProbePreregistrationError(
+            "controlled skill probe tasks do not match the frozen roster task IDs"
+        )
     _require_sources(
         repository,
         (
