@@ -18,6 +18,13 @@ from spiral_harness.experiments.baseline_execution import (
     derive_baseline_gate_schedules,
     summarize_baseline_gate_usage,
 )
+from spiral_harness.experiments.baseline_gate_closure import (
+    BASELINE_GATE_USAGE_REPORT_MEDIA_TYPE,
+    BaselineGateClosureError,
+    BaselineGateStudyClosure,
+    build_baseline_gate_study_closure,
+    publish_baseline_gate_study_closure,
+)
 from spiral_harness.experiments.baselines import (
     BaselineKind,
     BaselineProtocolConsistencyReport,
@@ -29,10 +36,6 @@ from spiral_harness.experiments.baselines import (
 )
 from spiral_harness.storage.protocol import ArtifactRepository
 from spiral_harness.verification.artifacts import TrustedGateBatchService
-
-BASELINE_GATE_USAGE_REPORT_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.baseline-gate-usage-report.v1+json"
-)
 
 
 class BaselineGateRunnerError(RuntimeError):
@@ -56,6 +59,8 @@ class BaselineGateStudyExecution:
 
     executions: tuple[BaselineGateExecution, ...]
     consistency: BaselineProtocolConsistencyReport
+    closure: BaselineGateStudyClosure
+    closure_ref: ArtifactRef
 
 
 RunnerFactory = Callable[[EvaluationBatchSchedule], tuple[FixedModelRunner, AttemptLedger]]
@@ -218,7 +223,31 @@ class TrustedBaselineGateRunner[TaskT]:
             checked_plan,
             tuple(execution.report for execution in executions),
         )
-        return BaselineGateStudyExecution(executions=executions, consistency=consistency)
+        try:
+            closure = build_baseline_gate_study_closure(
+                plan=checked_plan,
+                query=query,
+                protocol_ref=protocol_ref,
+                gate_split_ref=gate_split_ref,
+                parent_harness_ref=parent_harness_ref,
+                task_ids=task_ids,
+                token_ceiling_per_attempt=token_ceiling_per_attempt,
+                executions=executions,
+                consistency=consistency,
+            )
+            closure_ref = publish_baseline_gate_study_closure(
+                self._repository,
+                closure,
+                plan=checked_plan,
+            )
+        except BaselineGateClosureError as exc:
+            raise BaselineGateRunnerError(str(exc)) from exc
+        return BaselineGateStudyExecution(
+            executions=executions,
+            consistency=consistency,
+            closure=closure,
+            closure_ref=closure_ref,
+        )
 
     def _execute_schedule(
         self,

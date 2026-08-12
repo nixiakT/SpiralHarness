@@ -172,5 +172,17 @@ every frozen search-run seed before producing a budget-checked
 `BaselineUsageReport`. That report remains a structural aggregate input, not a
 final attestation that a four-condition comparison is reportable.
 
+The runner also publishes a `BaselineGateStudyClosure` after all four condition
+reports validate together. The closure is a content-addressed audit bundle over
+the plan fingerprint, query, protocol ref, GATE split ref, parent harness ref,
+task axis, token ceiling, condition reports, derived schedules, trusted usage,
+preflight refs, parent/candidate gate-batch refs, execution receipts, model
+execution refs, and attempt outcome refs. Replaying the closure reloads each
+referenced artifact and checks the report refs, schedule cells, gate-batch
+observation seeds, harness sides, receipt/execution/outcome joins, and preflight
+model boundary. It is deliberately labeled non-reportable: it proves structural
+closure of the trusted-runner evidence that exists locally, not a final
+benchmark-gain claim.
+
 The exact loop and its remaining trust limitations are specified in
 [`search-protocol.md`](search-protocol.md).

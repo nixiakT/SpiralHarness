@@ -123,11 +123,14 @@ score-free executions, adapter-owned grading, receipt replay, and signed
 parent/candidate gate batches. A separate baseline execution binding derives
 those GATE schedules from the four-condition plan, and the trusted baseline
 GATE runner executes each derived schedule under a fresh exact-budget attempt
-ledger before publishing canonical usage report artifacts. The runner rejects
-protocol/benchmark/grader, split, roster, model-spec, and attestor drift before
-invoking the backend. It also freezes the static, random-valid, prompt-only, and
-evidence-targeted comparison contract, but these artifacts remain structural
-usage evidence rather than reportable benchmark-gain attestations. The
+ledger before publishing canonical usage report artifacts and a four-condition
+study closure that reloads reports, preflights, gate batches, receipts,
+executions, outcomes, schedule cells, harness sides, and rollout seeds. The
+runner rejects protocol/benchmark/grader, split, roster, model-spec, and
+attestor drift before invoking the backend. It also freezes the static,
+random-valid, prompt-only, and evidence-targeted comparison contract, but these
+artifacts remain structural usage evidence rather than reportable benchmark-gain
+attestations. The
 automatic-search kernel now consumes
 that contract through exact run manifests, scoped strategy views, typed
 diagnosis/proposal artifacts, receipt-backed exploration screens, one-candidate
@@ -249,6 +252,7 @@ Core artifacts are:
 | `ControlledSkillProbeTask` / `SkillProbeRoster` | exact score-free task ID/question artifacts and typed exploration roster consumed by both matched schedules |
 | `SkillProbeExecutionAuthorization` | one-shot process-local controller grant bound to the exact experiment/protocol/candidate/plan and current `RUNNING_PROBES` tail |
 | `MatchedSkillProbeClosure` / `SkillProbeShadowReport` | distinct process-local per-arm preflight/ledger/receipt/usage closure, verifiable only with the original capability and live ledger writers, plus request-inclusion-only shadow evidence with no promotion authority |
+| `BaselineGateStudyClosure` | four-condition structural GATE study closure over reports, schedules, preflights, signed gate batches, receipts, model executions, and outcomes, explicitly without benchmark-result authority |
 | `ModelRequest` v2 | task, exact harness-manifest ref, base prompt, optional skill disclosure, resolved prompt and hashes, user prompt, and seed |
 | `ModelExecution` v2 | complete frozen model spec, exact request, score-free output/status/usage, paired execution identity, and request hash |
 | `AttemptReservation` / `AttemptOutcome` v3 | ledger and budget identity, originating writer epoch, contiguous chain links, reserved/reported/charged usage, disposition, and execution ref |

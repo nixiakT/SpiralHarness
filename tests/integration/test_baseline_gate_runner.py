@@ -29,8 +29,14 @@ from spiral_harness.execution.contracts import (
 )
 from spiral_harness.execution.model import FixedModelRunner, ReplayBackend
 from spiral_harness.execution.schedule import EvaluationBatchSchedule
-from spiral_harness.experiments.baseline_gate_runner import (
+from spiral_harness.experiments.baseline_gate_closure import (
+    BASELINE_GATE_STUDY_CLOSURE_MEDIA_TYPE,
     BASELINE_GATE_USAGE_REPORT_MEDIA_TYPE,
+    BaselineGateClosureError,
+    BaselineGateStudyClosure,
+    verify_baseline_gate_study_closure,
+)
+from spiral_harness.experiments.baseline_gate_runner import (
     BaselineGateRunnerError,
     TrustedBaselineGateRunner,
     baseline_gate_attempt_budget,
@@ -468,9 +474,63 @@ def test_baseline_gate_runner_executes_all_four_conditions_and_validates_usage(
     )
     assert study.consistency.execution_attested is False
     assert tuple(execution.kind for execution in study.executions) == tuple(BaselineKind)
+    assert study.closure_ref.media_type == BASELINE_GATE_STUDY_CLOSURE_MEDIA_TYPE
+    assert fixture.store.get_json(study.closure_ref, BaselineGateStudyClosure) == study.closure
+    assert (
+        verify_baseline_gate_study_closure(fixture.store, study.closure_ref, plan=fixture.plan)
+        == study.closure
+    )
+    assert study.closure.reportable_benchmark_result is False
+    assert frozenset(condition.kind for condition in study.closure.conditions) == frozenset(
+        BaselineKind
+    )
+    execution_refs = {execution.kind: execution.report_ref for execution in study.executions}
+    closure_refs = {condition.kind: condition.report_ref for condition in study.closure.conditions}
+    assert closure_refs == execution_refs
     assert len(fixture.backends) == 8
     assert sum(len(backend.calls) for backend in fixture.backends) == 64
     assert {execution.report.used.evaluations for execution in study.executions} == {16}
+
+
+def test_baseline_gate_closure_rejects_tampered_embedded_usage_report(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    factories = {kind: _runner_factory(fixture, kind=kind) for kind in BaselineKind}
+    study = TrustedBaselineGateRunner(
+        fixture.store,
+        adapter=fixture.adapter,
+        gate_batch_service=fixture.gate_batch_service,
+    ).execute_study(
+        fixture.plan,
+        query=0,
+        protocol_ref=fixture.protocol_ref,
+        protocol=fixture.protocol,
+        candidate_refs=fixture.candidate_refs,
+        parent_harness_ref=fixture.parent_ref,
+        candidate_harness_refs=fixture.candidate_harness_refs,
+        gate_split_ref=fixture.gate_split_ref,
+        mechanism_evidence_refs=fixture.mechanism_evidence_refs,
+        task_ids=fixture.task_ids,
+        token_ceiling_per_attempt=32,
+        runner_factories=factories,
+    )
+
+    condition = study.closure.conditions[0]
+    forged_report = condition.report.model_copy(
+        update={"used": condition.report.used.model_copy(update={"tokens": 0})}
+    )
+    forged_condition = condition.model_copy(update={"report": forged_report})
+    forged_closure = study.closure.model_copy(
+        update={"conditions": (forged_condition, *study.closure.conditions[1:])}
+    )
+    forged_ref = fixture.store.put_json(
+        forged_closure,
+        media_type=BASELINE_GATE_STUDY_CLOSURE_MEDIA_TYPE,
+    )
+
+    with pytest.raises(BaselineGateClosureError, match="embedded usage report differs"):
+        verify_baseline_gate_study_closure(fixture.store, forged_ref, plan=fixture.plan)
 
 
 def test_baseline_gate_runner_rejects_non_fresh_or_wrong_budget_ledger_before_backend(
