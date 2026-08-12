@@ -128,6 +128,10 @@ The first M1 benchmark/runner foundation now also includes:
   the fixed runner, keeps grading inside the adapter, signs parent/candidate
   gate batches, and fails before backend calls if the protocol, split, roster,
   model spec, or attestor identity drifts;
+- a baseline execution binding that derives plan-owned GATE schedules for each
+  condition/search-run seed and converts receipt-backed runner usage into
+  budget-checked baseline usage reports without treating them as final fairness
+  attestations;
 - an immutable v3 attempt reservation/outcome ledger whose records bind the
   originating writer epoch, reserve before a backend call, settle successes,
   burn uncertain failures, poison known token overruns, and make reopened tails

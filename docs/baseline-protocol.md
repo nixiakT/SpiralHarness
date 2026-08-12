@@ -157,5 +157,16 @@ domain-separated strategy seed; a search-run seed is never reused as a task
 rollout seed. Prompt-only and evidence-targeted invocations use one frozen
 model/inference/runtime profile and controller-owned invocation ceilings.
 
+`experiments/baseline_execution.py` now derives the trusted GATE batch schedule
+for one condition/search-run seed from the persisted `BaselineStudyPlan`. It
+freezes the plan fingerprint into the schedule study label, uses the baseline
+kind as the schedule kind, preserves the plan's paired repeat seeds, derives a
+separate schedule master seed, and rejects schedules whose full gate axis would
+exceed the condition's evaluation or token ceiling. Its usage summarizer accepts
+only complete settled `TrustedBenchmarkBatchRunner` usage for every frozen
+search-run seed before producing a budget-checked `BaselineUsageReport`. That
+report remains a structural aggregate input, not a final attestation that a
+four-condition comparison is reportable.
+
 The exact loop and its remaining trust limitations are specified in
 [`search-protocol.md`](search-protocol.md).
