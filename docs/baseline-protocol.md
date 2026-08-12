@@ -184,5 +184,13 @@ model boundary. It is deliberately labeled non-reportable: it proves structural
 closure of the trusted-runner evidence that exists locally, not a final
 benchmark-gain claim.
 
+`BaselineGateStudyAcceptance` is the bridge from this runner evidence back to
+the study controller. It can be published only after the study journal replays
+to `SEALED_AUTHORIZED`. Verification replays the sealed authorization and
+barrier closure, revalidates the complete `BaselineGateStudyClosure`, and
+requires its protocol ref, GATE split ref, and parent/seed harness ref to match
+the experiments registered behind the study barrier. A closure that is
+self-consistent but produced for another protocol boundary is rejected.
+
 The exact loop and its remaining trust limitations are specified in
 [`search-protocol.md`](search-protocol.md).

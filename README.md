@@ -138,6 +138,10 @@ The first M1 benchmark/runner foundation now also includes:
   reports, preflights, gate batches, receipts, executions, outcomes, schedule
   cells, harness sides, and rollout seeds while still marking the result as
   structural usage evidence rather than a reportable benchmark gain;
+- a study-level baseline GATE acceptance artifact that can be published only
+  after the `StudyController` sealed barrier replays, revalidates the runner
+  closure, and joins it back to the study's frozen protocol, GATE split, and
+  seed harness;
 - an immutable v3 attempt reservation/outcome ledger whose records bind the
   originating writer epoch, reserve before a backend call, settle successes,
   burn uncertain failures, poison known token overruns, and make reopened tails

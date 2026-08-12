@@ -32,6 +32,7 @@ from spiral_harness.evolution.replay_runtime import (
 )
 from spiral_harness.evolution.replay_setup import (
     SEARCH_RUN_SEEDS,
+    FrozenReplayFixture,
     build_frozen_replay_fixture,
     freeze_replay_search_runs,
     put_json,
@@ -158,6 +159,7 @@ class ReplayStudyRunExecution:
 class ReplayStudyExecution:
     """In-memory execution and its durable content-addressed summary."""
 
+    fixture: FrozenReplayFixture
     result_ref: ArtifactRef
     result: ReplayStudyResult
     study_controller: StudyController
@@ -329,6 +331,7 @@ def run_non_reportable_replay_study(root: str | Path) -> ReplayStudyExecution:
         media_type=REPLAY_STUDY_RESULT_MEDIA_TYPE,
     )
     return ReplayStudyExecution(
+        fixture=fixture,
         result_ref=result_ref,
         result=result,
         study_controller=study_controller,

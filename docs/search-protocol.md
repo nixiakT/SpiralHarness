@@ -179,6 +179,13 @@ replays both live controllers. After all required cells are registered, the
 study controller writes a barrier closure and re-verifies every live run at its
 exact tail before emitting the study-level sealed authorization.
 
+A separate baseline GATE acceptance artifact now lets upper-level experiment
+flow consume trusted-runner closure evidence without weakening the controller.
+It is accepted only from the sealed study tail, replays the barrier bindings,
+then joins the `BaselineGateStudyClosure` to the study's protocol, GATE split,
+and seed harness. It remains structural and non-reportable; final sealed scoring
+is a later producer.
+
 This is a logical, in-process capability barrier. It detects if an experiment
 was moved into sealed execution before study authorization, but it cannot
 physically stop other code in the same interpreter from retaining and calling

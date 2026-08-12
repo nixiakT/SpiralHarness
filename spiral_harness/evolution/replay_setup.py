@@ -68,6 +68,7 @@ from spiral_harness.evolution.strategies import (
     make_search_stopping_policy,
     make_strategy_plugin_manifest,
 )
+from spiral_harness.execution.contracts import FrozenModelSpec, InferenceConfig
 from spiral_harness.execution.policy import CAPABILITY_POLICY_MEDIA_TYPE, CapabilityPolicy
 from spiral_harness.experiments.baselines import (
     BASELINE_STUDY_PLAN_MEDIA_TYPE,
@@ -87,6 +88,7 @@ from spiral_harness.verification.models import GateConfig
 
 GATE_CONFIG_MEDIA_TYPE = "application/vnd.spiral-harness.gate-config+json"
 PROMPT_MEDIA_TYPE = "text/plain"
+REPLAY_BENCHMARK_FINGERPRINT = "non-reportable-replay-benchmark-v1"
 SEARCH_RUN_SEEDS = (701, 702)
 REPEAT_SEEDS = (11, 12)
 FAMILY_ALPHA = 0.05
@@ -111,6 +113,7 @@ class ReplayFeedbackArtifacts:
 @dataclass(frozen=True, slots=True)
 class FrozenReplayFixture:
     store: ArtifactStore
+    model_spec: FrozenModelSpec
     protocol: ProtocolManifest
     protocol_ref: ArtifactRef
     experiment: ExperimentManifest
@@ -140,6 +143,26 @@ def put_json(
     media_type: str = "application/json",
 ) -> ArtifactRef:
     return store.put_json(value, media_type=media_type)
+
+
+def fixed_replay_model_spec() -> FrozenModelSpec:
+    """Return the fixed model contract shared by the replay study fixtures."""
+
+    return FrozenModelSpec(
+        backend="deterministic-replay",
+        backend_fingerprint="replay-study-backend@sha256:non-reportable-v1",
+        model="fixture/replay-study-model",
+        revision="snapshot-2026-08-12",
+        tokenizer="fixture/replay-study-tokenizer",
+        tokenizer_revision="snapshot-2026-08-12",
+        runtime="python-3.12/replay-study-v1",
+        inference=InferenceConfig(
+            temperature=0.0,
+            top_p=1.0,
+            max_output_tokens=32,
+            timeout_seconds=10.0,
+        ),
+    )
 
 
 def _build_feedback_artifacts(
@@ -283,6 +306,7 @@ def build_frozen_replay_fixture(root: str | Path) -> FrozenReplayFixture:
     """Freeze every artifact shared by the eight replay-study cells."""
 
     store = ArtifactStore(root)
+    model_spec = fixed_replay_model_spec()
     gate_batch_service = TrustedGateBatchService()
     mechanism_evidence_service = TrustedMechanismEvidenceService()
     objective_service = TrustedObjectiveAggregateService(
@@ -350,8 +374,8 @@ def build_frozen_replay_fixture(root: str | Path) -> FrozenReplayFixture:
         max_evaluations=100,
     )
     seed_harness = HarnessManifest(
-        model_fingerprint="fixture-fixed-model@sha256:non-reportable-v1",
-        runtime_fingerprint="fixture-runtime@sha256:non-reportable-v1",
+        model_fingerprint=model_spec.model_fingerprint,
+        runtime_fingerprint=model_spec.runtime_fingerprint,
         trusted_plane_version="fixture-trusted-plane-v1",
         components=(
             HarnessComponentRef(
@@ -368,15 +392,15 @@ def build_frozen_replay_fixture(root: str | Path) -> FrozenReplayFixture:
         media_type=HARNESS_MANIFEST_MEDIA_TYPE,
     )
     protocol = ProtocolManifest(
-        benchmark_fingerprint="non-reportable-replay-benchmark-v1",
+        benchmark_fingerprint=REPLAY_BENCHMARK_FINGERPRINT,
         splits=splits,
         model_fingerprint=seed_harness.model_fingerprint,
-        inference_fingerprint="fixture-inference@sha256:non-reportable-v1",
+        inference_fingerprint=model_spec.inference_fingerprint,
         runtime_fingerprint=seed_harness.runtime_fingerprint,
-        model_spec_fingerprint="0" * 64,
+        model_spec_fingerprint=model_spec.fingerprint,
         sandbox_fingerprint="fixture-logical-isolation:no-security-claim",
         capability_policy_ref=capability_policy_ref,
-        grader_fingerprint="fixture-grader@sha256:non-reportable-v1",
+        grader_fingerprint=REPLAY_BENCHMARK_FINGERPRINT,
         gate_batch_attestor_id=gate_batch_service.attestor_id,
         mechanism_evidence_attestor_id=mechanism_evidence_service.attestor_id,
         gate_config_ref=gate_config_ref,
@@ -565,6 +589,7 @@ def build_frozen_replay_fixture(root: str | Path) -> FrozenReplayFixture:
     )
     return FrozenReplayFixture(
         store=store,
+        model_spec=model_spec,
         protocol=protocol,
         protocol_ref=protocol_ref,
         experiment=experiment,
@@ -637,10 +662,12 @@ def freeze_replay_search_runs(
 __all__ = [
     "PROMPT_COMPONENT_NAME",
     "REPEAT_SEEDS",
+    "REPLAY_BENCHMARK_FINGERPRINT",
     "SEARCH_RUN_SEEDS",
     "FrozenReplayFixture",
     "ReplayFeedbackArtifacts",
     "build_frozen_replay_fixture",
+    "fixed_replay_model_spec",
     "freeze_replay_search_runs",
     "put_json",
 ]

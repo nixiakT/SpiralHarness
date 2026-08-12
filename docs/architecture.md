@@ -478,9 +478,9 @@ hashes, but M0.2 does not replay those sources to re-derive mechanism booleans
 or scores. M0.2 itself also has no durable multi-process compare-and-swap,
 lease, transactional head update, pre-execution attempt reservation, or
 authenticated sealed-evaluator producer. M1 now supplies a local trusted-runner
-reservation stream, while the remaining isolation, attestation, and durable
-coordination controls must still be implemented before those broader claims
-apply.
+reservation stream and a study-barrier acceptance artifact for baseline GATE
+closures, while the remaining isolation, attestation, and durable coordination
+controls must still be implemented before those broader claims apply.
 
 The controlled adversarial suite now covers no-op, wrong-target, inactive,
 non-adherent, placebo, regression, timeout, malformed, tamper, budget, and
@@ -575,8 +575,10 @@ lifecycle closure, and replay from artifact hashes. The M1 runner/adapter
 integration additionally exercises score-free GSM8K execution, pre-call
 reservation, and trusted grading. The automatic-search fixture executes the
 four matched strategy conditions across multiple independent run seeds through
-the same bounded controller path and study barrier. It remains explicitly
-non-reportable. Skill integration tests establish canonical package loading,
+the same bounded controller path and study barrier. Baseline GATE acceptance
+tests join that sealed barrier to a replayed trusted-runner closure, while
+keeping the result explicitly non-reportable. Skill integration tests establish
+canonical package loading,
 direct-edge revision admission, exact rules-only materialization, and
 exact settled skill request inclusion/replay. They also exercise Protocol v4
 policy binding, candidate-bound matched-control construction, complete schedule
