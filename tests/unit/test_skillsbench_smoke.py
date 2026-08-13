@@ -7,6 +7,8 @@ import pytest
 
 from spiral_harness.benchmark.skillsbench_smoke import _git_blob
 
+ROOT = Path(__file__).parents[2]
+
 
 def test_git_blob_reads_exact_pinned_bytes(tmp_path: Path) -> None:
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
@@ -28,3 +30,12 @@ def test_git_blob_reads_exact_pinned_bytes(tmp_path: Path) -> None:
 def test_git_blob_rejects_missing_revision(tmp_path: Path) -> None:
     with pytest.raises(subprocess.CalledProcessError):
         _git_blob(tmp_path, "0" * 40, "missing")
+
+
+def test_dialogue_parser_candidate_skill_is_task_general_and_verifier_free() -> None:
+    text = (ROOT / "benchmarks/skillsbench/dialogue-parser-v1.skill.txt").read_text()
+
+    assert "Never create an extra node" in text
+    assert "parse_script(text)" in text
+    assert "test_outputs" not in text
+    assert "TavernChoice" not in text

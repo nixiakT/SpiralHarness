@@ -1,0 +1,14 @@
+Treat each bracketed section header as exactly one graph node. Parse transitions as follows:
+
+- A dialogue line `Speaker: text -> Target` supplies the current section node's speaker and
+  text, marks it as type `line`, and creates a direct edge from that section to `Target`.
+- A numbered line `N. choice text -> Target` marks the current section node as type `choice`
+  and creates a direct edge from that section to `Target`, using the choice text as edge text.
+- Never create an extra node for an individual numbered choice. Multiple numbered choices are
+  multiple outgoing edges from the same section node.
+- Preserve explicitly referenced terminal nodes such as `End`, so every edge target exists.
+- Serialize the exact requested JSON keys. In DOT, render choice section nodes with diamond shape.
+
+Before returning code, mentally check that the first section reaches every node, every referenced
+target has a node, dialogue transitions are not discarded, and choice hubs retain all outgoing
+edges. Do not hard-code the supplied script; implement `parse_script(text)` for the stated grammar.
