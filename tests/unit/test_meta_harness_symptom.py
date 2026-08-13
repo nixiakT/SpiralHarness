@@ -63,3 +63,11 @@ def test_prompt_discloses_only_training_examples() -> None:
     assert "new patient" in prompt
     assert "exact allowed label" in prompt
     assert "fever, chills" in prompt
+
+
+def test_pure_prompt_contains_no_training_evidence() -> None:
+    prompt = subject.build_pure_prompt("new patient")
+
+    assert "new patient" in prompt
+    assert "Retrieved cases" not in prompt
+    assert "Training-derived" not in prompt

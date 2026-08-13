@@ -345,6 +345,7 @@ def meta_harness_symptom(
     data_dir: Annotated[Path, typer.Option("--data-dir")],
     split: Annotated[str, typer.Option("--split")] = "val",
     model: Annotated[str, typer.Option("--model")] = "dashscope/qwen-flash",
+    arm: Annotated[str, typer.Option("--arm")] = "evolved",
     output: Annotated[Path, typer.Option("--output", "-o")] = Path("runs/meta-harness-symptom"),
     retrieval_k: Annotated[int, typer.Option("--retrieval-k")] = 8,
     max_output_tokens: Annotated[int, typer.Option("--max-output-tokens")] = 128,
@@ -367,6 +368,7 @@ def meta_harness_symptom(
         output=output,
         backend=backend,
         model=model,
+        arm=arm,
         retrieval_k=retrieval_k,
         max_output_tokens=max_output_tokens,
     )
@@ -377,6 +379,7 @@ def meta_harness_symptom(
             "revision",
             "split",
             "model",
+            "arm",
             "retrieval_k",
             "correct",
             "total",

@@ -194,6 +194,18 @@ def build_prompt(
     )
 
 
+def build_pure_prompt(question: str) -> str:
+    """Build the no-memory arm without training examples or derived profiles."""
+
+    return (
+        "Based on the patient's symptoms, select exactly one diagnosis from this allowed list: "
+        + ", ".join(LABELS)
+        + "\n\nPatient: "
+        + question
+        + "\n\nReturn only [DIAGNOSIS]exact allowed label[/DIAGNOSIS]."
+    )
+
+
 def run_symptom_evaluation(
     *,
     train_path: Path,
@@ -202,12 +214,15 @@ def run_symptom_evaluation(
     output: Path,
     backend: ModelBackend,
     model: str,
+    arm: str = "evolved",
     retrieval_k: int = 8,
     max_output_tokens: int = 128,
     timeout_seconds: float = 90.0,
 ) -> dict[str, object]:
     if split not in {"val", "test"}:
         raise ValueError("split must be val or test")
+    if arm not in {"pure", "evolved"}:
+        raise ValueError("arm must be pure or evolved")
     train = load_split(train_path, "train")
     evaluation = load_split(evaluation_path, split)
     retriever = SymptomRetriever(train)
@@ -218,6 +233,7 @@ def run_symptom_evaluation(
         {
             "schema_version": "1",
             "kind": "retrieval-classifier",
+            "arm": arm,
             "retrieval_k": retrieval_k,
             "prompt_builder_sha256": sha256_bytes(build_prompt.__code__.co_code),
         },
@@ -232,8 +248,14 @@ def run_symptom_evaluation(
     )
     records = []
     for index, item in enumerate(evaluation):
-        prompt = build_prompt(
-            item.question, retriever.retrieve(item.question, retrieval_k), label_profiles
+        prompt = (
+            build_pure_prompt(item.question)
+            if arm == "pure"
+            else build_prompt(
+                item.question,
+                retriever.retrieve(item.question, retrieval_k),
+                label_profiles,
+            )
         )
         response = backend.invoke(
             spec=spec,
@@ -267,6 +289,7 @@ def run_symptom_evaluation(
         "revision": META_HARNESS_REVISION,
         "split": split,
         "model": model,
+        "arm": arm,
         "retrieval_k": retrieval_k,
         "correct": correct,
         "total": len(records),
@@ -288,6 +311,7 @@ __all__ = [
     "REFERENCE_ACCURACY",
     "SymptomRetriever",
     "build_prompt",
+    "build_pure_prompt",
     "load_split",
     "parse_diagnosis",
     "run_symptom_evaluation",
