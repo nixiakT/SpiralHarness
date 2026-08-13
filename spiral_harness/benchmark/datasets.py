@@ -53,7 +53,7 @@ class DatasetArtifact(ImmutableModel):
     url: NonEmptyStr
     size: Annotated[int, Field(gt=0, strict=True)]
     sha256: Sha256
-    media_type: Literal["application/jsonl"] = "application/jsonl"
+    media_type: Literal["application/json", "application/jsonl"] = "application/jsonl"
 
     @field_validator("filename")
     @classmethod
@@ -231,7 +231,36 @@ GSM8K_PROVENANCE = DatasetProvenance(
     ),
 )
 
-DATASET_REGISTRY = DatasetRegistry(datasets=(GSM8K_PROVENANCE,))
+BBH_UPSTREAM_COMMIT = "9ee07bd481feebf959a6b59d61ea57bdcf30964d"
+_BBH_RAW_ROOT = (
+    "https://raw.githubusercontent.com/suzgunmirac/BIG-Bench-Hard/" + BBH_UPSTREAM_COMMIT
+)
+BBH_LOGICAL_DEDUCTION_SEVEN_PROVENANCE = DatasetProvenance(
+    dataset_id="bbh-logical-deduction-seven@" + BBH_UPSTREAM_COMMIT,
+    display_name="BIG-Bench Hard: Logical Deduction (Seven Objects)",
+    upstream_repository="https://github.com/suzgunmirac/BIG-Bench-Hard",
+    upstream_commit=BBH_UPSTREAM_COMMIT,
+    license=DatasetLicense(
+        spdx_id="MIT",
+        name="MIT License",
+        url=_BBH_RAW_ROOT + "/LICENSE",
+        copyright="Copyright (c) 2022 suzgunmirac",
+    ),
+    artifacts=(
+        DatasetArtifact(
+            role="development",
+            filename="logical_deduction_seven_objects.json",
+            url=_BBH_RAW_ROOT + "/bbh/logical_deduction_seven_objects.json",
+            size=198_404,
+            sha256="2896c7e3482eea318dd37bcc370d24ec3cc91e8374c1784287b5dbd38a529e33",
+            media_type="application/json",
+        ),
+    ),
+)
+
+DATASET_REGISTRY = DatasetRegistry(
+    datasets=(GSM8K_PROVENANCE, BBH_LOGICAL_DEDUCTION_SEVEN_PROVENANCE)
+)
 
 
 def read_dataset_snapshot(

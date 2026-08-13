@@ -89,6 +89,7 @@ class OpenAICompatibleChatBackend:
             payload,
             timeout_seconds=checked_spec.inference.timeout_seconds,
         )
+        _require_complete_chat_choice(response)
         output = _extract_chat_output(response)
         usage = _extract_usage(response)
         return BackendResponse(output=output, usage=usage, cost_usd=None)
@@ -167,6 +168,17 @@ def _extract_chat_output(response: dict[str, Any]) -> str:
         if text_parts:
             return "".join(text_parts)
     raise OpenAICompatibleBackendError("chat completion message content is not text")
+
+
+def _require_complete_chat_choice(response: dict[str, Any]) -> None:
+    """Reject provider-declared truncation before text can be graded as completed."""
+
+    choices = response.get("choices")
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        return
+    finish_reason = choices[0].get("finish_reason")
+    if finish_reason == "length":
+        raise OpenAICompatibleBackendError("chat completion was truncated at the token limit")
 
 
 def _extract_usage(response: dict[str, Any]) -> BackendTokenUsage:

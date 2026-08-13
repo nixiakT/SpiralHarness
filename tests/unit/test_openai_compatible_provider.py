@@ -147,6 +147,23 @@ def test_chat_backend_rejects_malformed_provider_responses() -> None:
         backend.invoke(spec=spec_for(backend), request=request())
 
 
+def test_chat_backend_rejects_token_limit_truncation_even_when_text_exists() -> None:
+    backend = CapturingBackend(
+        {
+            "choices": [
+                {
+                    "finish_reason": "length",
+                    "message": {"content": "unfinished reasoning that mentions (A)"},
+                }
+            ],
+            "usage": {"prompt_tokens": 11, "completion_tokens": 64},
+        }
+    )
+
+    with pytest.raises(OpenAICompatibleBackendError, match="truncated"):
+        backend.invoke(spec=spec_for(backend), request=request())
+
+
 def test_http_error_detail_does_not_include_request_headers(monkeypatch) -> None:
     backend = OpenAICompatibleChatBackend.from_endpoint(
         base_url="http://litellm.example/v1",

@@ -8,7 +8,9 @@ from typing import Annotated
 import typer
 
 from spiral_harness import __version__
+from spiral_harness.benchmark.bbh_smoke import run_bbh_smoke
 from spiral_harness.benchmark.datasets import (
+    BBH_LOGICAL_DEDUCTION_SEVEN_PROVENANCE,
     DATASET_REGISTRY,
     GSM8K_PROVENANCE,
     materialize_dataset,
@@ -230,6 +232,57 @@ def smoke_gsm8k(
         "reportable": False,
         "total_tokens": result.payload["total_tokens"],
     }
+    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
+@benchmark_app.command("smoke-bbh")
+def smoke_bbh(
+    model: Annotated[str, typer.Option("--model")] = "dashscope/qwen-flash",
+    dataset_dir: Annotated[Path, typer.Option("--dataset-dir")] = Path("data/benchmarks/bbh"),
+    output: Annotated[Path, typer.Option("--output", "-o")] = Path("runs/bbh-smoke/default"),
+    limit: Annotated[int, typer.Option("--limit")] = 16,
+    seed: Annotated[int, typer.Option("--seed")] = 0,
+    max_output_tokens: Annotated[int, typer.Option("--max-output-tokens")] = 512,
+    max_tokens_per_attempt: Annotated[int, typer.Option("--max-tokens-per-attempt")] = 1_024,
+    timeout_seconds: Annotated[float, typer.Option("--timeout-seconds")] = 90.0,
+    base_url_env: Annotated[str, typer.Option("--base-url-env")] = "LITELLM_BASE_URL",
+    api_key_env: Annotated[str, typer.Option("--api-key-env")] = "LITELLM_API_KEY",
+) -> None:
+    """Run a non-reportable public-development BBH logic sample."""
+
+    base_url = os.environ.get(base_url_env)
+    api_key = os.environ.get(api_key_env)
+    if not base_url:
+        raise typer.BadParameter(f"missing environment variable {base_url_env}")
+    if not api_key:
+        raise typer.BadParameter(f"missing environment variable {api_key_env}")
+    paths = materialize_dataset(BBH_LOGICAL_DEDUCTION_SEVEN_PROVENANCE, dataset_dir)
+    backend = OpenAICompatibleChatBackend.from_endpoint(base_url=base_url, api_key=api_key)
+    result = run_bbh_smoke(
+        dataset_path=paths[0],
+        output=output,
+        backend=backend,
+        model=model,
+        limit=limit,
+        seed=seed,
+        max_output_tokens=max_output_tokens,
+        max_tokens_per_attempt=max_tokens_per_attempt,
+        timeout_seconds=timeout_seconds,
+    )
+    summary = {
+        key: result.payload[key]
+        for key in (
+            "accuracy",
+            "completed_count",
+            "correct_count",
+            "disclaimer",
+            "limit",
+            "model",
+            "total_tokens",
+        )
+    }
+    summary["artifact_ref"] = result.artifact_ref.model_dump(mode="json")
+    summary["output"] = str(output.resolve())
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 
