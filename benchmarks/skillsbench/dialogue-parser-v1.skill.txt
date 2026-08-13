@@ -4,6 +4,8 @@ Treat each bracketed section header as exactly one graph node. Parse transitions
   text, marks it as type `line`, and creates a direct edge from that section to `Target`.
 - A numbered line `N. choice text -> Target` marks the current section node as type `choice`
   and creates a direct edge from that section to `Target`, using the choice text as edge text.
+- The current section node was already created by its header: update its `type` unconditionally
+  when parsing a numbered choice. Do not guard that update with “if the node does not exist”.
 - Never create an extra node for an individual numbered choice. Multiple numbered choices are
   multiple outgoing edges from the same section node.
 - Preserve terminal transitions, but follow the task's exception for the final target: a sentinel
@@ -14,3 +16,6 @@ Treat each bracketed section header as exactly one graph node. Parse transitions
 Before returning code, mentally check that the first section reaches every node, every referenced
 target has a node, dialogue transitions are not discarded, and choice hubs retain all outgoing
 edges. Do not hard-code the supplied script; implement `parse_script(text)` for the stated grammar.
+In particular, inspect the final node list and remove an implicit terminal sentinel if target
+placeholder creation introduced one; then confirm at least one parsed choice node is serialized as
+`type: choice`, which in turn must emit the literal DOT attribute `shape=diamond`.
