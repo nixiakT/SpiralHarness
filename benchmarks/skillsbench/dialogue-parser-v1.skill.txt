@@ -6,7 +6,9 @@ Treat each bracketed section header as exactly one graph node. Parse transitions
   and creates a direct edge from that section to `Target`, using the choice text as edge text.
 - Never create an extra node for an individual numbered choice. Multiple numbered choices are
   multiple outgoing edges from the same section node.
-- Preserve explicitly referenced terminal nodes such as `End`, so every edge target exists.
+- Preserve terminal transitions, but follow the task's exception for the final target: a sentinel
+  such as `End` may remain an implicit edge target rather than becoming an otherwise unreachable
+  node. All non-terminal edge targets must have section nodes.
 - Serialize the exact requested JSON keys. In DOT, render choice section nodes with diamond shape.
 
 Before returning code, mentally check that the first section reaches every node, every referenced
