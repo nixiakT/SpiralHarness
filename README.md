@@ -268,14 +268,17 @@ and exact source hashes; they do not re-execute source artifacts to derive
 mechanism booleans or scores. Typed capture/source replay and trusted regrading
 are not yet wired from the new runner into automatic gate-batch production.
 
-The fixed runner is provider-neutral and currently ships a deterministic replay
-backend, not a credentialed live-model provider. It does not add an OS sandbox,
-network/filesystem/process isolation, hard cancellation around a blocking SDK,
-an authoritative repository-wide ledger head, or cross-process attempt leases.
-Its local ledger hard-enforces attempts and tokens; backend-reported monetary
-cost is captured but is not yet pre-reserved or hard-bounded. Execution
-artifacts are strictly parsed and bound to reservations, but are assertions of
-the trusted in-process runner rather than cryptographic producer attestations.
+The fixed runner is provider-neutral and ships both a deterministic replay
+backend and a minimal OpenAI-compatible live-chat backend for non-reportable
+smoke runs. The live backend is not yet wired into a preregistered reportable
+study or sealed evaluator service. It does not add an OS sandbox,
+network/filesystem/process isolation, hard cancellation around a blocking
+gateway request, an authoritative repository-wide ledger head, or cross-process
+attempt leases. Its local ledger hard-enforces attempts and tokens;
+backend-reported monetary cost is captured only when provided and is not yet
+pre-reserved or hard-bounded. Execution artifacts are strictly parsed and bound
+to reservations, but are assertions of the trusted in-process runner rather
+than cryptographic producer attestations.
 
 The skill slice establishes package integrity, direct/existence-only reference
 closure, immediate revision admission, exact settled request inclusion/replay,
@@ -326,6 +329,21 @@ uv run spiral benchmark fetch gsm8k --output data/benchmarks/gsm8k
 This verifies the registered upstream bytes and prints the frozen split and
 adapter fingerprints. It does not run a model or expose a sealed-test score.
 Keep the downloaded official test data in the trusted evaluation plane.
+
+For a tiny live wiring check through an OpenAI-compatible gateway such as
+LiteLLM, set credentials in the environment and run an exploration-only smoke
+slice:
+
+```bash
+export LITELLM_BASE_URL=http://10.130.138.46:8010/v1
+export LITELLM_API_KEY=...
+uv run spiral benchmark smoke-gsm8k --model dashscope/qwen36-35b-a3b --limit 3
+```
+
+The smoke command refuses the sealed partition and writes a
+`non_reportable_gsm8k_smoke` artifact. It is useful for endpoint/model/prompt
+wiring and rough failure inspection only; it is not a sealed or reportable
+benchmark result.
 
 ## Run the M0 vertical slice
 

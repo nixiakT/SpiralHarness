@@ -135,9 +135,10 @@ automatic-search kernel now consumes
 that contract through exact run manifests, scoped strategy views, typed
 diagnosis/proposal artifacts, receipt-backed exploration screens, one-candidate
 gate nominations, aggregate-only feedback, and immutable search/study journals.
-The GSM8K runner path and the automatic loop are each replayable, but a
-credentialed live provider, sealed evaluator service, and reportable end-to-end
-study are not yet wired.
+The GSM8K runner path and the automatic loop are each replayable. A minimal
+OpenAI-compatible backend now supports exploration-only, non-reportable live
+smoke runs, but a credentialed reportable study, sealed evaluator service, and
+end-to-end benchmark claim package are not yet wired.
 
 The declarative skill slice stores one complete canonical JSON `SkillPackage`
 per revision. The package binds metadata, ordered rules, procedure, examples,

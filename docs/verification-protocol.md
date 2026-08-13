@@ -404,11 +404,13 @@ production completion must add an authenticated evaluator producer.
 
 M0.2 validates the promotion protocol against deterministic synthetic tasks.
 M1 now supplies a pinned real GSM8K adapter and provider-neutral score-free
-runner with replay backend, plus a trusted GATE batch runner that binds complete
-schedules to receipt replay, adapter-owned grading, and signed paired gate
-batches. It fails closed before backend calls when the frozen benchmark/grader,
-split, roster, model spec, or gate-batch attestor identity drifts. M1 also
-includes a bounded prompt-only automatic-search kernel.
+runner with replay and minimal OpenAI-compatible live-smoke backends, plus a
+trusted GATE batch runner that binds complete schedules to receipt replay,
+adapter-owned grading, and signed paired gate batches. It fails closed before
+backend calls when the frozen benchmark/grader, split, roster, model spec, or
+gate-batch attestor identity drifts. The live-smoke path is exploration-only and
+non-reportable; it is not a sealed evaluator or reportable study producer. M1
+also includes a bounded prompt-only automatic-search kernel.
 The declarative skill slice reaches admission, materialized backend requests,
 receipt replay, matched-control preregistration, and one controller-authorized
 process-local revert-then-placebo execution with distinct process-local ledgers and

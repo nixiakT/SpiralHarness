@@ -221,8 +221,10 @@ and authorization in a separately isolated trusted service.
 - Artifact views and capability manifests are API contracts, not an OS sandbox;
   there is no enforced filesystem, network, subprocess, or credential
   isolation.
-- The bundled fixed runner uses a deterministic replay backend. There is no
-  credentialed live-model provider or hard cancellation wrapper yet.
+- The bundled fixed runner has a deterministic replay backend and a minimal
+  OpenAI-compatible backend for non-reportable live smoke runs. There is no
+  preregistered reportable live-model study, sealed evaluator service, or hard
+  cancellation wrapper yet.
 - Optimizer invocation counts are controller-derived, but an opaque plugin's
   internal model calls, tokens, and cost are not independently attested in this
   kernel.

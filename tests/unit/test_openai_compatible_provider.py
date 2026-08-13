@@ -1,0 +1,171 @@
+from __future__ import annotations
+
+import urllib.error
+
+import pytest
+
+from spiral_harness.core.canonical import canonical_sha256
+from spiral_harness.core.models import HARNESS_MANIFEST_MEDIA_TYPE, ArtifactRef
+from spiral_harness.execution.contracts import (
+    FrozenModelSpec,
+    InferenceConfig,
+    ModelRequest,
+    ResolvedHarness,
+)
+from spiral_harness.providers.openai_compatible import (
+    OpenAICompatibleBackendError,
+    OpenAICompatibleChatBackend,
+    normalize_openai_base_url,
+)
+
+
+def spec_for(backend: OpenAICompatibleChatBackend) -> FrozenModelSpec:
+    return FrozenModelSpec(
+        backend="openai-compatible-chat",
+        backend_fingerprint=backend.fingerprint,
+        model="dashscope/qwen36-35b-a3b",
+        revision="hosted-snapshot-2026-08-13",
+        tokenizer="provider-reported",
+        tokenizer_revision="hosted-snapshot-2026-08-13",
+        runtime="spiral-harness-live-smoke-py3.12@2026-08-13",
+        inference=InferenceConfig(
+            temperature=0.0,
+            top_p=1.0,
+            max_output_tokens=64,
+            timeout_seconds=5.0,
+            stop_sequences=("END",),
+        ),
+    )
+
+
+def request() -> ModelRequest:
+    harness = ResolvedHarness.from_prompt(
+        harness_ref=ArtifactRef(
+            sha256="a" * 64,
+            size=0,
+            media_type=HARNESS_MANIFEST_MEDIA_TYPE,
+        ),
+        system_prompt="Solve carefully.",
+    )
+    return ModelRequest(
+        task_id="gsm8k-example",
+        harness_ref=harness.harness_ref,
+        base_system_prompt=harness.base_system_prompt,
+        base_system_prompt_sha256=harness.base_system_prompt_sha256,
+        skill_disclosure=None,
+        system_prompt=harness.system_prompt,
+        resolved_prompt_sha256=harness.resolved_prompt_sha256,
+        user_prompt="What is 2+3?",
+        seed=0,
+    )
+
+
+class CapturingBackend(OpenAICompatibleChatBackend):
+    def __init__(self, response: dict[str, object]) -> None:
+        super().__init__(
+            base_url="http://litellm.example/v1",
+            api_key="secret",
+            fingerprint=canonical_sha256(
+                {
+                    "schema": "spiral-harness/openai-compatible-backend/v1",
+                    "base_url": "http://litellm.example/v1",
+                    "endpoint": "/chat/completions",
+                }
+            ),
+        )
+        object.__setattr__(self, "response", response)
+        object.__setattr__(self, "calls", [])
+
+    def _post_json(
+        self,
+        path: str,
+        payload: dict[str, object],
+        *,
+        timeout_seconds: float,
+    ) -> dict[str, object]:
+        self.calls.append((path, payload, timeout_seconds))
+        return self.response
+
+
+def test_base_url_normalization_is_credential_free_and_stable() -> None:
+    assert normalize_openai_base_url(" http://10.0.0.1:8010/v1/ ") == "http://10.0.0.1:8010/v1"
+
+    backend = OpenAICompatibleChatBackend.from_endpoint(
+        base_url="http://10.0.0.1:8010/v1/",
+        api_key="sk-secret",
+    )
+    assert backend.base_url == "http://10.0.0.1:8010/v1"
+    assert "sk-secret" not in backend.fingerprint
+
+
+def test_chat_backend_posts_frozen_chat_completion_payload_and_usage() -> None:
+    backend = CapturingBackend(
+        {
+            "choices": [{"message": {"content": "Reasoning.\n#### 5"}}],
+            "usage": {"prompt_tokens": 11, "completion_tokens": 7},
+        }
+    )
+
+    response = backend.invoke(spec=spec_for(backend), request=request())
+
+    assert response.output == "Reasoning.\n#### 5"
+    assert response.usage.input_tokens == 11
+    assert response.usage.output_tokens == 7
+    path, payload, timeout = backend.calls[0]
+    assert path == "/chat/completions"
+    assert timeout == 5.0
+    assert payload["model"] == "dashscope/qwen36-35b-a3b"
+    assert payload["temperature"] == 0.0
+    assert payload["top_p"] == 1.0
+    assert payload["max_tokens"] == 64
+    assert payload["stop"] == ["END"]
+    assert payload["messages"] == [
+        {"role": "system", "content": "Solve carefully."},
+        {"role": "user", "content": "What is 2+3?"},
+    ]
+
+
+def test_chat_backend_accepts_openai_responses_style_text_parts() -> None:
+    backend = CapturingBackend(
+        {
+            "choices": [{"message": {"content": [{"type": "text", "text": "#### 5"}]}}],
+            "usage": {"input_tokens": 3, "output_tokens": 2},
+        }
+    )
+
+    response = backend.invoke(spec=spec_for(backend), request=request())
+
+    assert response.output == "#### 5"
+    assert response.usage.input_tokens == 3
+    assert response.usage.output_tokens == 2
+
+
+def test_chat_backend_rejects_malformed_provider_responses() -> None:
+    backend = CapturingBackend({"choices": []})
+
+    with pytest.raises(OpenAICompatibleBackendError, match="no choices"):
+        backend.invoke(spec=spec_for(backend), request=request())
+
+
+def test_http_error_detail_does_not_include_request_headers(monkeypatch) -> None:
+    backend = OpenAICompatibleChatBackend.from_endpoint(
+        base_url="http://litellm.example/v1",
+        api_key="sk-secret",
+    )
+
+    def fail(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise urllib.error.HTTPError(
+            "http://litellm.example/v1/chat/completions",
+            401,
+            "Unauthorized",
+            {},
+            None,
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", fail)
+
+    with pytest.raises(OpenAICompatibleBackendError) as exc_info:
+        backend.invoke(spec=spec_for(backend), request=request())
+    assert "sk-secret" not in str(exc_info.value)
+    assert "HTTP 401" in str(exc_info.value)

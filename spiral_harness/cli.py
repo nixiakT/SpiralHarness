@@ -1,6 +1,7 @@
 """Command-line entry point for SpiralHarness."""
 
 import json
+import os
 from pathlib import Path
 from typing import Annotated
 
@@ -13,8 +14,10 @@ from spiral_harness.benchmark.datasets import (
     materialize_dataset,
 )
 from spiral_harness.benchmark.gsm8k import GSM8KBenchmarkAdapter
+from spiral_harness.benchmark.gsm8k_smoke import default_smoke_output_dir, run_gsm8k_smoke
 from spiral_harness.core.experiment import ProtocolPartition
 from spiral_harness.evolution.controlled_demo import run_controlled_demo
+from spiral_harness.providers.openai_compatible import OpenAICompatibleChatBackend
 
 app = typer.Typer(
     name="spiral",
@@ -117,6 +120,117 @@ def fetch_benchmark(
         ),
     }
     typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+
+
+@benchmark_app.command("smoke-gsm8k")
+def smoke_gsm8k(
+    model: Annotated[
+        str,
+        typer.Option(
+            "--model",
+            help="OpenAI-compatible model name, for example dashscope/qwen36-35b-a3b.",
+        ),
+    ] = "dashscope/qwen36-35b-a3b",
+    dataset_dir: Annotated[
+        Path,
+        typer.Option(
+            "--dataset-dir",
+            help="Pinned GSM8K data directory; missing files are materialized and verified.",
+        ),
+    ] = Path("data/benchmarks/gsm8k"),
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Directory for non-reportable smoke artifacts.",
+        ),
+    ] = None,
+    limit: Annotated[
+        int,
+        typer.Option("--limit", help="Number of exploration tasks to run."),
+    ] = 3,
+    partition: Annotated[
+        str,
+        typer.Option(
+            "--partition",
+            help="Protocol partition for smoke runs. Use exploration or gate; sealed is blocked.",
+        ),
+    ] = ProtocolPartition.EXPLORATION.value,
+    seed: Annotated[
+        int,
+        typer.Option("--seed", help="Initial deterministic runner seed."),
+    ] = 0,
+    max_output_tokens: Annotated[
+        int,
+        typer.Option("--max-output-tokens", help="Frozen provider output-token ceiling."),
+    ] = 512,
+    max_tokens_per_attempt: Annotated[
+        int,
+        typer.Option("--max-tokens-per-attempt", help="Trusted attempt reservation ceiling."),
+    ] = 2_048,
+    timeout_seconds: Annotated[
+        float,
+        typer.Option("--timeout-seconds", help="Per-call provider timeout."),
+    ] = 60.0,
+    base_url_env: Annotated[
+        str,
+        typer.Option("--base-url-env", help="Environment variable holding the LiteLLM base URL."),
+    ] = "LITELLM_BASE_URL",
+    api_key_env: Annotated[
+        str,
+        typer.Option("--api-key-env", help="Environment variable holding the LiteLLM API key."),
+    ] = "LITELLM_API_KEY",
+) -> None:
+    """Run a tiny non-reportable GSM8K smoke slice through a live model gateway."""
+
+    try:
+        checked_partition = ProtocolPartition(partition)
+    except ValueError as exc:
+        raise typer.BadParameter(
+            f"unknown partition {partition!r}; expected exploration, gate, or sealed"
+        ) from exc
+    if checked_partition is ProtocolPartition.SEALED:
+        raise typer.BadParameter("smoke-gsm8k refuses sealed partition runs")
+
+    base_url = os.environ.get(base_url_env)
+    api_key = os.environ.get(api_key_env)
+    if not base_url:
+        raise typer.BadParameter(f"missing environment variable {base_url_env}")
+    if not api_key:
+        raise typer.BadParameter(f"missing environment variable {api_key_env}")
+
+    paths = materialize_dataset(GSM8K_PROVENANCE, dataset_dir)
+    paths_by_name = {path.name: path for path in paths}
+    backend = OpenAICompatibleChatBackend.from_endpoint(base_url=base_url, api_key=api_key)
+    result = run_gsm8k_smoke(
+        train_path=paths_by_name[GSM8K_PROVENANCE.artifact("train").filename],
+        test_path=paths_by_name[GSM8K_PROVENANCE.artifact("test").filename],
+        output=output if output is not None else default_smoke_output_dir(model),
+        backend=backend,
+        model=model,
+        limit=limit,
+        partition=checked_partition,
+        seed=seed,
+        max_output_tokens=max_output_tokens,
+        max_tokens_per_attempt=max_tokens_per_attempt,
+        timeout_seconds=timeout_seconds,
+    )
+    output_dir = output if output is not None else default_smoke_output_dir(model)
+    summary = {
+        "accuracy": result.payload["accuracy"],
+        "artifact_ref": result.artifact_ref.model_dump(mode="json"),
+        "completed_count": result.payload["completed_count"],
+        "correct_count": result.payload["correct_count"],
+        "disclaimer": result.payload["disclaimer"],
+        "limit": result.payload["limit"],
+        "model": result.payload["model"],
+        "output": str(output_dir.resolve()),
+        "partition": result.payload["partition"],
+        "reportable": False,
+        "total_tokens": result.payload["total_tokens"],
+    }
+    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":  # pragma: no cover
