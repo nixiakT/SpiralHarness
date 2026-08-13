@@ -17,6 +17,7 @@ from spiral_harness.benchmark.datasets import (
 )
 from spiral_harness.benchmark.gsm8k import GSM8KBenchmarkAdapter
 from spiral_harness.benchmark.gsm8k_smoke import default_smoke_output_dir, run_gsm8k_smoke
+from spiral_harness.benchmark.meta_harness_law import run_law_evaluation
 from spiral_harness.benchmark.meta_harness_symptom import run_symptom_evaluation
 from spiral_harness.benchmark.skillsbench_smoke import run_dialogue_parser_smoke
 from spiral_harness.core.experiment import ProtocolPartition
@@ -235,6 +236,58 @@ def smoke_gsm8k(
         "total_tokens": result.payload["total_tokens"],
     }
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
+@benchmark_app.command("meta-harness-law")
+def meta_harness_law(
+    data_dir: Annotated[Path, typer.Option("--data-dir")],
+    split: Annotated[str, typer.Option("--split")] = "val",
+    model: Annotated[str, typer.Option("--model")] = "dashscope/qwen3-coder-flash",
+    arm: Annotated[str, typer.Option("--arm")] = "pure",
+    output: Annotated[Path, typer.Option("--output", "-o")] = Path("runs/meta-harness-law"),
+    retrieval_k: Annotated[int, typer.Option("--retrieval-k")] = 8,
+    max_output_tokens: Annotated[int, typer.Option("--max-output-tokens")] = 128,
+    base_url_env: Annotated[str, typer.Option("--base-url-env")] = "LITELLM_BASE_URL",
+    api_key_env: Annotated[str, typer.Option("--api-key-env")] = "LITELLM_API_KEY",
+) -> None:
+    """Evaluate same-model pure or retrieval arms on pinned LawBench data."""
+
+    base_url, api_key = os.environ.get(base_url_env), os.environ.get(api_key_env)
+    if not base_url or not api_key:
+        raise typer.BadParameter("missing LiteLLM endpoint or API key environment variable")
+    backend = OpenAICompatibleChatBackend.from_endpoint(base_url=base_url, api_key=api_key)
+    payload = run_law_evaluation(
+        train_path=data_dir / "train.jsonl",
+        evaluation_path=data_dir / f"{split}.jsonl",
+        split=split,
+        output=output,
+        backend=backend,
+        model=model,
+        arm=arm,
+        retrieval_k=retrieval_k,
+        max_output_tokens=max_output_tokens,
+    )
+    typer.echo(
+        json.dumps(
+            {
+                key: payload[key]
+                for key in (
+                    "benchmark",
+                    "split",
+                    "model",
+                    "arm",
+                    "retrieval_k",
+                    "correct",
+                    "total",
+                    "accuracy",
+                    "total_tokens",
+                    "artifact_sha256",
+                )
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 @benchmark_app.command("smoke-bbh")
