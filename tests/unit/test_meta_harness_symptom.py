@@ -40,6 +40,7 @@ def test_retriever_prefers_shared_discriminative_symptoms() -> None:
     ("text", "expected"),
     [
         ("[DIAGNOSIS]Diabetes[/DIAGNOSIS]", "diabetes"),
+        ("[[DIAGNOSIS] dengue [/DIAGNOSIS]]", "dengue"),
         ("  common cold. ", "common cold"),
     ],
 )

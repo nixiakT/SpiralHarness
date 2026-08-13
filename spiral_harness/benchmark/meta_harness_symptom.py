@@ -144,7 +144,15 @@ class SymptomRetriever:
 def parse_diagnosis(text: str) -> str:
     match = re.search(r"\[DIAGNOSIS\](.*?)\[/DIAGNOSIS\]", text, re.I | re.S)
     value = match.group(1) if match else text
-    return re.sub(r"[.!?]+$", "", " ".join(value.lower().strip().split()))
+    normalized = re.sub(r"[.!?]+$", "", " ".join(value.lower().strip().split()))
+    # Some OpenAI-compatible providers wrap the requested tagged answer in one
+    # additional pair of brackets. Remove it only when the enclosed value is an
+    # exact member of the benchmark label ontology; arbitrary output is untouched.
+    if normalized.startswith("[") and normalized.endswith("]"):
+        enclosed = normalized[1:-1].strip()
+        if enclosed in LABELS:
+            return enclosed
+    return normalized
 
 
 def build_prompt(question: str, examples: tuple[SymptomExample, ...]) -> str:
