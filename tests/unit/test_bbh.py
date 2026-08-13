@@ -10,6 +10,7 @@ from spiral_harness.benchmark.bbh import (
     BBHLogicalDeductionSevenAdapter,
     extract_bbh_answer,
 )
+from spiral_harness.benchmark.bbh_middleware import BBHOutputContractMiddleware
 from spiral_harness.benchmark.bbh_smoke import run_bbh_smoke
 from spiral_harness.execution.contracts import BackendResponse, BackendTokenUsage
 
@@ -82,3 +83,47 @@ def test_bbh_smoke_runs_a_deterministic_development_sample(tmp_path: Path) -> No
     assert result.payload["completed_count"] == 2
     assert result.payload["total_tokens"] == 56
     assert result.payload["reportable"] is False
+
+
+@pytest.mark.parametrize(
+    ("output", "expected_tail", "changed"),
+    [
+        ("Reasoning.\nAnswer: (F)", "(F)\n", True),
+        ("Reasoning.\nFinal answer: (D) explanation", "(D)\n", True),
+        ("Reasoning.\n(C)", "(C)\n", True),
+        ("Reasoning mentions (A) but does not decide.", "decide.", False),
+    ],
+)
+def test_bbh_output_middleware_normalizes_only_explicit_final_declarations(
+    output: str, expected_tail: str, changed: bool
+) -> None:
+    normalized = BBHOutputContractMiddleware().apply(output)
+
+    assert normalized.endswith(expected_tail)
+    assert (normalized != output) is changed
+
+
+def test_bbh_smoke_binds_middleware_into_candidate_harness(tmp_path: Path) -> None:
+    path = write_bbh(tmp_path / "data.json")
+    common = {
+        "dataset_path": path,
+        "backend": FixtureBackend(),
+        "model": "fixture-model",
+        "limit": 1,
+        "seed": 3,
+        "max_output_tokens": 32,
+        "max_tokens_per_attempt": 64,
+        "verify_pinned": False,
+    }
+    parent = run_bbh_smoke(output=tmp_path / "parent", **common)
+    candidate = run_bbh_smoke(
+        output=tmp_path / "candidate",
+        output_middleware=BBHOutputContractMiddleware(),
+        **common,
+    )
+
+    assert parent.payload["harness_ref"] != candidate.payload["harness_ref"]
+    assert parent.payload["output_middleware_ref"] is None
+    assert candidate.payload["output_middleware_ref"] is not None
+    evidence = candidate.payload["execution_refs"][0]["middleware_evidence"]
+    assert evidence["middleware_ref"] == candidate.payload["output_middleware_ref"]

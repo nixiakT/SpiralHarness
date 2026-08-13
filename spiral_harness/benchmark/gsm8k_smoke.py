@@ -216,23 +216,33 @@ def _publish_prompt_harness(
     model_fingerprint: str,
     runtime_fingerprint: str,
     system_prompt: str,
+    middleware_ref: ArtifactRef | None = None,
 ) -> ArtifactRef:
     prompt_ref = artifact_store.put_bytes(
         system_prompt.encode("utf-8"),
         media_type="text/plain; charset=utf-8",
     )
+    components = [
+        {
+            "name": "system_prompt",
+            "kind": "prompt",
+            "artifact": prompt_ref.model_dump(mode="json"),
+        }
+    ]
+    if middleware_ref is not None:
+        components.append(
+            {
+                "name": "output_contract",
+                "kind": "middleware",
+                "artifact": middleware_ref.model_dump(mode="json"),
+            }
+        )
     manifest = {
         "schema_version": "2",
         "model_fingerprint": model_fingerprint,
         "runtime_fingerprint": runtime_fingerprint,
         "trusted_plane_version": "spiral-harness-live-smoke-v1",
-        "components": [
-            {
-                "name": "system_prompt",
-                "kind": "prompt",
-                "artifact": prompt_ref.model_dump(mode="json"),
-            }
-        ],
+        "components": components,
         "budget": {"max_tokens": 0},
     }
     return ArtifactRef.model_validate(

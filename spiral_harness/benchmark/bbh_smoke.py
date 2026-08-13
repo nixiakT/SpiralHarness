@@ -5,12 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 
 from spiral_harness.benchmark.bbh import BBHLogicalDeductionSevenAdapter
+from spiral_harness.benchmark.bbh_middleware import (
+    BBH_OUTPUT_MIDDLEWARE_MEDIA_TYPE,
+    BBHOutputContractMiddleware,
+)
 from spiral_harness.benchmark.gsm8k_smoke import (
     GSM8KSmokeResult,
     _publish_prompt_harness,
     build_live_gsm8k_spec,
 )
-from spiral_harness.core.canonical import canonical_sha256
+from spiral_harness.core.canonical import canonical_sha256, sha256_bytes
 from spiral_harness.execution.attempts import AttemptLedger
 from spiral_harness.execution.contracts import AttemptBudget, ResolvedHarness
 from spiral_harness.execution.model import FixedModelRunner, ModelBackend
@@ -36,6 +40,7 @@ def run_bbh_smoke(
     timeout_seconds: float = 90.0,
     system_prompt: str = DEFAULT_BBH_SMOKE_PROMPT,
     verify_pinned: bool = True,
+    output_middleware: BBHOutputContractMiddleware | None = None,
 ) -> GSM8KSmokeResult:
     """Run a deterministic sample from public BBH development data."""
 
@@ -74,11 +79,21 @@ def run_bbh_smoke(
         ),
     )
     runner = FixedModelRunner(spec=spec, backend=backend, attempt_ledger=ledger)
+    middleware_ref = None
+    if output_middleware is not None:
+        checked_middleware = BBHOutputContractMiddleware.model_validate(
+            output_middleware, strict=True
+        )
+        middleware_ref = store.put_json(
+            checked_middleware,
+            media_type=BBH_OUTPUT_MIDDLEWARE_MEDIA_TYPE,
+        )
     harness_ref = _publish_prompt_harness(
         store,
         model_fingerprint=spec.model_fingerprint,
         runtime_fingerprint=spec.runtime_fingerprint,
         system_prompt=system_prompt,
+        middleware_ref=middleware_ref,
     )
     harness = ResolvedHarness.from_prompt(harness_ref=harness_ref, system_prompt=system_prompt)
     observations = []
@@ -86,10 +101,21 @@ def run_bbh_smoke(
     for offset, task_id in enumerate(task_ids):
         task = adapter.load_task(task_id)
         execution = runner.execute(task, harness=harness, seed=seed + offset)
+        grading_execution = execution
+        middleware_evidence = None
+        if output_middleware is not None and execution.output_text is not None:
+            normalized = output_middleware.apply(execution.output_text)
+            grading_execution = execution.model_copy(update={"output": normalized})
+            middleware_evidence = {
+                "middleware_ref": middleware_ref.model_dump(mode="json"),
+                "raw_output_sha256": sha256_bytes(execution.output_text.encode("utf-8")),
+                "normalized_output_sha256": sha256_bytes(normalized.encode("utf-8")),
+                "changed": normalized != execution.output_text,
+            }
         observations.append(
             adapter.grade(
                 task,
-                execution,
+                grading_execution,
                 harness_id=harness_ref.sha256,
                 seed=seed + offset,
                 execution_fingerprint=execution.execution_fingerprint,
@@ -105,6 +131,7 @@ def run_bbh_smoke(
                 "outcome_ref": runner.last_outcome_ref.model_dump(mode="json")
                 if runner.last_outcome_ref
                 else None,
+                "middleware_evidence": middleware_evidence,
             }
         )
     completed = tuple(item for item in observations if item.score is not None)
@@ -123,6 +150,9 @@ def run_bbh_smoke(
         "model": model,
         "adapter_fingerprint": adapter.fingerprint,
         "harness_ref": harness_ref.model_dump(mode="json"),
+        "output_middleware_ref": (
+            None if middleware_ref is None else middleware_ref.model_dump(mode="json")
+        ),
         "attempt_state": ledger.state().model_dump(mode="json"),
         "execution_refs": execution_refs,
         "observations": [item.model_dump(mode="json") for item in observations],
