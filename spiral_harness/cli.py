@@ -17,6 +17,7 @@ from spiral_harness.benchmark.datasets import (
 )
 from spiral_harness.benchmark.gsm8k import GSM8KBenchmarkAdapter
 from spiral_harness.benchmark.gsm8k_smoke import default_smoke_output_dir, run_gsm8k_smoke
+from spiral_harness.benchmark.skillsbench_smoke import run_dialogue_parser_smoke
 from spiral_harness.core.experiment import ProtocolPartition
 from spiral_harness.evolution.controlled_demo import run_controlled_demo
 from spiral_harness.providers.openai_compatible import OpenAICompatibleChatBackend
@@ -282,6 +283,58 @@ def smoke_bbh(
         )
     }
     summary["artifact_ref"] = result.artifact_ref.model_dump(mode="json")
+    summary["output"] = str(output.resolve())
+    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
+@benchmark_app.command("smoke-skillsbench")
+def smoke_skillsbench(
+    skillsbench_repo: Annotated[Path, typer.Option("--skillsbench-repo")],
+    model: Annotated[str, typer.Option("--model")] = "dashscope/qwen3-coder-flash",
+    output: Annotated[Path, typer.Option("--output", "-o")] = Path(
+        "runs/skillsbench/dialogue-parser"
+    ),
+    skill_file: Annotated[Path | None, typer.Option("--skill-file")] = None,
+    max_output_tokens: Annotated[int, typer.Option("--max-output-tokens")] = 8_192,
+    timeout_seconds: Annotated[float, typer.Option("--timeout-seconds")] = 180.0,
+    base_url_env: Annotated[str, typer.Option("--base-url-env")] = "LITELLM_BASE_URL",
+    api_key_env: Annotated[str, typer.Option("--api-key-env")] = "LITELLM_API_KEY",
+) -> None:
+    """Run the pinned dialogue-parser native-compatible smoke task."""
+
+    base_url = os.environ.get(base_url_env)
+    api_key = os.environ.get(api_key_env)
+    if not base_url:
+        raise typer.BadParameter(f"missing environment variable {base_url_env}")
+    if not api_key:
+        raise typer.BadParameter(f"missing environment variable {api_key_env}")
+    skill_text = None if skill_file is None else skill_file.read_text(encoding="utf-8")
+    backend = OpenAICompatibleChatBackend.from_endpoint(base_url=base_url, api_key=api_key)
+    result = run_dialogue_parser_smoke(
+        skillsbench_repo=skillsbench_repo,
+        output=output,
+        backend=backend,
+        model=model,
+        skill_text=skill_text,
+        max_output_tokens=max_output_tokens,
+        timeout_seconds=timeout_seconds,
+    )
+    summary = {
+        key: result.payload[key]
+        for key in (
+            "benchmark",
+            "task",
+            "model",
+            "harness_variant",
+            "passed",
+            "input_tokens",
+            "output_tokens",
+            "protocol",
+            "reportable_as_official",
+            "disclaimer",
+        )
+    }
+    summary["artifact_sha256"] = result.artifact_sha256
     summary["output"] = str(output.resolve())
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
