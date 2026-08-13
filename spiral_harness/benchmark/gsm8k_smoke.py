@@ -97,9 +97,22 @@ def run_gsm8k_smoke(
     output = Path(output)
     artifact_store = ArtifactStore(output / "artifacts")
     adapter = GSM8KBenchmarkAdapter(train_path, test_path, verify_pinned=verify_pinned)
-    task_ids = adapter.task_roster(partition)[:limit]
-    if len(task_ids) != limit:
-        raise ValueError(f"partition {partition.value!r} has only {len(task_ids)} tasks")
+    roster = adapter.task_roster(partition)
+    if len(roster) < limit:
+        raise ValueError(f"partition {partition.value!r} has only {len(roster)} tasks")
+    task_ids = tuple(
+        sorted(
+            roster,
+            key=lambda task_id: canonical_sha256(
+                {
+                    "schema": "spiral-harness/gsm8k-smoke-sample/v1",
+                    "partition": partition.value,
+                    "seed": seed,
+                    "task_id": task_id,
+                }
+            ),
+        )[:limit]
+    )
 
     spec = build_live_gsm8k_spec(
         backend_fingerprint=backend.fingerprint,
@@ -168,6 +181,9 @@ def run_gsm8k_smoke(
         "benchmark": "gsm8k",
         "partition": partition.value,
         "limit": limit,
+        "sample_seed": seed,
+        "sampling_method": "sha256-order-without-replacement-v1",
+        "sampled_task_ids": list(task_ids),
         "model": model,
         "spec_fingerprint": spec.fingerprint,
         "backend_fingerprint": backend.fingerprint,

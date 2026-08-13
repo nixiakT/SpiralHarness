@@ -87,6 +87,9 @@ def test_run_gsm8k_smoke_publishes_non_reportable_artifact(tmp_path: Path) -> No
     assert result.payload["reportable"] is False
     assert result.payload["completed_count"] == 1
     assert result.payload["total_tokens"] == 20
+    assert result.payload["sample_seed"] == 0
+    assert result.payload["sampling_method"] == "sha256-order-without-replacement-v1"
+    assert len(result.payload["sampled_task_ids"]) == 1
     assert result.artifact_ref.media_type == "application/vnd.spiral-harness.gsm8k-smoke.v1+json"
     assert (tmp_path / "run" / "artifacts" / "objects").is_dir()
 
@@ -104,6 +107,33 @@ def test_run_gsm8k_smoke_validates_limit_and_partition_size(tmp_path: Path) -> N
             limit=0,
             verify_pinned=False,
         )
+
+
+def test_run_gsm8k_smoke_samples_deterministically_by_seed(tmp_path: Path) -> None:
+    train_path, test_path = write_fixture_gsm8k(tmp_path)
+
+    def run(seed: int, name: str) -> list[str]:
+        result = run_gsm8k_smoke(
+            train_path=train_path,
+            test_path=test_path,
+            output=tmp_path / name,
+            backend=FixtureBackend(),
+            model="dashscope/qwen36-35b-a3b",
+            limit=2,
+            seed=seed,
+            max_output_tokens=64,
+            max_tokens_per_attempt=128,
+            verify_pinned=False,
+        )
+        return list(result.payload["sampled_task_ids"])
+
+    first = run(7, "first")
+    repeated = run(7, "repeated")
+    different_seed = run(11, "different")
+
+    assert first == repeated
+    assert len(first) == len(set(first)) == 2
+    assert first != different_seed
 
 
 def test_smoke_cli_requires_env_before_materializing_dataset(monkeypatch, tmp_path: Path) -> None:
