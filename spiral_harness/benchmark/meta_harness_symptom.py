@@ -221,8 +221,8 @@ def run_symptom_evaluation(
 ) -> dict[str, object]:
     if split not in {"val", "test"}:
         raise ValueError("split must be val or test")
-    if arm not in {"pure", "evolved"}:
-        raise ValueError("arm must be pure or evolved")
+    if arm not in {"pure", "baseline", "evolved"}:
+        raise ValueError("arm must be pure, baseline, or evolved")
     train = load_split(train_path, "train")
     evaluation = load_split(evaluation_path, split)
     retriever = SymptomRetriever(train)
@@ -248,15 +248,15 @@ def run_symptom_evaluation(
     )
     records = []
     for index, item in enumerate(evaluation):
-        prompt = (
-            build_pure_prompt(item.question)
-            if arm == "pure"
-            else build_prompt(
-                item.question,
-                retriever.retrieve(item.question, retrieval_k),
-                label_profiles,
+        if arm == "pure":
+            prompt = build_pure_prompt(item.question)
+        else:
+            examples = (
+                train[:retrieval_k]
+                if arm == "baseline"
+                else retriever.retrieve(item.question, retrieval_k)
             )
-        )
+            prompt = build_prompt(item.question, examples, label_profiles)
         response = backend.invoke(
             spec=spec,
             request=ModelRequest(

@@ -26,3 +26,8 @@ def test_evolved_prompt_discloses_retrieved_training_case() -> None:
     prompt = subject.build_prompt("案件事实", "evolved", (subject.LawExample("训练案件", "盗窃"),))
     assert "训练案件" in prompt
     assert "盗窃" in prompt
+
+
+def test_baseline_prompt_discloses_fixed_training_case() -> None:
+    prompt = subject.build_prompt("案件事实", "baseline", (subject.LawExample("固定案件", "诈骗"),))
+    assert "固定案件" in prompt

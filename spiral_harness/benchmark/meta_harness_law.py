@@ -84,7 +84,7 @@ class LawRetriever:
 
 def build_prompt(question: str, arm: str, examples: tuple[LawExample, ...] = ()) -> str:
     evidence = ""
-    if arm == "evolved":
+    if arm in {"baseline", "evolved"}:
         evidence = "\n\n训练集中的相似判例:\n" + "\n\n".join(
             f"案件:{item.question}\n罪名:{item.answer}" for item in examples
         )
@@ -110,7 +110,7 @@ def run_law_evaluation(
     max_output_tokens: int = 128,
     timeout_seconds: float = 90.0,
 ) -> dict[str, object]:
-    if split not in {"val", "test"} or arm not in {"pure", "evolved"}:
+    if split not in {"val", "test"} or arm not in {"pure", "baseline", "evolved"}:
         raise ValueError("invalid split or arm")
     train, evaluation = load_split(train_path, "train"), load_split(evaluation_path, split)
     retriever = LawRetriever(train)
@@ -129,7 +129,12 @@ def run_law_evaluation(
     )
     records = []
     for index, item in enumerate(evaluation):
-        examples = retriever.retrieve(item.question, retrieval_k) if arm == "evolved" else ()
+        if arm == "pure":
+            examples = ()
+        elif arm == "baseline":
+            examples = train[:retrieval_k]
+        else:
+            examples = retriever.retrieve(item.question, retrieval_k)
         response = backend.invoke(
             spec=spec,
             request=ModelRequest(
