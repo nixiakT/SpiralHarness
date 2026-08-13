@@ -8,14 +8,13 @@ Treat each bracketed section header as exactly one graph node. Parse transitions
   when parsing a numbered choice. Do not guard that update with “if the node does not exist”.
 - Never create an extra node for an individual numbered choice. Multiple numbered choices are
   multiple outgoing edges from the same section node.
-- Preserve terminal transitions, but follow the task's exception for the final target: a sentinel
-  such as `End` may remain an implicit edge target rather than becoming an otherwise unreachable
-  node. All non-terminal edge targets must have section nodes.
+- Create nodes only when parsing bracketed section headers. Never create placeholder nodes while
+  parsing an edge target. Thus terminal transitions are preserved while a sentinel such as `End`
+  remains an implicit target; after parsing, validate that every other target names a section.
 - Serialize the exact requested JSON keys. In DOT, render choice section nodes with diamond shape.
 
 Before returning code, mentally check that the first section reaches every node, every referenced
 target has a node, dialogue transitions are not discarded, and choice hubs retain all outgoing
 edges. Do not hard-code the supplied script; implement `parse_script(text)` for the stated grammar.
-In particular, inspect the final node list and remove an implicit terminal sentinel if target
-placeholder creation introduced one; then confirm at least one parsed choice node is serialized as
-`type: choice`, which in turn must emit the literal DOT attribute `shape=diamond`.
+In particular, confirm at least one parsed choice node is serialized as `type: choice`, which in
+turn must emit the literal DOT attribute `shape=diamond`.
