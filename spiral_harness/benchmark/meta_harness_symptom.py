@@ -119,6 +119,23 @@ class SymptomRetriever:
         }
         self.vectors = tuple(self._vector(doc) for doc in docs)
 
+    def label_profiles(self, terms_per_label: int = 10) -> str:
+        """Build deterministic discriminative term profiles from training data only."""
+
+        by_label: dict[str, Counter[str]] = {}
+        for example in self.examples:
+            counts = by_label.setdefault(example.answer, Counter())
+            counts.update(self._tokens(example.question))
+        lines = []
+        for label in LABELS:
+            counts = by_label.get(label, Counter())
+            ranked = sorted(
+                counts,
+                key=lambda word: (-counts[word] * self.idf.get(word, 1.0), word),
+            )[:terms_per_label]
+            lines.append(f"- {label}: {', '.join(ranked)}")
+        return "\n".join(lines)
+
     @staticmethod
     def _tokens(text: str) -> set[str]:
         return set(_WORDS.findall(text.lower())) - _STOP
@@ -155,7 +172,9 @@ def parse_diagnosis(text: str) -> str:
     return normalized
 
 
-def build_prompt(question: str, examples: tuple[SymptomExample, ...]) -> str:
+def build_prompt(
+    question: str, examples: tuple[SymptomExample, ...], label_profiles: str = ""
+) -> str:
     demonstrations = "\n\n".join(
         f"Symptoms: {item.question}\nDiagnosis: {item.answer}" for item in examples
     )
@@ -165,6 +184,8 @@ def build_prompt(question: str, examples: tuple[SymptomExample, ...]) -> str:
         "retrieved from the official training split; use them as evidence, but distinguish close "
         "conditions by the complete symptom pattern.\n\nAllowed diagnoses: "
         + labels
+        + "\n\nTraining-derived label profiles (discriminative terms, not medical definitions):\n"
+        + label_profiles
         + "\n\nRetrieved cases:\n"
         + demonstrations
         + "\n\nPatient: "
@@ -190,6 +211,7 @@ def run_symptom_evaluation(
     train = load_split(train_path, "train")
     evaluation = load_split(evaluation_path, split)
     retriever = SymptomRetriever(train)
+    label_profiles = retriever.label_profiles()
     store = ArtifactStore(Path(output) / "artifacts")
     system = "You are a careful medical text classifier. Follow the output contract exactly."
     harness_ref = store.put_json(
@@ -210,7 +232,9 @@ def run_symptom_evaluation(
     )
     records = []
     for index, item in enumerate(evaluation):
-        prompt = build_prompt(item.question, retriever.retrieve(item.question, retrieval_k))
+        prompt = build_prompt(
+            item.question, retriever.retrieve(item.question, retrieval_k), label_profiles
+        )
         response = backend.invoke(
             spec=spec,
             request=ModelRequest(

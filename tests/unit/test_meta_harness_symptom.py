@@ -34,6 +34,9 @@ def test_retriever_prefers_shared_discriminative_symptoms() -> None:
     )
 
     assert retriever.retrieve("red itchy rash", 1)[0].answer == "allergy"
+    profiles = retriever.label_profiles(terms_per_label=2)
+    assert "- allergy:" in profiles
+    assert "itchy" in profiles
 
 
 @pytest.mark.parametrize(
@@ -50,10 +53,13 @@ def test_parse_diagnosis(text: str, expected: str) -> None:
 
 def test_prompt_discloses_only_training_examples() -> None:
     prompt = subject.build_prompt(
-        "new patient", (subject.SymptomExample("known symptoms", "malaria"),)
+        "new patient",
+        (subject.SymptomExample("known symptoms", "malaria"),),
+        "- malaria: fever, chills",
     )
 
     assert "known symptoms" in prompt
     assert "malaria" in prompt
     assert "new patient" in prompt
     assert "exact allowed label" in prompt
+    assert "fever, chills" in prompt
