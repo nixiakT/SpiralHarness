@@ -576,9 +576,9 @@ integration additionally exercises score-free GSM8K execution, pre-call
 reservation, and trusted grading. The automatic-search fixture executes the
 four matched strategy conditions across multiple independent run seeds through
 the same bounded controller path and study barrier. Baseline GATE acceptance
-tests join that sealed barrier to a replayed trusted-runner closure, and the
-replay GATE result packages the accepted evidence for upper-level consumption
-while keeping it explicitly non-reportable. Skill integration tests establish
+tests join that sealed barrier to a replayed trusted-runner closure, while the
+production replay fixture now executes and packages that accepted evidence for
+upper-level consumption while keeping it explicitly non-reportable. Skill integration tests establish
 canonical package loading,
 direct-edge revision admission, exact rules-only materialization, and
 exact settled skill request inclusion/replay. They also exercise Protocol v4

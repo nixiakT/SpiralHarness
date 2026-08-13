@@ -145,7 +145,9 @@ The first M1 benchmark/runner foundation now also includes:
 - a non-reportable replay study GATE result package that consumes the replay
   study summary and accepted GATE evidence, reloads the sealed authorization,
   joins all eight run closures back to their automatic-search summaries, and
-  remains explicitly separate from any sealed benchmark score;
+  remains explicitly separate from any sealed benchmark score; the
+  `run_non_reportable_replay_gate_result` fixture path now executes that whole
+  closure → acceptance → package chain in one replayable call;
 - an immutable v3 attempt reservation/outcome ledger whose records bind the
   originating writer epoch, reserve before a backend call, settle successes,
   burn uncertain failures, poison known token overruns, and make reopened tails
@@ -236,8 +238,8 @@ The automatic-search control kernel now adds:
   terminal-decision joins, frozen stopping rules, and a complete
   `4 conditions × search seeds` selection barrier before sealed authorization;
 - a deterministic multi-condition replay fixture whose post-barrier accepted
-  GATE result is packaged for upper-level orchestration while remaining
-  non-reportable.
+  GATE result is executed and packaged for upper-level orchestration while
+  remaining non-reportable.
 
 M0.2 establishes typed logical trust boundaries, not deployment isolation. Its
 capture, mechanism-evidence, and gate-batch HMACs are process-local API

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from spiral_harness.core.models import ArtifactRef
+from spiral_harness.evolution.replay_gate_execution import run_non_reportable_replay_gate_result
 from spiral_harness.evolution.replay_gate_result import (
     REPLAY_STUDY_GATE_RESULT_MEDIA_TYPE,
     ReplayStudyGateResult,
@@ -14,45 +15,37 @@ from spiral_harness.evolution.replay_gate_result import (
 )
 from spiral_harness.evolution.replay_study import run_non_reportable_replay_study
 from spiral_harness.experiments.baseline_gate_acceptance import (
-    BaselineGateStudyAcceptance,
     publish_baseline_gate_study_acceptance,
 )
 from tests.integration.replay_gate_fixture import replay_gate_closure
 
 
 def test_replay_gate_result_packages_accepted_post_barrier_evidence(tmp_path: Path) -> None:
-    execution = run_non_reportable_replay_study(tmp_path / "artifacts")
-    acceptance_ref = _publish_acceptance(execution)
+    execution = run_non_reportable_replay_gate_result(tmp_path / "artifacts")
 
-    result_ref = publish_replay_study_gate_result(
-        execution.fixture.store,
-        study_result_ref=execution.result_ref,
-        baseline_gate_acceptance_ref=acceptance_ref,
-        event_verifier=execution.study_controller.event_service.verification_capability,
-    )
-
-    assert result_ref.media_type == REPLAY_STUDY_GATE_RESULT_MEDIA_TYPE
+    assert execution.result_ref.media_type == REPLAY_STUDY_GATE_RESULT_MEDIA_TYPE
     result = verify_replay_study_gate_result(
-        execution.fixture.store,
-        result_ref,
-        event_verifier=execution.study_controller.event_service.verification_capability,
+        execution.study.fixture.store,
+        execution.result_ref,
+        event_verifier=execution.study.study_controller.event_service.verification_capability,
     )
     assert isinstance(result, ReplayStudyGateResult)
-    assert result.study_result_ref == execution.result_ref
-    assert result.baseline_gate_acceptance_ref == acceptance_ref
+    assert result == execution.result
+    assert result.study_result_ref == execution.study.result_ref
+    assert result.baseline_gate_acceptance_ref == execution.baseline_gate_acceptance_ref
     assert (
         result.baseline_gate_closure_ref
-        == execution.fixture.store.get_json(
-            acceptance_ref,
-            BaselineGateStudyAcceptance,
-        ).baseline_gate_closure_ref
+        == execution.baseline_gate_acceptance.baseline_gate_closure_ref
+        == execution.gate.closure_ref
     )
-    assert result.sealed_authorized_tail_ref == execution.result.sealed_authorized_tail_ref
+    assert result.sealed_authorized_tail_ref == execution.study.result.sealed_authorized_tail_ref
     assert result.reportable_benchmark_result is False
     assert result.non_reportable_fixture is True
+    assert execution.non_reportable_fixture is True
+    assert execution.gate.closure.reportable_benchmark_result is False
     assert len(result.runs) == 8
     assert tuple(run.run_closure_ref for run in result.runs) == tuple(
-        binding.run_closure_ref for binding in execution.study_controller.snapshot.bindings
+        binding.run_closure_ref for binding in execution.study.study_controller.snapshot.bindings
     )
 
 
