@@ -17,6 +17,7 @@ from spiral_harness.benchmark.datasets import (
 )
 from spiral_harness.benchmark.gsm8k import GSM8KBenchmarkAdapter
 from spiral_harness.benchmark.gsm8k_smoke import default_smoke_output_dir, run_gsm8k_smoke
+from spiral_harness.benchmark.meta_harness_symptom import run_symptom_evaluation
 from spiral_harness.benchmark.skillsbench_smoke import run_dialogue_parser_smoke
 from spiral_harness.core.experiment import ProtocolPartition
 from spiral_harness.evolution.controlled_demo import run_controlled_demo
@@ -336,6 +337,54 @@ def smoke_skillsbench(
     }
     summary["artifact_sha256"] = result.artifact_sha256
     summary["output"] = str(output.resolve())
+    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
+@benchmark_app.command("meta-harness-symptom")
+def meta_harness_symptom(
+    data_dir: Annotated[Path, typer.Option("--data-dir")],
+    split: Annotated[str, typer.Option("--split")] = "val",
+    model: Annotated[str, typer.Option("--model")] = "dashscope/qwen-flash",
+    output: Annotated[Path, typer.Option("--output", "-o")] = Path("runs/meta-harness-symptom"),
+    retrieval_k: Annotated[int, typer.Option("--retrieval-k")] = 8,
+    base_url_env: Annotated[str, typer.Option("--base-url-env")] = "LITELLM_BASE_URL",
+    api_key_env: Annotated[str, typer.Option("--api-key-env")] = "LITELLM_API_KEY",
+) -> None:
+    """Evaluate a retrieval harness on pinned Meta-Harness Symptom2Disease data."""
+
+    base_url = os.environ.get(base_url_env)
+    api_key = os.environ.get(api_key_env)
+    if not base_url or not api_key:
+        raise typer.BadParameter("missing LiteLLM endpoint or API key environment variable")
+    if split not in {"val", "test"}:
+        raise typer.BadParameter("split must be val or test")
+    backend = OpenAICompatibleChatBackend.from_endpoint(base_url=base_url, api_key=api_key)
+    payload = run_symptom_evaluation(
+        train_path=data_dir / "train.jsonl",
+        evaluation_path=data_dir / f"{split}.jsonl",
+        split=split,
+        output=output,
+        backend=backend,
+        model=model,
+        retrieval_k=retrieval_k,
+    )
+    summary = {
+        key: payload[key]
+        for key in (
+            "benchmark",
+            "revision",
+            "split",
+            "model",
+            "retrieval_k",
+            "correct",
+            "total",
+            "accuracy",
+            "reference_accuracy",
+            "exceeds_reference",
+            "total_tokens",
+            "artifact_sha256",
+        )
+    }
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))
 
 
