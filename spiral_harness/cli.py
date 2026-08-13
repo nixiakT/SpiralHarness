@@ -347,6 +347,7 @@ def meta_harness_symptom(
     model: Annotated[str, typer.Option("--model")] = "dashscope/qwen-flash",
     output: Annotated[Path, typer.Option("--output", "-o")] = Path("runs/meta-harness-symptom"),
     retrieval_k: Annotated[int, typer.Option("--retrieval-k")] = 8,
+    max_output_tokens: Annotated[int, typer.Option("--max-output-tokens")] = 128,
     base_url_env: Annotated[str, typer.Option("--base-url-env")] = "LITELLM_BASE_URL",
     api_key_env: Annotated[str, typer.Option("--api-key-env")] = "LITELLM_API_KEY",
 ) -> None:
@@ -367,6 +368,7 @@ def meta_harness_symptom(
         backend=backend,
         model=model,
         retrieval_k=retrieval_k,
+        max_output_tokens=max_output_tokens,
     )
     summary = {
         key: payload[key]
