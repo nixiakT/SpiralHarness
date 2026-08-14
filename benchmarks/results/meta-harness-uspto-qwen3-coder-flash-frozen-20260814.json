@@ -1,0 +1,45 @@
+{
+  "schema_version": "1",
+  "study": "Meta-Harness native USPTO frozen-candidate evaluation",
+  "frozen_at": "2026-08-14T13:26:27+08:00",
+  "model": "dashscope/qwen3-coder-flash",
+  "temperature": 0,
+  "upstream_revision": "44b9942127847f7421db70d8c7e48407f09a3c70",
+  "split_sizes": {
+    "train": 50,
+    "validation": 30,
+    "test": 100
+  },
+  "candidate": {
+    "name": "reaction-aware retrieval plus high-confidence reaction compiler",
+    "source": "spiral_harness/benchmark/meta_harness_retrosynthesis.py",
+    "source_sha256": "33c9b13093e6ca5a4f956aa972fd686aec42cd80abee4b17bf90296ef64a8687",
+    "native_adapter_sha256": "43352e8de28649abdcb9e7b9bac193ec3e4fa8d2b1b414f388f52ebd4b1d79ec",
+    "memory_artifact_sha256": "10962ad51f31321960fb521b3827f46d6b42a28e9ef2241948202e87da807fa0",
+    "selection_policy": "validation-only mechanism development; freeze before first test run"
+  },
+  "validation_results": {
+    "pure": {"correct": 1, "total": 30, "accuracy": 0.03333333333333333},
+    "fewshot_all": {"correct": 1, "total": 30, "accuracy": 0.03333333333333333},
+    "paper_reconstruction": {
+      "correct": 1,
+      "total": 30,
+      "accuracy": 0.03333333333333333,
+      "artifact_sha256": "a710f2c78544963a853ad41614addf0e20e91b89d91bbbe1889910448309fd67"
+    },
+    "frozen_spiral": {
+      "correct": 11,
+      "total": 30,
+      "accuracy": 0.36666666666666664,
+      "artifact_sha256": "adb6f3a9e00196af15c5aad5d8498f647a86e0da6d656678a2993f4c4d2f2710"
+    }
+  },
+  "validation_delta_percentage_points": {
+    "spiral_minus_pure": 33.33333333333333,
+    "spiral_minus_paper_reconstruction": 33.33333333333333
+  },
+  "test": {
+    "status": "not_run",
+    "opened_before_candidate_freeze": false
+  }
+}

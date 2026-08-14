@@ -11,6 +11,7 @@ import os
 from typing import Any
 
 from spiral_harness.benchmark import meta_harness_paper as core
+from spiral_harness.benchmark import meta_harness_retrosynthesis as retro
 from spiral_harness.benchmark import meta_harness_spiral as spiral
 
 from ..llm import LLMCallable
@@ -26,6 +27,8 @@ class SpiralNative(MemorySystem):
         self.mode = os.environ.get("SPIRAL_META_HARNESS_MODE", "paper")
         if self.mode == "paper":
             self.paper = core.LabelPrimedQueryMemory()
+        elif self.mode == "retrosynthesis":
+            self.retrosynthesis = retro.SpiralRetrosynthesisMemory()
         elif self.mode == "local":
             self.local = spiral.SpiralLocalEvidenceMemory()
         elif self.mode == "score-band":
@@ -45,6 +48,11 @@ class SpiralNative(MemorySystem):
         if self.mode == "paper":
             answer, response = self._call_for_answer(self.paper.build_prompt(input))
             return core.clean_classification_answer(answer), {"full_response": response}
+
+        if self.mode == "retrosynthesis":
+            answer, response = self._call_for_answer(self.retrosynthesis.build_prompt(input))
+            compiled = retro.compile_retrosynthesis_answer(input, answer)
+            return compiled, {"draft": answer.strip(), "full_response": response}
 
         if self.mode == "local":
             answer, response = self._call_for_answer(self.local.build_prompt(input))
@@ -87,6 +95,8 @@ class SpiralNative(MemorySystem):
     def learn_from_batch(self, batch_results: list[dict[str, Any]]) -> None:
         if self.mode == "paper":
             self.paper.learn_from_batch(batch_results)
+        elif self.mode == "retrosynthesis":
+            self.retrosynthesis.learn_from_batch(batch_results)
         elif self.mode == "local":
             self.local.learn_from_batch(batch_results)
         elif self.mode == "score-band":
@@ -99,6 +109,8 @@ class SpiralNative(MemorySystem):
     def get_state(self) -> str:
         if self.mode == "paper":
             memories = {"paper": json.loads(self.paper.get_state())}
+        elif self.mode == "retrosynthesis":
+            memories = {"retrosynthesis": json.loads(self.retrosynthesis.get_state())}
         elif self.mode == "local":
             memories = {"local": json.loads(self.local.get_state())}
         elif self.mode == "score-band":
@@ -122,6 +134,10 @@ class SpiralNative(MemorySystem):
         memories = payload["memories"]
         if self.mode == "paper":
             self.paper.set_state(json.dumps(memories["paper"], ensure_ascii=False))
+        elif self.mode == "retrosynthesis":
+            self.retrosynthesis.set_state(
+                json.dumps(memories["retrosynthesis"], ensure_ascii=False)
+            )
         elif self.mode == "local":
             self.local.set_state(json.dumps(memories["local"], ensure_ascii=False))
         elif self.mode == "score-band":
