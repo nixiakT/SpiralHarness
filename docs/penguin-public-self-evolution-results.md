@@ -2,6 +2,10 @@
 
 Date: 2026-08-14
 
+> **ICLR evidence boundary:** this is an exploratory, repeated-public-task
+> pilot. It has no hidden split or independent search-run replications and
+> cannot support a confirmatory benefit, mechanism, or generalization claim.
+
 ## Outcome
 
 With the same `dashscope/qwen3-coder-flash` model, five runs per generation,
@@ -104,7 +108,8 @@ uses different models for Penguin, Claude Code, and Codex.  We therefore do not
 claim to have run or beaten that unreleased suite.
 
 The public recursive example also repeats one task and has no hidden test
-split.  This result is strong same-model mechanism evidence, not an estimate of
-cross-task generalization.  Penguin's README example of 9.8/10 used
+split.  This result is a mechanistically informative same-model pilot, not an
+estimate of cross-task generalization or a confirmatory mechanism effect.
+Penguin's README example of 9.8/10 used
 `qwen3.6:35b`; comparing that number directly with this model would violate the
 same-model requirement.

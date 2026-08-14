@@ -1,5 +1,11 @@
 # Native Meta-Harness Comparison
 
+> **ICLR evidence boundary (2026-08-14):** every number in this document is a
+> development pilot. The task tests are exposed, candidate search has only one
+> trajectory, and there are no independent search-run replications or atomic
+> sealed release. The values and artifact hashes are retained for auditability,
+> but none is a confirmatory result or an official Meta-Harness-system win.
+
 This audit answers two separate questions:
 
 1. What harness does Meta-Harness actually discover and run?
@@ -99,11 +105,11 @@ paper reconstruction. Once that test result was observed, later S2D runs became 
 benchmark experiments. The 88.68% local-evidence result is useful engineering evidence, but it is
 not an untouched-test estimate and must not be reported as one.
 
-LawBench is cleaner: the first frozen candidate scored 55%, ten points above the paper
+LawBench is less adaptively contaminated: the first frozen candidate scored 55%, ten points above the paper
 reconstruction and fifteen above the pure model. It changed ten paper-reconstruction errors to
 correct answers and introduced no regressions.
 
-USPTO is the cleanest threshold result. Candidate source and validation evidence were committed as
+USPTO is the cleanest pre-test-frozen pilot in this set. Candidate source and validation evidence were committed as
 `e377684` before the test was opened. The frozen candidate scored 14%, fourteen points above pure
 and twelve above the paper reconstruction. Relative to the reconstruction it corrected 13 errors,
 regressed on one item, and shared one correct item. Its paired bootstrap 95% interval is
@@ -113,9 +119,9 @@ For reference, the paper reports GPT-OSS-120B test scores of 14.0% USPTO, 86.8% 
 LawBench for its selected harness. Those numbers use a different solver and do not form a
 same-model comparison with this study.
 
-## Claim boundary
+## Descriptive claim boundary
 
-The native results support these claims:
+The native runs record these descriptive pilot observations:
 
 - relative to the pure model, the strongest observed Spiral configuration improves S2D by
   26.42 points, frozen LawBench by 15 points, and frozen USPTO by 14 points;
@@ -123,18 +129,19 @@ The native results support these claims:
   `[+8.00, +23.00]` for S2D and Law, plus `[+8.00, +21.00]` for USPTO;
 - relative to the paper reconstruction, adaptive S2D improves by 4.25 points and frozen LawBench
   by exactly 10 points, while frozen USPTO improves by 12 points;
-- USPTO therefore provides a same-model, pre-test-frozen result exceeding the paper reconstruction
-  by more than ten percentage points.
+- USPTO's same-model, pre-test-frozen point estimate exceeds the paper reconstruction by more than
+  ten percentage points in this single development trajectory.
 
 For adaptive S2D, the descriptive paired difference interval is `[+0.47, +8.49]` points, but it
 does not account for candidate selection after test exposure and is not a valid confirmatory
 interval. For frozen LawBench versus the reconstruction it is `[+5.00, +16.00]` points. The frozen
-USPTO interval is confirmatory for the fixed split and candidate, subject to the small benchmark's
-usual external-validity limits.
+USPTO interval is descriptive for that fixed split and candidate, not confirmatory for the search
+procedure: it omits independent search-run variation, adaptive campaign multiplicity, and a sealed
+study release.
 
 ## Self-evolution evidence
 
-The validation trajectory demonstrates executable mechanism search rather than model switching:
+The validation trajectory records executable mechanism search without model switching:
 
 | Candidate | S2D | Law | USPTO | Decision |
 |---|---:|---:|---:|---|

@@ -324,10 +324,12 @@ the [four-condition protocol](docs/baseline-protocol.md). The automatic loop,
 receipt-backed screen, and study barrier are specified in the
 [trusted search protocol](docs/search-protocol.md).
 
-## Same-model benchmark evidence
+## Same-model benchmark pilots
 
-The current public, reproducible same-model results are documented separately
-from plumbing-only demos:
+The current public, reproducible same-model development runs are documented
+separately from plumbing-only demos. They are exploratory pilots: their test
+sets are now exposed, they do not contain independent end-to-end search
+replications, and they are not confirmatory evidence for the ICLR study.
 
 - [PenguinHarness public recursive self-evolution](docs/penguin-public-self-evolution-results.md):
   `dashscope/qwen3-coder-flash`, Penguin 4.0/10 versus Spiral N+2 9.6/10;

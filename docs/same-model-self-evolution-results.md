@@ -6,6 +6,9 @@
 > `inner_loop.py`. In particular, its 3% LawBench pure score must not be compared with the 40%
 > native pure score. See the
 > [native same-runtime comparison](meta-harness-native-comparison.md) for the direct head-to-head.
+> The tests are now exposed and the run lacks independent end-to-end search
+> replications, so all values below are exploratory pilots rather than ICLR
+> confirmatory evidence.
 
 This study compares three arms with the same hosted model
 `dashscope/qwen3-coder-flash`, temperature 0, and a 128-token output ceiling:
@@ -67,6 +70,7 @@ in the run handoff. API credentials are absent from prompts, artifacts, logs, an
 These are controlled same-model comparisons **within the Spiral compatibility protocol**: the gain
 cannot be attributed to switching to a stronger solver model, but the absolute scores are not a
 native Meta-Harness comparison. The evolved mechanism is deterministic retrieval/memory evolution
-over a frozen candidate family, followed by validation-only champion selection. It demonstrates
-automatic evidence-based candidate acceptance and rejection; it is not yet open-ended LLM code
+over a frozen candidate family, followed by validation-only champion selection. It records
+automatic evidence-based candidate acceptance and rejection in this development run; it is not
+confirmatory evidence and is not yet open-ended LLM code
 generation of arbitrary harness programs.
