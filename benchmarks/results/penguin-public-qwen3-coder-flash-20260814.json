@@ -1,0 +1,93 @@
+{
+  "schema_version": "1",
+  "benchmark": "penguin-harness/self-evolve-recursive",
+  "date": "2026-08-14",
+  "comparison_scope": "same-model public recursive self-evolution example",
+  "reportable_as_penguin_official_suite": false,
+  "upstream": {
+    "repository": "https://github.com/Prism-Shadow/penguin-harness",
+    "revision": "d14be6fce255cca1cecea3622805c28ad9a5b45a",
+    "source": "examples/self-improving-agent/self-evolve-recursive.ts",
+    "source_sha256": "dc46ab7735444876c5f0c20ae5aacc75def2e18051ec87f42617901d6694fa2d",
+    "protocol_sha256": "edbfffe1cc2577fa13124678147e83ca509946c58d81e256ed046f125dfe13de",
+    "official_15_40_task_suite_public": false
+  },
+  "matched_conditions": {
+    "model": "dashscope/qwen3-coder-flash",
+    "runs_per_generation": 5,
+    "max_output_tokens_per_call": 32000,
+    "call_schedule": "5N+1R+5N1+1R+5N2",
+    "grader": "byte-compatible port of upstream score()",
+    "task_notes_and_accepted_reports": "byte-compatible with pinned public source"
+  },
+  "penguin_original": {
+    "scores": {
+      "N": [4, 4, 4, 4, 4],
+      "N+1": [4, 4, 4, 4, 4],
+      "N+2": [4, 4, 4, 4, 4]
+    },
+    "means": {
+      "N": 4.0,
+      "N+1": 4.0,
+      "N+2": 4.0
+    },
+    "final_agents_md_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "round_1_trace_sha256": "0cdd920292a4a3ebcfbe2a6a284edbd81b7b515d52169accf8d245b24595baea",
+    "round_2_trace_sha256": "c2f8a34aea48ce4b494d4c1545bf5d4f4322b0d08943ec7d0a41715e4a817502",
+    "failure": "reflection did not persist AGENTS.md for this model"
+  },
+  "spiral_final_run": {
+    "artifact_sha256": "1c669101d4e1b5a567af6d4c8b1e59d34b7169d80d4a41f7879c940d8f90d7aa",
+    "spec_fingerprint": "d333418c310dab656992f1f5d68e9046e713195bbfe87d2a42d55805ffd7b546",
+    "total_tokens": 11323,
+    "scores": {
+      "N_pure": [4, 4, 4, 4, 3],
+      "N+1": [6, 6, 6, 6, 6],
+      "N+2": [9, 10, 9, 10, 10]
+    },
+    "means": {
+      "N_pure": 3.8,
+      "N+1": 6.0,
+      "N+2": 9.6
+    },
+    "round_1_state_sha256": "e2871687988e8b5fe1ef032f36bf96d59ae012de245af93ff96a3828e909ceb5",
+    "round_2_state_sha256": "828977e16b4e10578030a057bae273dac95975d4644d95c109f843b304dc271c",
+    "invariant_compiler_sha256": "85fe90eb3a6390dde72a594f367bb311b484f99e0b7a30f6b6c98d09ad1cc40a",
+    "output_contract_sha256": "4f3453dc02b1dd2f46016ed7cc0d44395b7228b60f2f79e916c5f27ceafa1294",
+    "output_normalizations_applied_at_N+2": 0,
+    "both_candidates_promoted": true
+  },
+  "effect": {
+    "spiral_N+2_minus_penguin_N+2_points_out_of_10": 5.6,
+    "absolute_percentage_point_gain": 56.0,
+    "relative_gain_over_penguin_percent": 140.0,
+    "spiral_N+2_minus_same_run_pure_points_out_of_10": 5.8,
+    "relative_gain_over_same_run_pure_percent": 152.63
+  },
+  "optimization_history": [
+    {
+      "artifact_sha256": "ec9bc96905e5721fbaa8d79eec632588d53c19fe291cda6fa6b1fbd3c9efc942",
+      "means": [4.0, 7.0, 6.4],
+      "round_2_promoted": false,
+      "outcome": "regressing candidate rolled back"
+    },
+    {
+      "artifact_sha256": "0b6dce2455471a6b6ce84f150cd1490ffdd2dcf6668639110f819a126df0acf8",
+      "means": [4.0, 7.0, 8.4],
+      "round_2_promoted": true,
+      "outcome": "evidence-compiled fixed literals improved the trajectory"
+    },
+    {
+      "artifact_sha256": "1c669101d4e1b5a567af6d4c8b1e59d34b7169d80d4a41f7879c940d8f90d7aa",
+      "means": [3.8, 6.0, 9.6],
+      "round_2_promoted": true,
+      "outcome": "final independent live replication"
+    }
+  ],
+  "limitations": [
+    "The public example repeats one task and has no hidden test split, so this is mechanism evidence rather than a generalization estimate.",
+    "Penguin's advertised 15-task data-analysis and 40-task coding benchmark cases and grader were not public at the pinned revision.",
+    "The hosted model identifier was matched, but the gateway does not provide an independently verifiable weight hash.",
+    "The upstream README's 9.8/10 example used qwen3.6:35b and is not a same-model comparison."
+  ]
+}

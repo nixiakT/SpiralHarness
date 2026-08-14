@@ -319,6 +319,21 @@ the [four-condition protocol](docs/baseline-protocol.md). The automatic loop,
 receipt-backed screen, and study barrier are specified in the
 [trusted search protocol](docs/search-protocol.md).
 
+## Same-model benchmark evidence
+
+The current public, reproducible same-model results are documented separately
+from plumbing-only demos:
+
+- [PenguinHarness public recursive self-evolution](docs/penguin-public-self-evolution-results.md):
+  `dashscope/qwen3-coder-flash`, Penguin 4.0/10 versus Spiral N+2 9.6/10;
+- [Meta-Harness Symptom2Disease and LawBench](docs/same-model-self-evolution-results.md):
+  pure, fixed-harness, and validation-evolved arms under one model per study.
+
+Each report states its claim boundary.  In particular, Penguin's advertised
+15-task data-analysis and 40-task coding suite is not public at the pinned
+revision, so the repository reports only its executable public recursive
+example and does not relabel it as the official suite.
+
 ## Materialize the real benchmark
 
 ```bash
