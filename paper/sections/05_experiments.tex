@@ -26,7 +26,8 @@ unsealing.
     Prompt-only & Optimizer edits prompts only; its feedback view is frozen and
       disclosed. \\
     \scorearm & Full mutation grammar; aggregate score, uncertainty, resource
-      totals, and redacted gate decision only. \\
+      totals, and a frozen utility/protected-behavior/cost decision only (not
+      a redaction of the full mechanism gate). \\
     \fullarm & Same grammar and budget as \scorearm, plus source-linked
       activation, adherence, behavior, revert, and placebo evidence. \\
     \bottomrule
@@ -39,6 +40,15 @@ round, solver, task and rollout coordinates, nomination rule, number of gate
 queries, and hard resource ceilings.  Cache state is neutralized or charged
 symmetrically.  All proposer, diagnoser, solver, grader, retry, and failed-call
 usage is retained.
+
+The planned controlled-fault study uses a $2\times2$ decomposition that crosses
+the optimizer view (score-only or mechanism-visible) with the promotion rule
+(performance-only or mechanism-gated).  Its SS, MS, SM, and MM cells separate
+search-guidance, verification, and interaction effects; MM is \fullarm{} and SS
+is \scorearm{}.  All nominations at index $q$ are frozen before the authority
+atomically evaluates their shared fresh gate block.  Post-treatment candidates
+may differ, so matching concerns ex-ante coordinate rules, topology, and
+ceilings rather than falsely asserting identical realized trajectories.
 
 \paragraph{External harness optimizers.}
 Secondary comparisons include a history-rich Meta-Harness-style optimizer
@@ -65,10 +75,11 @@ scores.  Every arm within a cell uses the same exact model revision and
 inference configuration.
 
 One complete search is the repeated algorithmic unit.  The number of independent
-search seeds is \evidenceblocked{pilot variance estimates and the frozen power
-simulation are incomplete}.  The simulation selects from a predeclared roster
-and runs the exact multiplicity-aware analysis; rollout repeats do not count as
-independent search replications.
+search seeds is \evidenceblocked{a closed disjoint pilot and exact-pipeline power
+implementation are incomplete}.  Rollout repeats do not count as independent
+search replications.  The repository's bounded analytic proxy cannot select a
+formal seed count; the exact procedure remains blocked on the closed pilot and
+frozen analysis pipeline (Appendix~\ref{app:power-proxy}).
 
 \subsection{Estimands and analysis}
 
@@ -90,7 +101,15 @@ absolute normalized score for each real-task contrast and 0.15 for verified
 repair.  Three one-sided tests use Holm--Bonferroni family-wise
 \(\alpha=0.05\) \citep{holm1979simple}.  A headline conclusion requires all
 three adjusted tests to pass and all point estimates to exceed their minimum
-effects.
+effects.  Verified repair is weighted equally over frozen
+model--repair-stratum cells.
+
+Sizing distinguishes individual and joint Holm rejection from the stricter
+headline event, which also requires estimates above their margins.  At a true
+effect exactly on a margin, the latter cannot coherently have 0.90 power without
+a separate alternative above that boundary.  A (>10)-percentage-point claim
+requires its preregistered confidence bound to clear 0.10; this is not the
+verified-repair primary margin, which remains 0.15.
 
 Search seeds are resampled within model--task cells and task groups are
 resampled within runs.  A robust hierarchical paired model is primary; an

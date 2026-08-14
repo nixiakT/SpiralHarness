@@ -58,9 +58,12 @@ SCORE and FULL must match exactly on seed harness, proposer model and sampling,
 mutation grammar, editable surfaces, proposals per round, solver model,
 task/rollout coordinates, search rounds, nomination policy, gate-query count,
 and resource ceilings.  Both receive the same aggregate score, interval, cost,
-and decision.  SCORE cannot read item outputs, trajectories, localization,
-activation, adherence, behavior, or mechanism packets.  FULL can read only
-typed, source-linked evidence permitted by the frozen protocol.
+and frozen performance-only decision over utility, protected behavior, and
+cost.  This is not a redacted full-gate decision: it excludes activation,
+adherence, and intended-behavior checks.  SCORE cannot read item outputs,
+trajectories, localization, activation, adherence, behavior, or mechanism
+packets.  FULL can read only typed, source-linked evidence permitted by the
+frozen protocol.
 
 `prompt-only` is not the score-only control if it can read item feedback or
 trajectories.  HarnessFaultBench adds a mechanism-only
@@ -155,16 +158,57 @@ exploratory.
 
 The pilot uses disjoint task groups and HarnessFaultBench generator seeds.  It
 may estimate search variance, model-by-task heterogeneity, paired discordance,
-task-family and rollout ICC, timeout/failure probability, and token/cost
-distributions.  It cannot select the most favorable model or task.
+task-family and rollout ICC, timeout/failure probability, token/cost
+distributions, and dependence among the three primary estimators.  H1 and H2
+share FULL, so independence is inadmissible.  The present code accepts only a
+positive-semidefinite *latent Gaussian rank-copula sensitivity parameter* that
+also includes verified repair.  It is not an observed covariance or an exact
+shared-run dependence model.
 
-For candidate `S in {8,12,16,20,24}`, simulate at least 20,000 complete null
-datasets and 20,000 datasets at each SESOI, injecting the upper-confidence
-failure rate and running the exact hierarchical/Holm pipeline.  Select the
-smallest `S` for which global-null FWER is at most 0.05, worst-case probability
-that all three primary hypotheses pass is at least 0.90, and each individual
-test has power at least 0.90.  If `S=24` fails, do not launch confirmation;
-increase independent tasks/faults or narrow the scientific question.
+The current tool is an analytic sensitivity proxy only.  It uses bounded,
+winsorized Gaussian random effects, reports clipping and target-bias
+diagnostics, and treats its single failure setting as a non-conservative plug-in
+scenario.  Calibration-null, independent audit-null, and design-effect streams
+are disjoint and their sizes are reported.  Audit Bernoulli draws are
+independent conditional on separately generated empirical marginals, so their
+Monte Carlo standard errors also remain proxy diagnostics.  Its empirical
+FWER-like and rejection-rate outputs are not formal FWER/power coverage.  It
+does not implement the robust hierarchical fit, nested search-seed/task-group
+bootstrap, or the preregistered studentized fallback.  It cannot select or
+freeze `S`, even if a sensitivity threshold happens to pass.  It additionally
+assumes independent model--task cell aggregates and represents verified repair
+with a continuous bounded proxy rather than paired binary outcomes.
+
+The proxy may optionally digest-bind a separate canonical, caller-declared
+pilot manifest.  It checks canonical syntax and equality between the manifest,
+config commitment, and declared reference hashes.  It does not load the
+endpoint, joint-dependence, partition, or closure artifacts and therefore does
+not verify their existence, content digests, authenticity, observation status,
+pilot disjointness, closure, or main-search blinding.  These remain declarations
+until an external authority verifies the referenced artifacts.  Digest binding
+never makes the proxy design-ready.
+
+Formal `S` remains blocked until the disjoint pilot is closed and a still-
+unimplemented simulator runs the exact frozen analysis pipeline.  That future
+implementation must predeclare candidate `S`, use an independent calibration
+and FWER-audit stream where calibration is needed, cover dependence and failure
+uncertainty conservatively, and include Monte Carlo uncertainty in its frozen
+selection rule.  No current proxy output is a required-seed recommendation.
+
+Report a separate `headline pass` probability: all three Holm rejections *and*
+all three point estimates above their SESOIs.  This is not the preceding test-
+power sizing criterion.  At a true effect exactly equal to its SESOI, an
+unbiased continuous estimator exceeds that boundary with probability about
+0.5, even as precision grows; demanding 0.90 headline-pass power at the SESOI
+is therefore internally inconsistent.  A 0.90 headline-pass design would need
+a distinct, scientifically justified alternative strictly above every SESOI,
+frozen before outcomes.  The project-wide 0.10 value is only a point-estimate
+display threshold in the proxy: no null-derived proxy interval can substantiate
+the real `>10 pp` claim.  Confirmatory analysis alone supplies that uncertainty
+statement.  The threshold cannot enter sample-size reopening or optional
+stopping; for verified repair it is weaker than, and must never be relabeled
+as, the 0.15 primary SESOI.  H3 uses the explicitly frozen equal weight over
+model-by-repair-stratum cells.
 
 The pilot must also determine rollout repeats, repairable fault count, search
 round/proposal/nomination ceilings, patience, retry limits, protected-slice

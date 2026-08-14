@@ -28,6 +28,72 @@ project preference for a ten-percentage-point improvement may be reported only
 if its preregistered confidence bound supports that margin; it is never a reason
 to reopen or continue tuning on the same sealed release.
 
+\section{Prospective Sizing Boundary}
+\label{app:power-proxy}
+
+The still-unimplemented formal procedure will size every adjusted primary test
+and their joint Holm rejection event using a closed disjoint pilot and the exact
+frozen analysis pipeline.  The current code is only a bounded analytic
+sensitivity proxy: it implements neither the robust hierarchical model, the
+nested search-seed/task-group bootstrap, nor the studentized fallback, and it
+cannot select a formal seed count.  Its positive-semidefinite copula input is a
+latent Gaussian rank parameter rather than an observed covariance or exact
+shared-run model.  It assumes independent cell aggregates, approximates
+verified repair as a continuous bounded endpoint, and uses a single
+non-conservative plug-in failure scenario.
+
+Calibration-null, independent audit-null, and design-effect streams are
+separate, but their FWER-like and rejection rates remain diagnostics rather
+than coverage claims.  The audit Monte Carlo error is conditional on separately
+generated empirical marginals.  An optional canonical declared-manifest digest
+binds only caller-declared syntax and reference hashes: the proxy does not load
+or authenticate those artifacts and therefore verifies neither existence,
+observation, disjointness, closure, nor blinding.  At a true effect exactly on
+its minimum boundary, an unbiased continuous estimate exceeds that boundary
+with probability approximately one half; 0.90 headline-pass power would require
+a prospectively justified alternative strictly above every margin.
+
+\section{Factorial Decomposition and Fresh-Block Validity}
+\label{app:factorial}
+
+\begin{figure}[h]
+  \centering
+  \input{figures/factorial_decomposition.tex}
+  \caption{Controlled-fault factorial decomposition.  Horizontal contrasts
+  isolate mechanism evidence as search guidance; vertical contrasts isolate
+  mechanism-gated promotion; the dashed diagonal is the deployable end-to-end
+  contrast.  Matching fixes ex-ante rules and budgets, not treatment-induced
+  candidate contents.}
+  \label{fig:factorial-decomposition}
+\end{figure}
+
+Let \(\mathcal F_{q-1}\) contain the joint, feedback-isolated history before
+nomination batch \(q\).  Every candidate in that batch and every threshold
+\(\alpha_{qaj}\) for condition \(a\) and gate dimension \(j\) is
+\(\mathcal F_{q-1}\)-measurable before the fresh block is opened.  Assume that
+for each true null,
+\[
+  \Pr(P_{qaj}\leq x\mid\mathcal F_{q-1})\leq x
+  \quad\text{for all }x\in[0,1],
+  \qquad
+  \sum_{q,a,j}\alpha_{qaj}\leq\alpha.
+\]
+Then the probability of any campaign false promotion is at most \(\alpha\).
+Indeed, an invalid intersection-gate promotion rejects at least one true null.
+A union bound over those rejections, followed by conditional super-uniformity
+and iterated expectation, gives
+\(
+  \Pr(\text{any false promotion})
+  \leq\sum_{q,a,j}\mathbb E[
+  \Pr(P_{qaj}\leq\alpha_{qaj}\mid\mathcal F_{q-1})]
+  \leq\sum_{q,a,j}\alpha_{qaj}\leq\alpha.
+\)
+Dependence from paired conditions is allowed.  Unique block identifiers alone
+do not establish the premise: unopened source/family groups, candidate freezing,
+isolated feedback, grader integrity, and complete consumption accounting are
+required evidence.  Reusing a gate family after adapting to its aggregate
+invalidates this argument even if the rollout seed changes.
+
 \section{Figure Accessibility}
 \label{app:figure-accessibility}
 
@@ -39,3 +105,10 @@ utility/protection/cost gates.  A dashed return arrow carries only a redacted
 decision.  A separate tan box receives champion hashes after all search cells
 close and releases one aggregate evaluation.  Candidate execution sits in a
 dashed untrusted-runtime box without grader, target, or secret access.
+
+Figure~\ref{fig:factorial-decomposition} is a labeled two-by-two grid.  Columns
+change the optimizer view from score-only to mechanism-visible; rows change the
+promotion rule from performance-only to mechanism-gated.  Solid horizontal and
+vertical arrows denote guidance and verification contrasts.  A labeled dashed
+diagonal from SS to MM denotes the end-to-end protocol contrast.  Labels, line
+style, and position preserve all meaning without color.

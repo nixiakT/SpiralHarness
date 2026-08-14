@@ -1,0 +1,95 @@
+{
+  "schema_version": "4",
+  "study_id": "synthetic-power-fixture-not-study-evidence",
+  "purpose": "deterministic-test-fixture",
+  "sensitivity_scenario_label": "synthetic-unit-test-plug-in-scenario",
+  "model_ids": ["fixture-model-c", "fixture-model-a", "fixture-model-b"],
+  "real_task_ids": ["fixture-task-d", "fixture-task-b", "fixture-task-a", "fixture-task-c"],
+  "repair_strata": ["fixture-dense", "fixture-sparse"],
+  "real_cell_weighting": "equal-model-by-task-cell",
+  "verified_repair_cell_weighting": "equal-model-by-repair-stratum-cell",
+  "real_condition_count": 5,
+  "search_seed_counts_per_cell": [3, 5],
+  "calibration_null_replicates": 600,
+  "audit_null_replicates": 700,
+  "design_effect_replicates": 800,
+  "simulation_seed": 73021,
+  "analysis_method": "bounded-equal-cell-rank-copula-analytic-proxy",
+  "family_wise_alpha": 0.05,
+  "project_display_margin": 0.1,
+  "joint_primary_assumptions": {
+    "assumption_artifact_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+    "source_label": "synthetic-fixture-not-observed-pilot",
+    "estimation_method": "synthetic-fixture-copula-estimator-v1",
+    "correlation_scale": "latent-gaussian-rank-copula-parameter",
+    "hypothesis_order": [
+      "full-vs-score-real",
+      "full-vs-static-real",
+      "full-vs-score-verified-repair"
+    ],
+    "correlation_matrix": [
+      [1.0, 0.6, 0.2],
+      [0.6, 1.0, 0.1],
+      [0.2, 0.1, 1.0]
+    ]
+  },
+  "endpoint_assumptions": [
+    {
+      "hypothesis": "full-vs-static-real",
+      "assumption_artifact_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "effect_threshold": 0.02,
+      "rollout_difference_variance": 0.04,
+      "search_seed_icc": 0.4,
+      "task_group_icc": 0.6,
+      "cell_effect_sd": 0.03,
+      "task_groups_per_search_run": 4,
+      "rollouts_per_task_group": 2,
+      "failure_scenario": {
+        "full_only_probability": 0.01,
+        "control_only_probability": 0.01,
+        "both_probability": 0.01,
+        "full_only_difference": -0.5,
+        "control_only_difference": 0.5,
+        "both_difference": 0.0
+      }
+    },
+    {
+      "hypothesis": "full-vs-score-verified-repair",
+      "assumption_artifact_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "effect_threshold": 0.15,
+      "rollout_difference_variance": 0.09,
+      "search_seed_icc": 0.3,
+      "task_group_icc": 0.5,
+      "cell_effect_sd": 0.05,
+      "task_groups_per_search_run": 6,
+      "rollouts_per_task_group": 3,
+      "failure_scenario": {
+        "full_only_probability": 0.02,
+        "control_only_probability": 0.01,
+        "both_probability": 0.01,
+        "full_only_difference": -1.0,
+        "control_only_difference": 1.0,
+        "both_difference": 0.0
+      }
+    },
+    {
+      "hypothesis": "full-vs-score-real",
+      "assumption_artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "effect_threshold": 0.02,
+      "rollout_difference_variance": 0.04,
+      "search_seed_icc": 0.4,
+      "task_group_icc": 0.6,
+      "cell_effect_sd": 0.03,
+      "task_groups_per_search_run": 4,
+      "rollouts_per_task_group": 2,
+      "failure_scenario": {
+        "full_only_probability": 0.01,
+        "control_only_probability": 0.01,
+        "both_probability": 0.01,
+        "full_only_difference": -0.5,
+        "control_only_difference": 0.5,
+        "both_difference": 0.0
+      }
+    }
+  ]
+}

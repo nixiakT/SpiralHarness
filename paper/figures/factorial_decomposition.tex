@@ -1,0 +1,38 @@
+\resizebox{0.88\linewidth}{!}{%
+\begin{tikzpicture}[
+  font=\sffamily,
+  >=Latex,
+  cell/.style={draw=black, rounded corners=2pt, align=center,
+               minimum width=36mm, minimum height=14mm, inner sep=4pt},
+  contrast/.style={-Latex, line width=0.8pt},
+  fullcontrast/.style={-Latex, dashed, line width=0.9pt},
+  heading/.style={font=\sffamily\bfseries, align=center},
+  rowheading/.style={font=\sffamily\bfseries, align=right, text width=22mm},
+  note/.style={font=\sffamily\footnotesize, align=center}
+]
+  \node[cell, fill=MutableFill] (ss) {\textbf{SS}\\score feedback\\performance rule};
+  \node[cell, fill=TrustedFill, right=22mm of ss] (ms)
+        {\textbf{MS}\\mechanism feedback\\performance rule};
+  \node[cell, fill=GateGreen, below=18mm of ss] (sm)
+        {\textbf{SM}\\score feedback\\mechanism rule};
+  \node[cell, fill=SealedFill, right=22mm of sm] (mm)
+        {\textbf{MM}\\mechanism feedback\\mechanism rule};
+
+  \node[heading, above=5mm of ss] {Score-only\\optimizer view};
+  \node[heading, above=5mm of ms] {Mechanism-visible\\optimizer view};
+  \node[rowheading, left=4mm of ss] {Performance\\promotion};
+  \node[rowheading, left=4mm of sm] {Mechanism\\promotion};
+
+  \draw[contrast] (ss.east) -- node[above, note] {guidance} (ms.west);
+  \draw[contrast] (ss.south) -- node[right, note] {verification} (sm.north);
+  \draw[contrast] (sm.east) -- (mm.west);
+  \draw[contrast] (ms.south) -- (mm.north);
+  \draw[fullcontrast] (ss.south east) --
+        node[sloped, below, note] {end-to-end} (mm.north west);
+
+  \node[note, below=6mm of sm, text width=98mm, xshift=29mm]
+        {Interaction: $(\mathrm{MM}-\mathrm{SM})-(\mathrm{MS}-\mathrm{SS})$.
+         All cells retain the same ex-ante coordinate rules, authority calls,
+         ceilings, and fresh-block schedule; treatment-induced search paths may diverge.};
+\end{tikzpicture}%
+}

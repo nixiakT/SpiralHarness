@@ -43,9 +43,12 @@ or inconsistent evidence cannot be interpreted as a pass.
 This design does not assume that mechanism evidence is automatically useful.
 It creates a testable treatment contrast.  \fullarm{} exposes typed
 activation--adherence--behavior evidence to the optimizer; \scorearm{} receives
-only matched aggregate scores, intervals, resource totals, and decisions.  The
-solver, proposer, mutation grammar, task coordinates, and budget are otherwise
-held fixed.  The central empirical question is whether \fullarm{} reduces
+only matched aggregate scores, intervals, resource totals, and a frozen
+performance-only decision over utility, protected behavior, and cost.  That
+projection excludes activation, adherence, and intended-behavior checks; it is
+not a redaction of the full mechanism gate.  The solver, proposer, mutation
+grammar, task coordinates, and budget are otherwise held fixed.  The central
+empirical question is whether \fullarm{} reduces
 false promotion and improves sealed utility relative to \scorearm{}.
 
 \paragraph{Contributions.}

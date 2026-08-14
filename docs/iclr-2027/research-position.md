@@ -22,7 +22,9 @@ to measure and control *false promotion* during adaptive harness search.
 The main experiment compares two budget-matched optimizers:
 
 - **SCORE:** sees only aggregate score, confidence bounds, resource totals,
-  and the deterministic gate decision.
+  and a frozen performance-only decision over utility, protected behavior, and
+  cost.  This projection excludes activation, adherence, and intended-behavior
+  checks; it is not a redaction of the full mechanism gate.
 - **FULL:** has the same model, candidate grammar, candidate count, task
   coordinates, scoring summaries, and budget, but additionally receives typed
   evidence linking activation, adherence, behavior, revert, and placebo
