@@ -14,10 +14,7 @@ from spiral_harness.benchmark.meta_harness_retrosynthesis import (
 
 
 def _query(reaction_type: str, product: str) -> str:
-    return (
-        f"Context: The reaction type is {reaction_type}.\n"
-        f"Input: {product}\nAnswer: "
-    )
+    return f"Context: The reaction type is {reaction_type}.\nInput: {product}\nAnswer: "
 
 
 def _result(reaction_type: str, product: str, target: str) -> dict[str, object]:
@@ -66,9 +63,7 @@ def test_retrieval_filters_reaction_family_before_structure_ranking() -> None:
 
 def test_prompt_makes_reverse_direction_and_output_contract_explicit() -> None:
     memory = SpiralRetrosynthesisMemory()
-    memory.learn_from_batch(
-        [_result("Reductions", "CCO", "CC=O")]
-    )
+    memory.learn_from_batch([_result("Reductions", "CCO", "CC=O")])
 
     prompt = memory.build_prompt(_query("Reductions", "CCCO"))
 

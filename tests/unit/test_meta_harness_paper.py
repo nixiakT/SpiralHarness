@@ -300,9 +300,7 @@ def test_spiral_local_evidence_state_round_trip() -> None:
 
 
 def test_local_evidence_can_expose_all_training_derived_label_profiles() -> None:
-    memory = SpiralLocalEvidenceMemory(
-        neighbor_k=1, candidate_labels=1, profile_all_labels=True
-    )
+    memory = SpiralLocalEvidenceMemory(neighbor_k=1, candidate_labels=1, profile_all_labels=True)
     memory.learn_from_batch(
         [
             _result("itchy circular rash", "fungal infection"),
@@ -326,9 +324,7 @@ def test_candidate_adjudication_preserves_independent_candidates_and_evidence() 
         ]
     )
 
-    prompt = memory.build_adjudication_prompt(
-        "itchy circular rash", "allergy", "fungal infection"
-    )
+    prompt = memory.build_adjudication_prompt("itchy circular rash", "allergy", "fungal infection")
 
     assert "Candidate A" in prompt
     assert "Candidate B" in prompt

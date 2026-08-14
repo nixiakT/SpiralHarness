@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -9,6 +10,28 @@ from spiral_harness.benchmark.skillsbench_sandbox import (
     SkillsBenchSandboxError,
     extract_python_candidate,
 )
+
+
+def _bubblewrap_can_create_required_namespaces() -> bool:
+    bwrap = Path("/usr/bin/bwrap")
+    if not bwrap.exists():
+        return False
+    probe = subprocess.run(
+        [
+            str(bwrap),
+            "--unshare-user",
+            "--unshare-net",
+            "--die-with-parent",
+            "--ro-bind",
+            "/usr",
+            "/usr",
+            "/usr/bin/true",
+        ],
+        check=False,
+        capture_output=True,
+        timeout=5,
+    )
+    return probe.returncode == 0
 
 
 def test_extract_python_candidate_accepts_one_fenced_block() -> None:
@@ -31,7 +54,10 @@ def test_module_does_not_accept_a_relative_python_path(tmp_path: Path) -> None:
         run_skillsbench_task(tmp_path, python_executable=Path("missing-python"))
 
 
-@pytest.mark.skipif(not Path("/usr/bin/bwrap").exists(), reason="bubblewrap is unavailable")
+@pytest.mark.skipif(
+    not _bubblewrap_can_create_required_namespaces(),
+    reason="bubblewrap namespaces are unavailable",
+)
 def test_bubblewrap_runs_candidate_and_verifier_in_isolated_app(tmp_path: Path) -> None:
     from spiral_harness.benchmark.skillsbench_sandbox import run_skillsbench_task
 

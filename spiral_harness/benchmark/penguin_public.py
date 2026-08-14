@@ -24,9 +24,7 @@ from spiral_harness.storage.artifact_store import ArtifactStore
 PENGUIN_REPOSITORY = "https://github.com/Prism-Shadow/penguin-harness"
 PENGUIN_REVISION = "d14be6fce255cca1cecea3622805c28ad9a5b45a"
 PENGUIN_PUBLIC_SOURCE = "examples/self-improving-agent/self-evolve-recursive.ts"
-PENGUIN_PUBLIC_SOURCE_SHA256 = (
-    "dc46ab7735444876c5f0c20ae5aacc75def2e18051ec87f42617901d6694fa2d"
-)
+PENGUIN_PUBLIC_SOURCE_SHA256 = "dc46ab7735444876c5f0c20ae5aacc75def2e18051ec87f42617901d6694fa2d"
 PENGUIN_OFFICIAL_SUITE_PUBLIC = False
 PENGUIN_PUBLIC_RESULT_MEDIA_TYPE = (
     "application/vnd.spiral-harness.penguin-public-self-evolution.v1+json"
@@ -185,9 +183,9 @@ def score_report(summary_text: str | None) -> ReportScore:
     add("55%" in text or "48" in text, "mentions a storage cost/retention figure")
 
     marker_ok = bool(lines) and lines[0].strip() == "<!-- ACME-DATA-PLATFORM -->"
-    title_ok = len(lines) > 1 and re.search(
-        r"^#\s+Report:.*aurora", lines[1].strip(), re.I
-    ) is not None
+    title_ok = (
+        len(lines) > 1 and re.search(r"^#\s+Report:.*aurora", lines[1].strip(), re.I) is not None
+    )
     classification_ok = re.search(r"^Classification:\s*INTERNAL\s*$", text, re.M) is not None
     last_non_empty = next((line for line in reversed(lines) if line.strip()), "")
     footer_ok = last_non_empty.strip() == "Reviewed-by: Aurora Team"
@@ -226,14 +224,12 @@ def build_worker_prompt(*, state: str | None) -> str:
     guidance = ""
     if state is not None:
         guidance = (
-            "\n\n<PERSISTENT_TEAM_INSTRUCTIONS>\n"
-            + state
-            + "\n</PERSISTENT_TEAM_INSTRUCTIONS>"
+            "\n\n<PERSISTENT_TEAM_INSTRUCTIONS>\n" + state + "\n</PERSISTENT_TEAM_INSTRUCTIONS>"
         )
     return (
         "<TASK>\n"
         + TASK
-        + "\n</TASK>\n\n<VIRTUAL_FILE name=\"notes.txt\">\n"
+        + '\n</TASK>\n\n<VIRTUAL_FILE name="notes.txt">\n'
         + NOTES
         + "</VIRTUAL_FILE>"
         + guidance
@@ -245,13 +241,9 @@ def build_round_one_prompt(failed_report: str) -> str:
 
     return (
         "A report-writing worker produced the following REJECTED report:\n\n"
-        "<REJECTED_REPORT>\n"
-        + failed_report
-        + "\n</REJECTED_REPORT>\n\n"
+        "<REJECTED_REPORT>\n" + failed_report + "\n</REJECTED_REPORT>\n\n"
         "A different project's report PASSED review:\n\n"
-        "<ACCEPTED_REPORT>\n"
-        + REFERENCE_1
-        + "</ACCEPTED_REPORT>\n\n"
+        "<ACCEPTED_REPORT>\n" + REFERENCE_1 + "</ACCEPTED_REPORT>\n\n"
         "Infer the reusable publishing convention: marker line, title format, metadata line, "
         "and footer/sign-off. Distinguish fixed literals from per-report fields where the "
         "evidence supports that distinction."
@@ -262,14 +254,12 @@ def build_round_two_prompt(current_state: str) -> str:
     """Build the recursive second-round view from state plus three accepted reports."""
 
     references = "\n\n".join(
-        f"<ACCEPTED_REPORT index=\"{index}\">\n{report}</ACCEPTED_REPORT>"
+        f'<ACCEPTED_REPORT index="{index}">\n{report}</ACCEPTED_REPORT>'
         for index, report in enumerate((REFERENCE_1, REFERENCE_2, REFERENCE_3), start=1)
     )
     return (
         "Refine the complete persistent convention below rather than starting over:\n\n"
-        "<CURRENT_STATE>\n"
-        + current_state
-        + "\n</CURRENT_STATE>\n\n"
+        "<CURRENT_STATE>\n" + current_state + "\n</CURRENT_STATE>\n\n"
         "Compare these accepted reports from different projects:\n\n"
         + references
         + "\n\nAnything identical character-for-character across all accepted reports is a fixed "
@@ -294,8 +284,7 @@ def compile_fixed_line_invariants(accepted_reports: tuple[str, ...]) -> str:
         "# Evidence-compiled fixed literals\n"
         "These lines were identical at the same position in every accepted report. "
         "Reproduce each quoted value verbatim at that position; this section overrides "
-        "conflicting placeholders or guesses elsewhere in the state.\n"
-        + rendered
+        "conflicting placeholders or guesses elsewhere in the state.\n" + rendered
     )
 
 
@@ -469,9 +458,7 @@ def run_public_self_evolution(
                 else normalize_evidence_fixed_lines(call.output, fixed_line_evidence)
             )
             result = score_report(report)
-            report_ref = store.put_bytes(
-                report.encode(), media_type="text/markdown; charset=utf-8"
-            )
+            report_ref = store.put_bytes(report.encode(), media_type="text/markdown; charset=utf-8")
             records.append(
                 {
                     "run": index + 1,
@@ -517,9 +504,7 @@ def run_public_self_evolution(
         seed=runs_per_generation * 2 + 1,
     )
     model_state_two = extract_state(round_two_call.output)
-    compiled_invariants = compile_fixed_line_invariants(
-        (REFERENCE_1, REFERENCE_2, REFERENCE_3)
-    )
+    compiled_invariants = compile_fixed_line_invariants((REFERENCE_1, REFERENCE_2, REFERENCE_3))
     state_two = merge_reflected_state(model_state_two, compiled_invariants)
     state_two_ref = store.put_bytes(state_two.encode(), media_type="text/markdown; charset=utf-8")
     generation_two = evaluate(

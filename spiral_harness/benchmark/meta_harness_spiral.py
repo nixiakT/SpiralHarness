@@ -116,10 +116,7 @@ class SpiralLocalEvidenceMemory:
         for label in self.labels():
             denominator = totals[label] + self.naive_bayes_alpha * len(vocabulary)
             scores[label] = math.log(label_frequency[label] / len(self.examples)) + sum(
-                frequency
-                * math.log(
-                    (by_label[label][term] + self.naive_bayes_alpha) / denominator
-                )
+                frequency * math.log((by_label[label][term] + self.naive_bayes_alpha) / denominator)
                 for term, frequency in query_counts.items()
             )
         ranked = sorted(scores, key=lambda label: (-scores[label], label))
@@ -142,8 +139,7 @@ class SpiralLocalEvidenceMemory:
             return "(no labeled memory available)"
         candidates = self.ranked_label_candidates(input)
         candidate_block = "\n".join(
-            f"- {label}: relative log-score {score:.3f}; "
-            f"cues: {', '.join(self._profile(label))}"
+            f"- {label}: relative log-score {score:.3f}; cues: {', '.join(self._profile(label))}"
             for label, score in candidates
         )
         neighbors = self._ensure_index().rank(input)[: self.neighbor_k]

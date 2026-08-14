@@ -137,11 +137,7 @@ def compile_retrosynthesis_answer(query: str, draft: str) -> str:
             return product.replace("C(O)", "C(=O)", 1)
 
     cleaned_draft = draft.strip()
-    if (
-        family == "oxidations"
-        and "S(=O)C" in product
-        and "OO" not in cleaned_draft.split(".")
-    ):
+    if family == "oxidations" and "S(=O)C" in product and "OO" not in cleaned_draft.split("."):
         return f"{cleaned_draft}.OO"
 
     return cleaned_draft

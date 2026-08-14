@@ -76,9 +76,7 @@ def test_extract_state_requires_one_bounded_exact_block() -> None:
     with pytest.raises(ValueError, match="must not be empty"):
         subject.extract_state("<SPIRAL_STATE> </SPIRAL_STATE>")
     with pytest.raises(ValueError, match="nested"):
-        subject.extract_state(
-            "<SPIRAL_STATE>one <SPIRAL_STATE>two</SPIRAL_STATE></SPIRAL_STATE>"
-        )
+        subject.extract_state("<SPIRAL_STATE>one <SPIRAL_STATE>two</SPIRAL_STATE></SPIRAL_STATE>")
 
 
 def test_reflection_prompts_contain_evidence_but_never_the_scorer() -> None:
@@ -185,8 +183,7 @@ def test_live_runner_mirrors_call_schedule_and_persists_states(tmp_path: Path) -
     assert result.payload["reflection_information"].endswith("no scorer")
     assert result.payload["invariant_compiler"] == "position-stable-non-empty-lines-v1"
     assert [
-        generation["evidence_fixed_line_contract"]
-        for generation in result.payload["generations"]
+        generation["evidence_fixed_line_contract"] for generation in result.payload["generations"]
     ] == [False, False, True]
     assert result.payload["official_15_40_suite_public"] is False
     assert result.payload["total_tokens"] == 17 * 15

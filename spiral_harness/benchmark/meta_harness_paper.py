@@ -168,8 +168,7 @@ def classification_terms(text: str) -> Counter[str]:
     words = _LATIN_OR_NUMBER.findall(unicodedata.normalize("NFKC", text).lower())
     for size in (2, 3):
         terms.update(
-            " ".join(words[index : index + size])
-            for index in range(len(words) - size + 1)
+            " ".join(words[index : index + size]) for index in range(len(words) - size + 1)
         )
     return terms
 
@@ -262,7 +261,6 @@ class LabelPrimedQueryMemory:
         )
         self._index = None
 
-
     def _ensure_index(self) -> UnicodeTfidfIndex:
         if self._index is None:
             self._index = UnicodeTfidfIndex(example.raw_question for example in self.examples)
@@ -270,13 +268,7 @@ class LabelPrimedQueryMemory:
 
     def labels(self) -> tuple[str, ...]:
         return tuple(
-            sorted(
-                {
-                    label
-                    for example in self.examples
-                    for label in atomic_labels(example.target)
-                }
-            )
+            sorted({label for example in self.examples for label in atomic_labels(example.target)})
         )
 
     def _coverage(self, query: str) -> tuple[tuple[str, int, float], ...]:
@@ -317,10 +309,7 @@ class LabelPrimedQueryMemory:
             partner = min(
                 alternatives,
                 key=lambda item: (
-                    -(
-                        0.55 * query_scores[item]
-                        + 0.45 * index.document_similarity(anchor, item)
-                    ),
+                    -(0.55 * query_scores[item] + 0.45 * index.document_similarity(anchor, item)),
                     item,
                 ),
             )
@@ -444,7 +433,6 @@ class SpiralDraftVerificationMemory:
         )
         self._index = None
 
-
     def _ensure_index(self) -> UnicodeTfidfIndex:
         if self._index is None:
             self._index = UnicodeTfidfIndex(example.raw_question for example in self.examples)
@@ -452,13 +440,7 @@ class SpiralDraftVerificationMemory:
 
     def labels(self) -> tuple[str, ...]:
         return tuple(
-            sorted(
-                {
-                    label
-                    for example in self.examples
-                    for label in atomic_labels(example.target)
-                }
-            )
+            sorted({label for example in self.examples for label in atomic_labels(example.target)})
         )
 
     @staticmethod
