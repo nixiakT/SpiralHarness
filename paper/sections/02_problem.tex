@@ -1,0 +1,66 @@
+\section{Problem Formulation}
+\label{sec:problem}
+
+\paragraph{Harness state.}
+Let a harness
+\(
+  \harness=(H_{\mathrm{prompt}},H_{\mathrm{memory}},H_{\mathrm{skill}},
+  H_{\mathrm{tool}},H_{\mathrm{middleware}},H_{\mathrm{route}})
+\)
+surround a frozen solver model.  An admissible mutation \(m\) creates one
+content-addressed child \(\candidate=m(\harness)\).  It declares the changed
+surface, operation, source evidence, expected behavior, and protected behavior.
+Atomicity is a protocol constraint: an interaction edit is legal only when its
+joint mechanism is declared and tested as such.
+
+\paragraph{Adaptive search.}
+At round \(r\), an optimizer observes an authorized view of history
+\(V(\history_{<r})\), proposes candidates, and nominates at most one for the
+gate.  A frozen budget \(\budget\) limits proposals, optimizer calls, solver
+calls, gate queries, tokens, wall time, and failures.  The unit of replication
+is a complete search run, not an individual rollout from within one adaptive
+trajectory.
+
+\paragraph{Promotion and false promotion.}
+For candidate \(c\), let \(\utility(c)\) be downstream utility,
+\(\cost(c)\) resource use, and \(R_k(c)\) protected-slice outcomes.  A promotion
+is valid only if benefit, cost, and every protected constraint pass under a
+frozen statistical rule.  A \emph{false promotion} occurs when the gate accepts
+a null, harmful, inactive, non-adhered, out-of-policy, or grader-exploiting edit.
+We report false promotion at the campaign level over all adaptive nominations,
+not only a nominal threshold attached to one comparison.
+
+\paragraph{Mechanism estimand.}
+The proposed chain is
+\[
+  m \longrightarrow \activate \longrightarrow \adhere
+  \longrightarrow \behavior \longrightarrow \utility,
+\]
+where activation means the mutated surface entered the executed request or code
+path, adherence means the solver acted consistently with it, and behavior means
+the preregistered intermediate outcome changed.  We do not infer an upstream
+link from downstream utility.  Each link must have source-bound observations or
+the result is inconclusive.
+
+\paragraph{Threat model and claim boundary.}
+The mutable plane may emit arbitrary candidate content and attempt to exploit
+the task, grader, or ledger.  It may not modify split loading, grading,
+promotion logic, resource accounting, sealed authorization, or historical
+evidence.  The target deployment isolates candidate execution from secrets,
+network, and grader state.  The current implementation establishes typed
+logical, in-process boundaries only; it is not yet a hostile-code security
+boundary.  Consequently, process independence and sealed-service security are
+design requirements, not completed empirical or security claims.
+
+\begin{figure}[t]
+  \centering
+  \input{figures/mechanism_boundary.tex}
+  \caption{Mechanism and authority boundary.  The mutable optimizer can edit
+  only declared harness surfaces.  Promotion belongs to a separate authority
+  that executes matched interventions and fails closed along the mechanism
+  chain.  Sealed tasks are released once, only after all search cells close.
+  Solid arrows carry typed artifacts; the dashed arrow carries a redacted
+  decision, never sealed item feedback.  Shape and labels preserve the meaning
+  in grayscale.}
+  \label{fig:mechanism-boundary}
+\end{figure}

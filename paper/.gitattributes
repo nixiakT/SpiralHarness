@@ -1,0 +1,7 @@
+# Preserve the official ICLR archive byte-for-byte, including its historical
+# trailing spaces; the hashes in README.md and ci/check.sh enforce identity.
+fancyhdr.sty -whitespace
+iclr2027_conference.bst -whitespace
+iclr2027_conference.sty -whitespace
+math_commands.tex -whitespace
+natbib.sty -whitespace

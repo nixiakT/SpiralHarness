@@ -1,0 +1,46 @@
+\section{HarnessFaultBench}
+\label{sec:faultbench}
+
+Real benchmarks rarely reveal whether a proposed patch touched the true cause
+of failure.  HarnessFaultBench complements them with generated scenarios whose
+oracle-correct harness, injected fault, causal surface, trigger, admissible
+repair, exact revert, and neutral placebo are known before search.  Each
+scenario also has disjoint exploration, gate, sealed, and protected-clean
+groups.  Generator code and the design matrix are committed before any scored
+execution.
+
+\begin{table}[t]
+  \caption{Predeclared HarnessFaultBench factors.  Combinations that are
+  semantically impossible are compatibility-masked before sampling.}
+  \label{tab:fault-factors}
+  \centering
+  \begin{tabular}{p{1.25in}p{3.80in}}
+    \toprule
+    \textbf{Factor} & \textbf{Levels} \\
+    \midrule
+    Mutable surface & prompt; memory/retrieval; tool/schema/routing;
+      output middleware; control flow/skill routing \\
+    Causal stage & selection/activation; adherence/conflict;
+      behavior/transformation; output/verification contract \\
+    Structure & sparse or dense prevalence; single or interacting/masked
+      double fault; causal or correlated non-causal distractor \\
+    Distribution & IID gate or held-out template/source shift \\
+    Repairability & repairable; oracle-optimal no-fault; out-of-policy \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+A \emph{verified repair} requires sealed target improvement, protected-slice
+non-inferiority, candidate--revert and candidate--placebo attribution, and
+passing activation and adherence evidence.  Localization accuracy alone is
+insufficient.  Primary fault-suite metrics are verified-repair probability,
+accepted-edit precision, false-promotion probability on null/unrepairable
+families, harmful commits, and calls or tokens per verified repair.
+
+The null-family count is powered independently of search-seed repeats.  In
+particular, observing no false promotions in at least 59 independent null or
+unrepairable scenario families puts the one-sided 95\% exact binomial upper
+bound below 5\%.  This is a design target, not a forecast of the result.
+Synthetic faults cannot by themselves establish real-task usefulness; they
+identify gate operating characteristics under known ground truth, while the
+real-task study tests external validity.

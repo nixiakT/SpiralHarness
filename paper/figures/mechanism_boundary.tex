@@ -1,0 +1,74 @@
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+  font=\sffamily,
+  >=Latex,
+  flow/.style={-Latex, line width=0.8pt},
+  return/.style={-Latex, dashed, line width=0.8pt},
+  box/.style={draw=black, rounded corners=2pt, align=center,
+              minimum height=9mm, inner sep=4pt},
+  stage/.style={box, fill=white, minimum width=21mm},
+  gate/.style={box, fill=GateGreen, minimum width=20mm},
+  boundary/.style={draw=black, rounded corners=4pt, inner sep=6pt,
+                   line width=0.9pt},
+  note/.style={align=center, font=\sffamily\footnotesize}
+]
+  \node[stage] (observe) {Observe\\exploration};
+  \node[stage, right=4mm of observe] (diagnose) {Diagnose\\with sources};
+  \node[stage, right=4mm of diagnose] (mutate) {Typed atomic\\mutation};
+
+  \draw[flow] (observe) -- (diagnose);
+  \draw[flow] (diagnose) -- (mutate);
+
+  \begin{scope}[on background layer]
+    \node[boundary, fit=(observe)(diagnose)(mutate), fill=MutableFill,
+          label={[font=\bfseries\sffamily]above:Mutable evolution plane}]
+          (mutable) {};
+  \end{scope}
+
+  \node[stage, below=20mm of observe, xshift=7mm] (quartet)
+        {Matched quartet\\child / parent\\revert / placebo};
+  \node[gate, right=4mm of quartet] (activation) {Activation};
+  \node[gate, right=3mm of activation] (adherence) {Adherence};
+  \node[gate, right=3mm of adherence] (behavior) {Behavior};
+  \node[gate, right=3mm of behavior, minimum width=26mm] (constraints)
+        {Utility + protected\\behavior + cost};
+
+  \draw[flow] (quartet) -- (activation);
+  \draw[flow] (activation) -- (adherence);
+  \draw[flow] (adherence) -- (behavior);
+  \draw[flow] (behavior) -- (constraints);
+
+  \node[draw=black, dashed, rounded corners=2pt, below=7mm of quartet,
+        minimum width=34mm, align=center, fill=white] (sandbox)
+        {Untrusted candidate runtime\\no grader, targets, or secrets};
+  \node[note, below=8mm of constraints, text width=58mm] (trustnote)
+        {Frozen tasks, grader, schedule, evidence authorities, usage ledger,
+         and campaign error budget};
+  \draw[flow] (quartet.south) -- (sandbox.north);
+
+  \begin{scope}[on background layer]
+    \node[boundary,
+          inner ysep=16pt,
+          fit=(quartet)(activation)(adherence)(behavior)(constraints)(sandbox)(trustnote),
+          fill=TrustedFill]
+          (trusted) {};
+  \end{scope}
+  \draw[flow] (mutate.south) -- ++(0,-7mm) -| (quartet.north);
+  \draw[return] (constraints.north) -- ++(0,7mm) -|
+        node[pos=0.55, above, note] {redacted pass / fail / inconclusive}
+        (observe.south);
+  % Draw the boundary title after the dashed return so its fill masks the
+  % crossing without changing the arrow's routing or meaning.
+  \node[anchor=north west, font=\bfseries\sffamily, fill=TrustedFill,
+        inner sep=1pt] at ($(trusted.north west)+(2mm,-1mm)$)
+        {Independent verification plane};
+
+  \node[box, fill=SealedFill, below=10mm of trusted.south, minimum width=68mm]
+        (sealed) {External sealed authority\\all-cell barrier $\rightarrow$
+        champion hashes $\rightarrow$ one atomic aggregate release};
+  \draw[flow] (trusted.south) --
+        node[right, note] {all search cells close} (sealed.north);
+  \node[note, right=3mm of sealed.east, align=left]
+        {Never visible to\\optimizer or candidate};
+\end{tikzpicture}%
+}

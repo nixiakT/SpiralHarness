@@ -1,0 +1,72 @@
+\section{Introduction}
+\label{sec:introduction}
+
+A fixed language model can behave very differently when its surrounding
+prompts, memory policy, tool interface, or orchestration changes.  This has
+motivated systems that optimize prompts and programs
+\citep{khattab2023dspy,agrawal2025gepa}, search agent workflows
+\citep{hu2025adas}, rewrite full harness code from accumulated traces
+\citep{lee2026metaharness,lin2026ahe}, or ask a model to improve its own harness
+\citep{zhang2026selfharness}.  These results make automated harness engineering
+plausible.  They also make its evaluation unusually adaptive: the same search
+process inspects failures, proposes edits, screens candidates, and repeatedly
+queries a promotion set.
+
+The object being optimized is therefore not the only source of overfitting.
+The \emph{promotion process} is itself a reusable adaptive interface.  A
+candidate may score better because of finite-sample noise, a grader shortcut, a
+correlated but inactive edit, an unrecorded resource increase, or a regression
+outside the optimized slice.  A held-out set helps, but repeatedly consulting
+it during search erodes its held-out meaning \citep{dwork2015reusable}.  Even a
+replicated score difference leaves a second ambiguity: did the proposed
+mechanism produce the change, or did another part of the stochastic execution
+do so?
+
+We ask a narrower question than whether a model can rewrite a harness:
+
+\begin{quote}
+Given a fixed solver model, mutation space, and search budget, what evidence is
+sufficient to promote an adaptively selected harness edit as a reproducible
+improvement?
+\end{quote}
+
+Our answer is \systemname, a protocol that separates a mutable evolution plane
+from an independent verification plane and a one-time sealed authority
+(Figure~\ref{fig:mechanism-boundary}).  Each candidate is an immutable child of
+one parent and declares a typed, bounded mutation plus a falsifiable mechanism
+hypothesis.  Before utility can authorize promotion, matched interventions ask
+whether the new code path was activated, whether the agent followed it, and
+whether the intended behavior changed.  The gate then requires benefit and
+separate non-inferiority constraints for protected behavior and cost.  Missing
+or inconsistent evidence cannot be interpreted as a pass.
+
+This design does not assume that mechanism evidence is automatically useful.
+It creates a testable treatment contrast.  \fullarm{} exposes typed
+activation--adherence--behavior evidence to the optimizer; \scorearm{} receives
+only matched aggregate scores, intervals, resource totals, and decisions.  The
+solver, proposer, mutation grammar, task coordinates, and budget are otherwise
+held fixed.  The central empirical question is whether \fullarm{} reduces
+false promotion and improves sealed utility relative to \scorearm{}.
+
+\paragraph{Contributions.}
+This draft makes four contributions, with empirical claims deliberately kept
+separate from design claims:
+\begin{itemize}
+  \item A formal promotion problem for adaptive harness search, with typed
+  atomic mutations and an explicit trusted surface that candidates cannot edit.
+  \item A randomized mechanism gate using child, parent, revert, and matched
+  placebo arms, campaign-level error control, and explicit utility, regression,
+  safety, and resource constraints.
+  \item HarnessFaultBench, a factorial controlled benchmark whose oracle causal
+  surface permits measurement of localization, verified repair, and false
+  promotion rather than score alone.
+  \item A preregistered same-model, budget-matched study across harness surfaces
+  and real tasks.  Its main conclusion is
+  \evidenceblocked{pending independent search replications and atomic sealed
+  release}.
+\end{itemize}
+
+We do not claim the first self-improving harness, the first held-out acceptance
+test, or the first use of execution evidence.  The proposed distinction is the
+combination of intervention-linked mechanism evidence, independent promotion,
+and campaign-level measurement of false promotion.

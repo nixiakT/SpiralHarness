@@ -1,0 +1,33 @@
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Optimizing prompts, programs, and workflows.}
+DSPy treats language-model pipelines as compilable programs
+\citep{khattab2023dspy}; GEPA evolves prompts from reflective trajectory
+feedback \citep{agrawal2025gepa}; and automated design of agentic systems
+searches compositional workflows \citep{hu2025adas}.  STOP and related recursive
+systems demonstrate that language models can improve code-level artifacts
+\citep{zelikman2024stop}.  These works establish powerful optimizers.  Our focus
+is the evidence required for promotion after adaptive selection, not a claim
+that mutation itself is new.
+
+\paragraph{Harness optimization and self-evolution.}
+Meta-Harness gives a coding-agent proposer filesystem access to accumulated
+source, traces, and scores and searches full harness code
+\citep{lee2026metaharness}.  Agentic Harness Engineering emphasizes
+observability-driven evolution \citep{lin2026ahe}.  Self-Harness mines
+weaknesses, proposes bounded edits, and regression-tests changes using the same
+model family that operates the harness \citep{zhang2026selfharness}.  These are
+the closest conceptual baselines and rule out broad novelty claims such as
+``first self-evolving harness'' or ``first evidence-based update.''  Our
+budget-matched \fullarm/\scorearm{} contrast isolates whether intervention-linked
+mechanism evidence changes promotion quality.
+
+\paragraph{Adaptive validity.}
+Reusable evaluation can overfit even when each query appears held out
+\citep{dwork2015reusable}.  Confidence sequences provide time-uniform inference
+under optional stopping when their assumptions and filtration are respected
+\citep{howard2021confidence}.  \systemname{} applies this perspective at the
+campaign level, but does not claim that a statistical wrapper repairs data
+leakage, invalid graders, non-independent fault families, or a mutable
+evaluation authority.

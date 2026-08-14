@@ -1,0 +1,39 @@
+% Project notation and conspicuous evidence-status markers.
+% Do not hide or restyle \evidenceblocked for submission.  Replace each use
+% only after its bound artifact has passed the claim--evidence checklist.
+
+\definecolor{EvidenceRed}{HTML}{A51C30}
+\definecolor{PilotOrange}{HTML}{9A4F00}
+\definecolor{DesignBlue}{HTML}{1F5A94}
+\definecolor{LinkBlue}{HTML}{174A7E}
+\definecolor{TrustedFill}{HTML}{E8F1F8}
+\definecolor{MutableFill}{HTML}{F5F5F5}
+\definecolor{SealedFill}{HTML}{F5EDE2}
+\definecolor{GateGreen}{HTML}{DDECDD}
+
+\DeclareRobustCommand{\systemname}{\textsc{SpiralHarness}}
+\DeclareRobustCommand{\fullarm}{\textsc{Full}}
+\DeclareRobustCommand{\scorearm}{\textsc{Score}}
+\DeclareRobustCommand{\staticarm}{\textsc{Static}}
+
+\DeclareRobustCommand{\evidenceblocked}[1]{%
+  \textcolor{EvidenceRed}{\textbf{\textsf{[EVIDENCE BLOCKED: #1]}}}%
+}
+\DeclareRobustCommand{\pilotonly}[1]{%
+  \textcolor{PilotOrange}{\textbf{\textsf{[EXPLORATORY PILOT ONLY: #1]}}}%
+}
+\DeclareRobustCommand{\designvalue}[1]{%
+  \textcolor{DesignBlue}{\textbf{\textsf{[PREREGISTERED DESIGN: #1]}}}%
+}
+
+\newcommand{\harness}{H}
+\newcommand{\candidate}{H'}
+\newcommand{\history}{\mathcal{D}}
+\newcommand{\budget}{\mathcal{B}}
+\newcommand{\utility}{U}
+\newcommand{\cost}{C}
+\newcommand{\mech}{\mathbf{M}}
+\newcommand{\activate}{M_{\mathrm{act}}}
+\newcommand{\adhere}{M_{\mathrm{adh}}}
+\newcommand{\behavior}{M_{\mathrm{beh}}}
+\newcommand{\promote}{\operatorname{Promote}}

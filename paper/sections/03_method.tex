@@ -1,0 +1,68 @@
+\section{Mechanism-Gated Self-Evolution}
+\label{sec:method}
+
+\subsection{Immutable candidate lifecycle}
+
+Each round executes four stages: observe, diagnose, mutate, and verify.
+Exploration trajectories are immutable and role-filtered.  A diagnosis cites
+specific trajectory spans, localizes a failure to an editable surface, and
+predicts both an intended effect and plausible regressions.  A typed mutation
+is applied to exactly one parent snapshot, structurally validated, and assigned
+a content hash before execution.  The proposer cannot rewrite an earlier
+artifact or its own evaluation policy.
+
+The same frozen model configuration may fill solver and self-evolution roles;
+all role calls are recorded separately.  A claim of \emph{self-evolution}
+requires that this model family closes execution, diagnosis, proposal, and
+selection without manual candidate choice.  An external stronger proposer is a
+valid harness-optimization baseline, but answers a different question.
+
+\subsection{Matched interventions}
+
+For each gate nomination, the verifier constructs a matched quartet:
+\begin{enumerate}
+  \item \textbf{child}: the nominated harness with the mutation enabled;
+  \item \textbf{parent}: the exact champion from which the child descends;
+  \item \textbf{revert}: the child runtime with the mutation exactly disabled,
+  retaining other candidate-path overhead; and
+  \item \textbf{placebo}: a format- and budget-matched neutral mutation that
+  should not encode the proposed mechanism.
+\end{enumerate}
+Task identity, rollout seed, model settings, runtime image, and resource ceiling
+are paired.  Arm order is randomized by a verifier-owned schedule.  Revert
+tests whether the declared edit matters; placebo tests whether merely adding a
+similarly shaped artifact or execution path explains the observation.
+
+\subsection{Fail-closed promotion gate}
+
+The gate evaluates source-linked claims in causal order.  Later success cannot
+repair an earlier missing link:
+\[
+\promote(c)=
+\mathbb{1}\{A_c\land D_c\land B_c\land U_c\land P_c\land C_c\land L_c\},
+\]
+where \(A,D,B\) denote activation, adherence, and intended behavior; \(U\)
+denotes utility benefit; \(P\) protected-slice non-inferiority; \(C\) the cost
+constraint; and \(L\) protocol, provenance, and leakage validity.  Every term is
+three-valued---pass, fail, or inconclusive---and only all-pass promotes.  Safety
+and cost remain separate constraints rather than disappearing inside a weighted
+score.
+
+The verifier spends a frozen campaign-level error budget across all possible
+nominations.  A conservative fixed-horizon allocation is the default; a
+time-uniform procedure may replace it only when preregistered before outcomes
+are visible \citep{howard2021confidence}.  The optimizer sees only evidence
+authorized for its condition and never sealed outcomes.  Rejected and
+inconclusive candidates remain in the ledger, so failures cannot vanish through
+complete-case reporting.
+
+\subsection{Independent selection and sealing}
+
+The promotion authority is outside every candidate's editable surface.  It
+owns task manifests, paired schedules, graders, evidence producers, usage
+accounting, and the champion pointer.  After every condition and independent
+search run reaches a terminal selection state, a separate sealed service accepts
+only authorized champion hashes.  One atomic authorization evaluates the full
+grid and releases signed aggregates; it never returns item outputs or
+trajectories to the optimizer.  Opening any sealed item early invalidates that
+study lineage rather than turning the item into more validation data.

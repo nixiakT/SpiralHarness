@@ -1,0 +1,114 @@
+\section{Preregistered Evaluation}
+\label{sec:experiments}
+
+The study is frozen before confirmatory search and answers three primary
+questions: Does mechanism-visible search outperform a score-only optimizer
+under an otherwise identical budget?  Does it improve over the unmodified
+harness?  Does it increase verified repair on controlled faults?  The
+corresponding minimum effects are preregistered rather than selected after
+unsealing.
+
+\subsection{Conditions and matched budgets}
+
+\begin{table}[t]
+  \caption{Experimental conditions.  \scorearm{} is the causal control for
+  mechanism visibility; prompt-only is a scope baseline, not a substitute for
+  that control.}
+  \label{tab:conditions}
+  \centering
+  \begin{tabular}{p{1.05in}p{4.00in}}
+    \toprule
+    \textbf{Condition} & \textbf{Authorized search behavior} \\
+    \midrule
+    \staticarm & Frozen seed harness; no search. \\
+    Random-valid & Uniform finite-catalog mutation under the same stopping and
+      execution ceilings. \\
+    Prompt-only & Optimizer edits prompts only; its feedback view is frozen and
+      disclosed. \\
+    \scorearm & Full mutation grammar; aggregate score, uncertainty, resource
+      totals, and redacted gate decision only. \\
+    \fullarm & Same grammar and budget as \scorearm, plus source-linked
+      activation, adherence, behavior, revert, and placebo evidence. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Within every model--task--seed block, \scorearm{} and \fullarm{} share the seed
+harness, proposer and sampling settings, editable surfaces, proposals per
+round, solver, task and rollout coordinates, nomination rule, number of gate
+queries, and hard resource ceilings.  Cache state is neutralized or charged
+symmetrically.  All proposer, diagnoser, solver, grader, retry, and failed-call
+usage is retained.
+
+\paragraph{External harness optimizers.}
+Secondary comparisons include a history-rich Meta-Harness-style optimizer
+\citep{lee2026metaharness} and a same-model weakness-mining/regression-gate
+optimizer based on the published Self-Harness protocol
+\citep{zhang2026selfharness}, provided their executable releases and licenses
+permit the selected task.  An official release is named as such; missing final
+task code is replaced only by an independently implemented
+\emph{paper-algorithm reconstruction} and is never described as an official
+reproduction.  These arms use the same solver, task coordinates, and disclosed
+hard budget, but remain secondary because their mutation and feedback spaces
+cannot in general be made identical to the primary \fullarm/\scorearm{}
+contrast.
+
+\subsection{Models, tasks, and independent runs}
+
+The frozen roster uses
+\designvalue{three open model configurations spanning at least two families}
+and \designvalue{four task families}: mathematical generation, multi-type
+reasoning, high-label classification with group separation, and strict
+structured generation or coding with source/time separation.  Availability
+smoke tests may select deployable endpoints but may not inspect benchmark
+scores.  Every arm within a cell uses the same exact model revision and
+inference configuration.
+
+One complete search is the repeated algorithmic unit.  The number of independent
+search seeds is \evidenceblocked{pilot variance estimates and the frozen power
+simulation are incomplete}.  The simulation selects from a predeclared roster
+and runs the exact multiplicity-aware analysis; rollout repeats do not count as
+independent search replications.
+
+\subsection{Estimands and analysis}
+
+For fixed model roster \(\mathcal{M}\) and task roster \(\mathcal{T}\), the
+primary real-task estimands weight each model--task cell equally:
+\begin{align}
+\Delta_{\mathrm{causal}}
+  &= \frac{1}{|\mathcal{M}||\mathcal{T}|}
+     \sum_{m,t}\left[\mu(\text{\fullarm},m,t)
+       -\mu(\text{\scorearm},m,t)\right],\\
+\Delta_{\mathrm{e2e}}
+  &= \frac{1}{|\mathcal{M}||\mathcal{T}|}
+     \sum_{m,t}\left[\mu(\text{\fullarm},m,t)
+       -\mu(\text{\staticarm},m,t)\right].
+\end{align}
+The third estimand is the \fullarm{}-minus-\scorearm{} difference in verified-repair
+probability on HarnessFaultBench.  The preregistered minimum effects are 0.02
+absolute normalized score for each real-task contrast and 0.15 for verified
+repair.  Three one-sided tests use Holm--Bonferroni family-wise
+\(\alpha=0.05\) \citep{holm1979simple}.  A headline conclusion requires all
+three adjusted tests to pass and all point estimates to exceed their minimum
+effects.
+
+Search seeds are resampled within model--task cells and task groups are
+resampled within runs.  A robust hierarchical paired model is primary; an
+equal-cell studentized cluster bootstrap is the frozen fallback if it fails to
+converge.  Failure-as-zero is the intention-to-treat analysis, accompanied by
+complete-case and worst-case sensitivity analyses.  Individual model, task,
+surface, and factor findings are corrected or labeled exploratory.
+
+\subsection{Selection closure, sealing, and cost}
+
+Search stops at the first frozen round, proposal, nomination, optimizer-call,
+resource, patience, or invalid-candidate limit.  All configured cells,
+including failures, must close before the sealed authority accepts champion
+hashes.  It evaluates the entire grid in one release.  A post-unseal change
+starts a new preregistration and new sealed lineage.
+
+We report score and protected outcomes alongside uncached and cached input,
+output/reasoning tokens, normalized frozen-price cost, actual billed cost when
+available, wall time, tool calls, failures, and retries.  Score per million
+tokens and a Pareto frontier complement absolute outcomes; cost is not hidden
+inside the optimized objective.

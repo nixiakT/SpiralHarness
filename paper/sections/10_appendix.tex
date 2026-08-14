@@ -1,0 +1,41 @@
+\section{Evidence Contract}
+\label{app:evidence-contract}
+
+An empirical claim may replace an \texttt{EVIDENCE BLOCKED} marker only when its
+artifact chain binds: (i) the immutable preregistration and amendment history;
+(ii) model, inference, runtime, grader, task-group, and price-table hashes;
+(iii) every configured search closure, including failed calls and retries;
+(iv) the one-time sealed authorization and signed aggregate release; (v) the
+prespecified estimate, uncertainty interval, and multiplicity result; and (vi)
+the deterministic table or figure source.  A result exposed before these
+conditions is development evidence and stays out of the confirmatory table.
+
+\section{Primary Hypotheses}
+\label{app:hypotheses}
+
+The three one-sided primary hypotheses are:
+\begin{align*}
+H_1 &: \Delta_{\mathrm{causal}} > 0,
+  && \text{minimum effect } 0.02,\\
+H_2 &: \Delta_{\mathrm{e2e}} > 0,
+  && \text{minimum effect } 0.02,\\
+H_3 &: P(\text{verified repair}\mid\text{\fullarm})
+       -P(\text{verified repair}\mid\text{\scorearm}) > 0,
+  && \text{minimum effect } 0.15.
+\end{align*}
+Holm--Bonferroni controls the family-wise error rate at 0.05.  The stronger
+project preference for a ten-percentage-point improvement may be reported only
+if its preregistered confidence bound supports that margin; it is never a reason
+to reopen or continue tuning on the same sealed release.
+
+\section{Figure Accessibility}
+\label{app:figure-accessibility}
+
+Figure~\ref{fig:mechanism-boundary} encodes authority by labeled containers and
+line style, not color alone.  Left-to-right boxes in the upper container show
+the mutable observe--diagnose--mutate loop.  The lower blue container shows a
+matched quartet followed by activation, adherence, behavior, and
+utility/protection/cost gates.  A dashed return arrow carries only a redacted
+decision.  A separate tan box receives champion hashes after all search cells
+close and releases one aggregate evaluation.  Candidate execution sits in a
+dashed untrusted-runtime box without grader, target, or secret access.
