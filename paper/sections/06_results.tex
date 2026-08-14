@@ -11,10 +11,16 @@
     \toprule
     \textbf{Endpoint} & \textbf{Current status} \\
     \midrule
-    \(\Delta_{\mathrm{causal}}\): \fullarm{} vs. \scorearm{}
+    \(\Delta_{\mathrm{policy}}\): \fullarm{} vs. \scorearm{}
       & \evidenceblocked{sealed estimate and interval pending} \\
     \(\Delta_{\mathrm{e2e}}\): \fullarm{} vs. \staticarm{}
       & \evidenceblocked{sealed estimate and interval pending} \\
+    Secondary \(\Delta_{\mathrm{pure}}\): \fullarm{} vs. \purearm{}
+      & \evidenceblocked{reportable live PURE closure and sealed estimate
+        pending} \\
+    Model-budget-matched \(\Delta_{\mathrm{pure@B}}\)
+      & \evidenceblocked{frozen aggregation, usage closure, and sealed estimate
+        pending} \\
     Verified-repair contrast
       & \evidenceblocked{powered HarnessFaultBench run pending} \\
     Campaign false-promotion bound
@@ -35,10 +41,12 @@ repeated Penguin public task showed apparent room for harness-level gains.
 They are retained only as
 \pilotonly{case studies that motivated typed attribution and sealed evaluation}.
 The USPTO candidate involved manual, validation-guided engineering and one
-trajectory; the Penguin task has no hidden split and lacks a matched pure-model
-arm.  Neither demonstrates automatic self-evolution or supports the primary
-comparisons.  An adaptively tuned Symptom2Disease run is expressly excluded
-from the main results because its test data were exposed before later tuning.
+trajectory; the Penguin task has a contemporaneous pure-model reference but no
+preregistered matched search-run design, independent replication, or hidden
+split.  Neither demonstrates confirmatory automatic self-evolution or supports
+the primary comparisons.  An adaptively tuned Symptom2Disease run is expressly
+excluded from the main results because its test data were exposed before later
+tuning.
 
 No confirmatory result should be inferred from implementation tests, replay
 fixtures, or the absence of a crash.  Table~\ref{tab:results} must remain visibly

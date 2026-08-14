@@ -11,11 +11,16 @@ is applied to exactly one parent snapshot, structurally validated, and assigned
 a content hash before execution.  The proposer cannot rewrite an earlier
 artifact or its own evaluation policy.
 
-The same frozen model configuration may fill solver and self-evolution roles;
-all role calls are recorded separately.  A claim of \emph{self-evolution}
-requires that this model family closes execution, diagnosis, proposal, and
-selection without manual candidate choice.  An external stronger proposer is a
-valid harness-optimization baseline, but answers a different question.
+For the same-model condition, one provider-resolved model identity and revision
+fills solver, diagnosis, proposal, materialization planning, candidate ranking,
+and nomination roles; tokenizer, runtime, and role-specific inference settings
+are frozen before search and matched across experimental policies.  All role
+calls are recorded separately.  Final promotion is not a model role: the
+independent authority applies the frozen statistical rule.  A claim of
+\emph{same-model self-evolution} requires that the exact model configuration
+close every model-mediated role without manual candidate choice or a stronger
+teacher.  An external stronger proposer is a valid harness-optimization
+baseline, but answers a different question and is labeled accordingly.
 
 \subsection{Matched interventions}
 

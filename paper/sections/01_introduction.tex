@@ -47,9 +47,13 @@ only matched aggregate scores, intervals, resource totals, and a frozen
 performance-only decision over utility, protected behavior, and cost.  That
 projection excludes activation, adherence, and intended-behavior checks; it is
 not a redaction of the full mechanism gate.  The solver, proposer, mutation
-grammar, task coordinates, and budget are otherwise held fixed.  The central
-empirical question is whether \fullarm{} reduces
-false promotion and improves sealed utility relative to \scorearm{}.
+grammar, task coordinates, and budget are otherwise held fixed.  The real-task
+\fullarm{}--\scorearm{} contrast estimates the effect of the complete deployable
+policy: it changes both optimizer feedback and the promotion rule.  A
+controlled-fault \(2\times2\) factorial separately estimates feedback-guidance,
+promotion-verification, and interaction effects.  The central empirical
+question is whether the joint \fullarm{} policy reduces false promotion and
+improves sealed utility relative to \scorearm{}.
 
 \paragraph{Contributions.}
 This draft makes four contributions, with empirical claims deliberately kept
@@ -60,16 +64,17 @@ separate from design claims:
   \item A randomized mechanism gate using child, parent, revert, and matched
   placebo arms, campaign-level error control, and explicit utility, regression,
   safety, and resource constraints.
-  \item HarnessFaultBench, a factorial controlled benchmark whose oracle causal
-  surface permits measurement of localization, verified repair, and false
+  \item A prospective factorial design for HarnessFaultBench whose oracle causal
+  surface would permit measurement of localization, verified repair, and false
   promotion rather than score alone.
-  \item A preregistered same-model, budget-matched study across harness surfaces
-  and real tasks.  Its main conclusion is
-  \evidenceblocked{pending independent search replications and atomic sealed
-  release}.
+  \item A prospective same-model, budget-matched study across harness surfaces
+  and real tasks.  Its protocol and main conclusion are
+  \evidenceblocked{pending preregistration, independent search replications, and
+  atomic sealed release}.
 \end{itemize}
 
-We do not claim the first self-improving harness, the first held-out acceptance
-test, or the first use of execution evidence.  The proposed distinction is the
-combination of intervention-linked mechanism evidence, independent promotion,
-and campaign-level measurement of false promotion.
+We do not claim the first self-improving harness, activation check, statistical
+gate, held-out acceptance test, or use of execution evidence.  The remaining
+prospective distinction is child--parent--revert--placebo attribution along an
+activation--adherence--behavior chain, campaign-level false-promotion
+measurement, and factorial separation of feedback from promotion authority.

@@ -13,45 +13,65 @@ conditions is development evidence and stays out of the confirmatory table.
 \section{Primary Hypotheses}
 \label{app:hypotheses}
 
-The three one-sided primary hypotheses are:
+The three one-sided primary margin hypotheses are:
 \begin{align*}
-H_1 &: \Delta_{\mathrm{causal}} > 0,
-  && \text{minimum effect } 0.02,\\
-H_2 &: \Delta_{\mathrm{e2e}} > 0,
-  && \text{minimum effect } 0.02,\\
-H_3 &: P(\text{verified repair}\mid\text{\fullarm})
-       -P(\text{verified repair}\mid\text{\scorearm}) > 0,
-  && \text{minimum effect } 0.15.
+H_{01} &: \Delta_{\mathrm{policy}} \leq 0.02,
+  && H_{11}: \Delta_{\mathrm{policy}} > 0.02,\\
+H_{02} &: \Delta_{\mathrm{e2e}} \leq 0.02,
+  && H_{12}: \Delta_{\mathrm{e2e}} > 0.02,\\
+H_{03} &: \Delta_{\mathrm{repair}} \leq 0.15,
+  && H_{13}: \Delta_{\mathrm{repair}} > 0.15.
 \end{align*}
-Holm--Bonferroni controls the family-wise error rate at 0.05.  The stronger
-project preference for a ten-percentage-point improvement may be reported only
-if its preregistered confidence bound supports that margin; it is never a reason
-to reopen or continue tuning on the same sealed release.
+Holm--Bonferroni controls the family-wise error rate at 0.05.  The primary
+statistical pass requires rejection of all three corresponding one-sided margin
+nulls after Holm correction; a point estimate above a margin is insufficient.
+The stronger project preference for a ten-percentage-point improvement is a
+separate claim family on the prospectively binary success-probability scale; an
+arbitrary normalized continuous score does not acquire percentage-point units.
+It may be reported only when every applicable,
+preregistered simultaneous multiplicity-adjusted one-sided lower confidence
+bound is strictly greater than 0.10; it is never a reason to reopen or continue
+tuning on the same sealed release.
 
 \section{Prospective Sizing Boundary}
 \label{app:power-proxy}
 
-The still-unimplemented formal procedure will size every adjusted primary test
-and their joint Holm rejection event using a closed disjoint pilot and the exact
-frozen analysis pipeline.  The current code is only a bounded analytic
-sensitivity proxy: it implements neither the robust hierarchical model, the
-nested search-seed/task-group bootstrap, nor the studentized fallback, and it
-cannot select a formal seed count.  Its positive-semidefinite copula input is a
-latent Gaussian rank parameter rather than an observed covariance or exact
-shared-run model.  It assumes independent cell aggregates, approximates
-verified repair as a continuous bounded endpoint, and uses a single
-non-conservative plug-in failure scenario.
+The repository currently has two method-development paths.  The bounded
+analytic sensitivity proxy uses a latent Gaussian rank-copula parameter,
+independent cell aggregates, a continuous approximation to verified repair,
+and one non-conservative plug-in failure scenario.  A newer fixed-roster
+prototype computes the equal-cell macro estimand and a basic nested bootstrap
+over search seeds, task groups, and repeats, and passes synthetic datasets
+through the same prototype analyzer during prospective simulation.  Neither
+path has completed coverage calibration, frozen an authority-attested input
+contract, or been adopted as the confirmatory estimator.  Neither can select a
+formal seed count or produce confirmatory evidence.
 
-Calibration-null, independent audit-null, and design-effect streams are
-separate, but their FWER-like and rejection rates remain diagnostics rather
-than coverage claims.  The audit Monte Carlo error is conditional on separately
-generated empirical marginals.  An optional canonical declared-manifest digest
-binds only caller-declared syntax and reference hashes: the proxy does not load
-or authenticate those artifacts and therefore verifies neither existence,
-observation, disjointness, closure, nor blinding.  At a true effect exactly on
-its minimum boundary, an unbiased continuous estimate exceeds that boundary
-with probability approximately one half; 0.90 headline-pass power would require
-a prospectively justified alternative strictly above every margin.
+Calibration-null, independent audit-null, and alternative streams are kept
+separate where implemented, but their FWER-like, rejection, and Monte Carlo
+rates remain diagnostics rather than coverage claims.  Caller-declared digests
+or dataset-source labels do not verify artifact existence, observation status,
+pilot disjointness, sealed closure, signatures, or blinding.  The current
+selector's \emph{combined sizing event} is the conjunction of all three
+Holm-corrected SESOI-margin rejections and the two real-task simultaneous
+one-sided lower bounds above 0.10.  It excludes PURE, PURE@B, and external
+claim-family sizing as well as protected-behavior, cost, provenance, and leakage
+constraints, so it is not the full headline pass and cannot freeze the final
+sample size.  At a true effect exactly on its minimum boundary, a valid
+one-sided margin test rejects only at its calibrated type-I rate; 0.90 combined-event
+power requires a prospectively justified alternative strictly above every
+margin.
+
+The prototype generates H3 independently of H1/H2 and simulates no failure or
+missingness process.  Its diagnostic null stream covers only the joint SESOI
+boundary---not partial nulls or the H1/H2 0.10 boundaries---and neither proves
+that boundary least favourable nor gates selection.  It chooses the first
+candidate whose 95\% Wilson lower bound for calibration combined-event power
+meets a caller-declared target, then applies the criterion once on an independent
+validation stream; failure yields no recommendation and no larger fallback.  A
+formal design must freeze the target and roster, cover plausible H3 dependence,
+ICC and failure modes, and make independent boundary/partial-null strong-FWER
+audits a fail-closed prerequisite.
 
 \section{Factorial Decomposition and Fresh-Block Validity}
 \label{app:factorial}
@@ -78,6 +98,10 @@ for each true null,
   \qquad
   \sum_{q,a,j}\alpha_{qaj}\leq\alpha.
 \]
+Thus a shorthand budget such as \(\alpha/Q\) can only be the total envelope
+for nomination block \(q\); it must still be divided or validly combined across
+conditions and gate dimensions so that the displayed global sum is at most
+0.05.
 Then the probability of any campaign false promotion is at most \(\alpha\).
 Indeed, an invalid intersection-gate promotion rejects at least one true null.
 A union bound over those rejections, followed by conditional super-uniformity

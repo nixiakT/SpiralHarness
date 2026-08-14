@@ -2,15 +2,24 @@
 \label{sec:faultbench}
 
 Real benchmarks rarely reveal whether a proposed patch touched the true cause
-of failure.  HarnessFaultBench complements them with generated scenarios whose
+of failure.  The proposed HarnessFaultBench design complements them with
+generated scenarios whose
 oracle-correct harness, injected fault, causal surface, trigger, admissible
 repair, exact revert, and neutral placebo are known before search.  Each
 scenario also has disjoint exploration, gate, sealed, and protected-clean
-groups.  Generator code and the design matrix are committed before any scored
-execution.
+groups.  The confirmatory generator code, design matrix, and sampling target
+must be committed before any scored execution.
+
+The current executable v4 artifact is a deterministic trust-closure fixture
+with seven generated fault families across six declared surfaces.  Each
+partition has four scenario roles per family, hence 28 scenarios, but those 28
+scenarios are not 28 independent families.  Trusted deterministic middleware,
+not the charged base-model output, determines final behavior.  The fixture does
+not support a live-model, LLM-solver, optimizer-capability, self-evolution, or
+powered-benchmark claim, and it does not realize the full factor table below.
 
 \begin{table}[t]
-  \caption{Predeclared HarnessFaultBench factors.  Combinations that are
+  \caption{Prospective HarnessFaultBench factors.  Combinations that are
   semantically impossible are compatibility-masked before sampling.}
   \label{tab:fault-factors}
   \centering
@@ -37,10 +46,19 @@ insufficient.  Primary fault-suite metrics are verified-repair probability,
 accepted-edit precision, false-promotion probability on null/unrepairable
 families, harmful commits, and calls or tokens per verified repair.
 
-The null-family count is powered independently of search-seed repeats.  In
-particular, observing no false promotions in at least 59 independent null or
-unrepairable scenario families puts the one-sided 95\% exact binomial upper
-bound below 5\%.  This is a design target, not a forecast of the result.
+Programmatic link checks are primary.  Any model-judged mechanism endpoint uses
+an arm-blinded frozen judge and must pass disjoint human-label calibration with
+prespecified agreement and class-conditional error thresholds; otherwise it is
+inconclusive.
+
+The null-family count is powered independently of search-seed repeats.  If the
+family-level events are independent, exchangeable draws from a prospectively
+defined target distribution, observing no false promotions in at least 59 null
+or unrepairable families puts the one-sided 95\% exact binomial upper bound
+below 5\%.  The current seven-family fixture does not meet that target, and
+multiple roles or search seeds from one family do not create new independent
+families.  Without a defensible sampling target, we report only the frozen-roster
+rate and do not interpret the binomial bound as population coverage.
 Synthetic faults cannot by themselves establish real-task usefulness; they
 identify gate operating characteristics under known ground truth, while the
 real-task study tests external validity.

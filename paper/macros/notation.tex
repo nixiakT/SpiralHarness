@@ -11,10 +11,12 @@
 \definecolor{SealedFill}{HTML}{F5EDE2}
 \definecolor{GateGreen}{HTML}{DDECDD}
 
-\DeclareRobustCommand{\systemname}{\textsc{SpiralHarness}}
+% Anonymous-review alias. Restore the public project name only after review.
+\DeclareRobustCommand{\systemname}{\textsc{MGV-Harness}}
 \DeclareRobustCommand{\fullarm}{\textsc{Full}}
 \DeclareRobustCommand{\scorearm}{\textsc{Score}}
 \DeclareRobustCommand{\staticarm}{\textsc{Static}}
+\DeclareRobustCommand{\purearm}{\textsc{Pure}}
 
 \DeclareRobustCommand{\evidenceblocked}[1]{%
   \textcolor{EvidenceRed}{\textbf{\textsf{[EVIDENCE BLOCKED: #1]}}}%
@@ -23,7 +25,7 @@
   \textcolor{PilotOrange}{\textbf{\textsf{[EXPLORATORY PILOT ONLY: #1]}}}%
 }
 \DeclareRobustCommand{\designvalue}[1]{%
-  \textcolor{DesignBlue}{\textbf{\textsf{[PREREGISTERED DESIGN: #1]}}}%
+  \textcolor{DesignBlue}{\textbf{\textsf{[PROSPECTIVE DESIGN: #1]}}}%
 }
 
 \newcommand{\harness}{H}

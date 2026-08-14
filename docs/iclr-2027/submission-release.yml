@@ -1,0 +1,17 @@
+schema_version: 1
+status: evidence-blocked
+preregistration_commit: null
+preregistration_sha256: null
+claim_ledger_sha256: null
+results_bundle_sha256: null
+anonymous_supplement_sha256: null
+anonymous_supplement_audit_sha256: null
+independent_reproduction_receipt_sha256: null
+
+# This is a fail-closed release attestation, not an experiment manifest.  A
+# reviewed release commit may set status to submission-ready only after every
+# digest above is bound to an immutable artifact, the prospective study document
+# says Status: `frozen`, the sealed results reproduce, and the exact unpacked
+# anonymous supplement has passed identity/secret/license inspection.  The
+# paper gate verifies this state and the two local document digests; a separate
+# artifact job must verify the result, supplement, and reproduction digests.

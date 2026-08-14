@@ -14,28 +14,31 @@ Mechanism evidence can affect a self-evolving harness in two different places:
 A single full-system versus score-only contrast measures the deployable policy
 difference, but it cannot identify which role of mechanism evidence caused the
 change.  The proposed confirmatory design therefore retains that end-to-end
-contrast and prospectively preregisters a 2-by-2 decomposition on a powered
-controlled-fault subset.
+contrast and would preregister a 2-by-2 decomposition on a powered
+controlled-fault subset before any relevant outcome is visible.
 
 ## Factorial conditions
 
 | Condition | Optimizer feedback | Promotion rule |
 |---|---|---|
-| `SS` | normalized score, interval, usage, performance decision | utility + protected behavior + cost |
+| `SS` | binary-success score, interval, usage, performance decision | utility + protected behavior + cost |
 | `MS` | `SS` plus source-bound mechanism packet | same performance-only rule as `SS` |
 | `SM` | same score-only view as `SS` | performance rule plus activation, adherence, intended behavior, revert, and placebo |
-| `MM` | mechanism-visible view | full mechanism gate; this is SpiralHarness |
+| `MM` | mechanism-visible view | full mechanism gate; this is the complete MGV-Harness policy |
 
-`MM - SS` is the end-to-end protocol effect.  `MS - SS` estimates the guidance
-effect when promotion is score-based.  `SM - SS` estimates the verification
-effect when detailed mechanism evidence is withheld from the optimizer.  The
+`MM - SS` is the end-to-end protocol effect.  `MS - SS` estimates the
+conditional guidance simple effect when promotion is score-based.  `SM - SS`
+estimates the conditional promotion-policy simple effect when detailed
+mechanism evidence is withheld from the optimizer.  The
 difference-in-differences
 
 ```text
 (MM - SM) - (MS - SS)
 ```
 
-measures interaction rather than being folded into either main effect.
+measures interaction rather than being folded into either simple effect.  These
+are not marginal factorial main effects unless the final analysis explicitly
+defines and estimates the corresponding averages over the other factor.
 
 The `SM` optimizer inevitably observes whether its champion changed.  That bit
 is part of the verification-policy treatment and must not be described as a
@@ -44,7 +47,7 @@ outputs, hidden task identities, and mechanism packets remain unavailable.
 
 ## Call-topology and budget equality
 
-All four cells execute the same frozen topology:
+All four cells must execute the same eventual frozen topology:
 
 ```text
 observe -> diagnose -> propose -> materialize -> screen -> nominate
@@ -65,6 +68,12 @@ charges.  Within each model-task-search-seed block, the four cells share:
 - attempt, token, cost, wall-time and failure ceilings;
 - stopping rules and sealed authorization barrier.
 
+For the same-model claim, “exact solver, optimizer and role model
+specifications” means one provider-resolved model identity and revision across
+all model-mediated roles.  Role-specific decoding may differ only when frozen
+before outcomes and identical across cells.  A shared family label, routing
+alias, or nominal model string is not sufficient evidence.
+
 After feedback or promotion first differs, the conditions generally have
 different champions and therefore different candidate contents and model
 outputs.  Those differences are consequences of the randomized treatment, not
@@ -79,6 +88,15 @@ that claim.
 The runtime study barrier must emit a matched-contrast report that replays the
 model requests, receipts, retries, usage and candidate counts.  A configuration
 profile or equal seed helper is not execution evidence.
+
+The score-only projection needs the same standard.  Confidence level, both
+interval endpoints, estimator version, analysis-plan identity, and the scored
+observation closure must come from one independently authenticated objective;
+the projection caller cannot supply an endpoint.  Receipt replay must exact-load
+the content-addressed schedule and preflight, bind every cell seed and complete
+task/repeat roster, and close against the live ledger's frozen start and final
+tail.  Signing caller-declared interval or usage values does not establish their
+provenance.
 
 ## Adaptive gate validity
 
@@ -96,8 +114,8 @@ nomination is recorded prospectively rather than replaced with a later,
 outcome-selected candidate.
 
 Conditional on the search history, a fresh block must remain independent of
-the nominated candidate under the preregistered grouping assumptions.  Only
-then may the campaign apply its frozen alpha allocation across nominations.
+the nominated candidate under grouping assumptions frozen before execution.
+Only then may the campaign apply its frozen alpha allocation across nominations.
 Rollout seeds do not make a reused task family fresh.  If a benchmark cannot
 supply enough independent groups, the study must reduce `Q`, use a separately
 proved reusable-holdout mechanism, or label the promotion statistics
@@ -119,7 +137,8 @@ P(p[q,a,j] <= x | F[q-1]) <= x  for every x in [0,1].
 ```
 
 If a promotion rejects every active null required by the intersection gate and
-the predictable thresholds satisfy `sum(q,a,j) alpha[q,a,j] <= alpha`, then the
+the predictable thresholds satisfy
+`sum(q,a,j) alpha[q,a,j] <= alpha = 0.05`, then the
 probability of at least one campaign false promotion is at most `alpha` by
 conditional super-uniformity and a union bound over the first rejected true
 null.  With multiple matched conditions the sum and union range over condition
@@ -131,6 +150,10 @@ candidate freezing, isolated feedback, grader integrity and complete query
 accounting must be attested, and the statistical model must justify why they
 imply the stated conditional super-uniformity.
 
+Accordingly, `alpha/Q` can only abbreviate the total envelope for one nomination
+block.  It does not authorize every condition and gate dimension to spend
+`alpha/Q` separately; the full `(q,a,j)` sum must remain at most `0.05`.
+
 ## Factorial estimands and replication
 
 One complete matched search-seed block, containing one end-to-end run per
@@ -141,21 +164,31 @@ scenarios inside a search are measurements, not additional search replicates.
 Fault generator family/source groups are the item-side resampling unit, and
 model-by-family cells receive equal weight.
 
-For a frozen outcome such as verified repair or false promotion, fit the
-preregistered factorial contrast
+Because later candidates are treatment-induced, the factorial estimates policy
+effects over adaptive runs.  A separately corrected, secondary operating-
+characteristic analysis applies both promotion rules in shadow mode to a
+prospectively common candidate slate, without returning shadow decisions to any
+optimizer.  This same-candidate analysis can measure decision disagreement and
+false promotion, but it does not replace the end-to-end factorial or receive
+promotion authority.
+
+For an eventual frozen outcome such as verified repair or false promotion, fit
+the prospectively frozen factorial contrast
 
 ```text
 outcome ~ mechanism_feedback + mechanism_gate
           + mechanism_feedback:mechanism_gate
 ```
 
-with search-run and fault-family clustering appropriate to the outcome.  Report
-the feedback main effect, gate main effect and interaction with simultaneous
-intervals.  The existing real-task `MM - SS` and `MM - STATIC` endpoints remain
-the primary deployable-policy questions; component effects form a separately
-corrected secondary family unless the preregistration explicitly replaces a
-primary endpoint before any relevant outcome is visible.  Scenario rollouts
-must never be counted as independent `n` for a factorial claim.
+with search-run and fault-family clustering appropriate to the outcome.  Under
+treatment coding, report the two conditional simple effects and interaction
+with simultaneous intervals; if marginal main effects are desired, define them
+separately before outcomes.  The existing real-task `MM - SS` and
+`MM - STATIC` endpoints remain the primary deployable-policy questions;
+component effects form a separately corrected secondary family unless the
+preregistration explicitly replaces a primary endpoint before any relevant
+outcome is visible.  Scenario rollouts must never be counted as independent
+`n` for a factorial claim.
 
 ## Information-volume placebo
 
@@ -209,26 +242,39 @@ search/gate/sealed grouping rule per task family:
 - strict structured generation, coding, or tool use with source/time
   separation.
 
-HarnessFaultBench must contain multiple repair rules and families such that no
-constant mutation is near the oracle.  It needs repairable, no-fault,
+The current v4 executable has seven generated families across six declared
+surfaces and 28 role scenarios per partition.  Those scenarios are not 28
+independent families, and deterministic benchmark middleware rather than
+base-model output drives behavior.  It is a multi-surface trust-closure fixture,
+not live-model, optimizer-capability, self-evolution, or powered-benchmark
+evidence.  The prospective HarnessFaultBench must contain enough repair rules
+and families that no constant mutation is near the oracle.  It needs repairable,
+no-fault,
 unrepairable, correlated-distractor, protected-hard-negative and interacting
-fault families.  A single deterministic trim/casefold prompt slice is an
-implementation fixture, not benchmark evidence.
+fault families under a frozen sampling target.
 
 ## Self-evolution closure
 
-A result is labeled **same-model self-evolution** only if one frozen model
-family closes execution, diagnosis, proposal, materialization, nomination and
-selection with no manual candidate choice.  Every role call, failed call,
-retry, token and cost is charged.  Pure-model/static, random-valid and external
-optimizer baselines remain separate:
+A result is labeled **same-model self-evolution** only if one exact frozen,
+provider-resolved model identity and revision closes execution, diagnosis,
+proposal, materialization, model-mediated candidate ranking, and nomination with
+no manual candidate choice.  Final statistical promotion belongs to the fixed
+independent authority, not the model.  A family name, routing alias, or nominal
+model string is insufficient.  Every role call, failed call, retry, token and
+cost is charged.  Pure-model, static, random-valid and external optimizer
+baselines remain separate:
 
+- `PURE` uses only the task payload and provider-minimal wrapper, with no seed
+  harness surfaces, under the same exact solver configuration and coordinates;
+- `PURE@B` spends the same frozen ex-ante model-call/token ceiling as `MM` on
+  independent PURE samples under a nonadaptive, task-native aggregation rule;
 - `STATIC` measures the unmodified harness using the same solver model;
 - `RANDOM` measures the finite mutation grammar without optimizer intelligence;
 - `SS` is the matched score-only self-evolution control;
-- `MM` is the complete SpiralHarness policy;
+- `MM` is the complete MGV-Harness policy;
 - official external systems are secondary and are never conflated with a
-  paper-algorithm reconstruction.
+  paper-algorithm reconstruction; a stronger external proposer is a
+  heterogeneous baseline, not a same-model or `>10 pp` comparison.
 
 ## Claim rule
 
@@ -236,5 +282,8 @@ The factorial design does not license a result until all cells close and the
 one-time sealed authority releases the frozen aggregate.  Development tuning
 may continue on exploration and pilot lineages, but failure to exceed a desired
 margin on sealed data cannot trigger more tuning on that lineage.  A claim of
-more than ten percentage points requires the preregistered confidence bound to
-clear `0.10`; a favorable point estimate alone is insufficient.
+more than ten percentage points requires every applicable, preregistered
+claim-family simultaneous multiplicity-adjusted one-sided lower confidence
+bound on the prospectively binary success-probability scale to be strictly
+greater than `0.10`; a favorable point estimate or arbitrary normalized-score
+difference alone is insufficient.
