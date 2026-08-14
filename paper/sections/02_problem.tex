@@ -21,14 +21,28 @@ calls, gate queries, tokens, wall time, and failures.  The unit of replication
 is a complete search run, not an individual rollout from within one adaptive
 trajectory.
 
-\paragraph{Promotion and false promotion.}
+\paragraph{Commit validity and false promotion.}
 For candidate \(c\), let \(\utility(c)\) be downstream utility,
 \(\cost(c)\) resource use, and \(R_k(c)\) protected-slice outcomes.  A promotion
 is valid only if benefit, cost, and every protected constraint pass under a
-frozen statistical rule.  A \emph{false promotion} occurs when the gate accepts
-a null, harmful, inactive, non-adhered, out-of-policy, or grader-exploiting edit.
-We report false promotion at the campaign level over all adaptive nominations,
-not only a nominal threshold attached to one comparison.
+frozen statistical rule.  We use \emph{commit} for a promotion that changes the
+champion; generating or screening a candidate is not a commit.  A \emph{false
+promotion} accepts a null, harmful, inactive, non-adhered, out-of-policy, or
+grader-exploiting edit.  One primary fault-campaign unit pairs every policy on
+one independently sampled family \(f\), one independently sampled optimizer
+seed \(s_f\), and the complete \(Q\)-round trajectory.  Let
+\(F_a(f,s_f)=1\) when policy \(a\) makes at least one oracle-invalid commit in
+that trajectory.  The co-primary operating characteristic is
+\(p_{\mathrm{FP}}(a)=\mathbb E_{f,s_f}[F_a(f,s_f)]\) over the frozen joint
+family--seed target.  The family is the independent cluster and policy is paired
+within it; nominations, scenario roles, or rollouts do not increase \(n\).
+Additional seeds for one family are secondary and require a prospectively
+defined family aggregate rather than seed-level pseudoreplication.  Harmful-
+promotion probability uses the same campaign unit but requires failure of the
+sealed utility, protected-behavior, or cost rule.
+Accepted-edit precision is valid commits divided by all commits and is
+undefined when no edit is accepted.  We report both as secondary diagnostics,
+never as substitutes for utility.
 
 \paragraph{Mechanism estimand.}
 The proposed chain is
@@ -55,12 +69,13 @@ design requirements, not completed empirical or security claims.
 \begin{figure}[t]
   \centering
   \input{figures/mechanism_boundary.tex}
-  \caption{Mechanism and authority boundary.  The mutable optimizer can edit
+  \caption{Target mechanism and authority boundary.  The mutable optimizer can edit
   only declared harness surfaces.  Promotion belongs to a separate authority
   that executes matched interventions and fails closed along the mechanism
   chain.  Sealed tasks are released once, only after all search cells close.
   Solid arrows carry typed artifacts; the dashed arrow carries a redacted
   decision, never sealed item feedback.  Shape and labels preserve the meaning
-  in grayscale.}
+  in grayscale.  In the target deployment, after closure, the sealed authority audits the frozen commit
+  registry and champions once.}
   \label{fig:mechanism-boundary}
 \end{figure}

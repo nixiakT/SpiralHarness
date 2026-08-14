@@ -17,48 +17,60 @@ scenarios are not 28 independent families.  Trusted deterministic middleware,
 not the charged base-model output, determines final behavior.  The fixture does
 not support a live-model, LLM-solver, optimizer-capability, self-evolution, or
 powered-benchmark claim, and it does not realize the full factor table below.
+A separate public-development runner now lets one frozen-model interface call
+choose a finite repair and scores untouched model outputs for the complete
+parent--candidate--revert--placebo quartet.  A four-context fixture-backed path
+fits all (SS/MS/SM/MM) candidates on one paired exploration block, freezes
+them jointly, and then runs every quartet on one source/group-disjoint fixture
+GATE block before computing the four automatic gates.  Its single
+\(4\times(28+1+4\times28)=116+448=564\)-call ledger and raw outputs are
+offline replayable; contexts use a fixed SS--MS--SM--MM order rather than the
+counterbalancing required for confirmation.  This closes development
+plumbing only: no live provider, powered family/search replication, independent
+freeze-time or one-time-consumption attestation, cross-process atomicity, or
+sealed result exists.
 
-\begin{table}[t]
-  \caption{Prospective HarnessFaultBench factors.  Combinations that are
-  semantically impossible are compatibility-masked before sampling.}
-  \label{tab:fault-factors}
-  \centering
-  \begin{tabular}{p{1.25in}p{3.80in}}
-    \toprule
-    \textbf{Factor} & \textbf{Levels} \\
-    \midrule
-    Mutable surface & prompt; memory/retrieval; tool/schema/routing;
-      output middleware; control flow/skill routing \\
-    Causal stage & selection/activation; adherence/conflict;
-      behavior/transformation; output/verification contract \\
-    Structure & sparse or dense prevalence; single or interacting/masked
-      double fault; causal or correlated non-causal distractor \\
-    Distribution & IID gate or held-out template/source shift \\
-    Repairability & repairable; oracle-optimal no-fault; out-of-policy \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+The prospective design crosses mutable surface, causal stage, fault topology,
+distractors, distribution shift, and repairability under a compatibility mask;
+the full factor table is in Appendix~\ref{app:fault-design}.
+
+Generator ownership is itself a validity threat.  The powered roster therefore
+must add a blinded, naturally occurring fault subset and an external adversarial
+audit; define admissible repairs as semantic equivalence classes rather than one
+blessed patch; adjudicate novel legal repairs without condition or score
+visibility; and calibrate that placebo artifacts preserve the declared behavior
+and byte/token envelope.  Shared templates are clustered at their source family,
+and model-judged links cannot be validated by the optimizing model's own
+uncalibrated preference.
 
 A \emph{verified repair} requires sealed target improvement, protected-slice
 non-inferiority, candidate--revert and candidate--placebo attribution, and
 passing activation and adherence evidence.  Localization accuracy alone is
-insufficient.  Primary fault-suite metrics are verified-repair probability,
-accepted-edit precision, false-promotion probability on null/unrepairable
-families, harmful commits, and calls or tokens per verified repair.
+insufficient.  The co-primary operating characteristic is family-level false-
+promotion probability on a frozen null/unrepairable target, both its absolute
+upper bound under \fullarm{} and its reduction relative to \scorearm{}.
+Verified-repair probability, harmful-promotion probability, accepted-edit
+precision, inconclusive rate, and calls or tokens per verified repair are
+reported alongside it.  Precision is never treated as favorable when there are
+no accepted edits.
 
 Programmatic link checks are primary.  Any model-judged mechanism endpoint uses
 an arm-blinded frozen judge and must pass disjoint human-label calibration with
 prespecified agreement and class-conditional error thresholds; otherwise it is
 inconclusive.
 
-The null-family count is powered independently of search-seed repeats.  If the
-family-level events are independent, exchangeable draws from a prospectively
-defined target distribution, observing no false promotions in at least 59 null
-or unrepairable families puts the one-sided 95\% exact binomial upper bound
-below 5\%.  The current seven-family fixture does not meet that target, and
-multiple roles or search seeds from one family do not create new independent
-families.  Without a defensible sampling target, we report only the frozen-roster
-rate and do not interpret the binomial bound as population coverage.
+The null-family count is powered on independent family clusters, each assigned
+one preregistered primary optimizer seed shared across policies.  Under
+independent exchangeable sampling, 59 zero-event families suffice only for an
+\emph{unadjusted} one-sided 95\% exact upper bound below 5\%; that familiar
+calculation is not the present co-primary sample-size rule.  The final count
+must use the preregistered multiplicity allocation, paired FULL--SCORE contrast,
+family-level dependence, configured failures, and power target.  A stratified
+fractional-factorial roster additionally requires frozen stratum weights and a
+coverage-validated clustered interval; it cannot borrow the exchangeable exact-
+binomial calculation.  The current seven-family fixture is insufficient, and
+multiple roles or seeds from one family do not create new families.  Without a
+defensible sampling target, only a frozen-roster rate is reportable.
 Synthetic faults cannot by themselves establish real-task usefulness; they
 identify gate operating characteristics under known ground truth, while the
 real-task study tests external validity.

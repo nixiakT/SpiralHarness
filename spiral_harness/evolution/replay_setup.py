@@ -70,6 +70,7 @@ from spiral_harness.evolution.strategies import (
 )
 from spiral_harness.execution.contracts import FrozenModelSpec, InferenceConfig
 from spiral_harness.execution.policy import CAPABILITY_POLICY_MEDIA_TYPE, CapabilityPolicy
+from spiral_harness.execution.runtime_identity import current_python_runtime_identity
 from spiral_harness.experiments.baselines import (
     BASELINE_STUDY_PLAN_MEDIA_TYPE,
     LEGACY_BASELINE_KINDS,
@@ -156,7 +157,10 @@ def fixed_replay_model_spec() -> FrozenModelSpec:
         revision="snapshot-2026-08-12",
         tokenizer="fixture/replay-study-tokenizer",
         tokenizer_revision="snapshot-2026-08-12",
-        runtime="python-3.12/replay-study-v1",
+        runtime=current_python_runtime_identity(
+            component="spiral-harness-replay-study",
+            revision="v2",
+        ),
         inference=InferenceConfig(
             temperature=0.0,
             top_p=1.0,

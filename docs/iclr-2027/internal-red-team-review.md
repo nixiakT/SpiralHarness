@@ -113,11 +113,11 @@ acceptance guarantee.
 1. The protocol is not preregistered: `S`, `Q`, rollout repeats, exact models,
    final tasks, ceilings, and the powered HarnessFault family roster are not
    frozen.
-2. A scientifically meaningful margin must appear in the null.  Rejecting zero
-   and observing a point estimate above the SESOI does not establish that the
-   effect clears the SESOI.  The prospective protocol now uses three one-sided
-   margin nulls at 0.02/0.02/0.15 and requires all corresponding
-   Holm-corrected tests to reject.
+2. A scientifically meaningful margin must appear in the null.  The revised
+   prospective protocol uses two co-primary families: absolute and relative
+   family-level false-promotion control, plus sealed FULL--SCORE and
+   FULL--STATIC utility margins.  Every test in both families and all NI gates
+   must pass; the existing power code predates this rule.
 3. Same seeds and equal manifests do not prove matched execution.  Runtime
    closure must bind schedules, preflights, retries, receipts, final ledger
    tails, failures, and one-time fresh-block consumption for every factorial
@@ -130,8 +130,10 @@ acceptance guarantee.
    history, candidates differ; they cannot be described as candidate-level
    mediation.  A separate common-candidate shadow analysis can characterize
    gate disagreement without replacing the end-to-end policy estimand.
-6. The zero-event 59-family bound is meaningful only if the 59 null/unrepairable
-   families are genuinely independent at the declared family/source unit.
+6. The zero-event 59-family bound is only an unadjusted 95% illustration.  The
+   co-primary reliability family needs a multiplicity- and power-calibrated
+   count of genuinely independent null/unrepairable families at the declared
+   family/source unit.
 
 ### Evidence needed to change the score
 
@@ -166,7 +168,16 @@ acceptance guarantee.
    fixture.  Its 28 scenarios per partition are four roles within seven
    families, base-model output does not drive final behavior, and its
    optimizer-capability, live-model, and self-evolution flags remain false.  It
-   cannot substantiate the powered prospective factor table.
+   cannot substantiate the powered prospective factor table.  The newer
+   model-output-driven public-development path removes deterministic behavior
+   rewriting for one finite-repair round.  Its four-context fixture now closes
+   a shared paired fit block, a jointly frozen candidate set, a source/group-
+   disjoint fixture GATE block, and one offline-replayable
+   `4*(28+1+4*28)=116+448=564`-call ledger.  Its fixed `SS->MS->SM->MM` dispatch
+   is not counterbalanced.  It is still
+   not a live provider run, powered family/search replication, independently
+   attested one-time block consumption, cross-process atomic campaign, or
+   reportable result.
 3. Process-local HMAC verification and Python capability objects are logical
    composition boundaries, not independent evaluator security.  The paper
    already acknowledges this; empirical claims must not silently rely on the
@@ -271,7 +282,22 @@ these corrections do not remove the missing-experiment blockers above:
 - infrastructure retries operate on a prospectively indivisible six-condition
   or four-cell block, retaining original failures and cost; and
 - a model-call/token-budget-matched `PURE@B` reference complements the
-  single-call PURE effectiveness contrast.
+  single-call PURE effectiveness contrast; its prospective schema now closes
+  task/evaluation-unit/sample allocations and exact FULL commitment joins, but
+  a live executor and receipts remain missing;
+- the campaign theorem now controls only fresh-block statistical false
+  authorization, explicitly excluding sealed-shift harm, out-of-scope grader or
+  policy exploits, provenance failures, and judge/model misspecification;
+- the controlled-fault primary unit is now one independent family assigned one
+  preregistered primary optimizer seed shared across policies; extra seeds never
+  increase `n`, and weighted/averaged designs require coverage-validated family-
+  clustered inference rather than an exact binomial bound;
+- SCORE and FULL must purchase and record the same mechanism probes and blinded
+  judge calls, while SCORE receives only a feedback-free shadow projection and
+  performance-only promotion rule; and
+- operational owners, not favorable pilot effects, must justify and freeze the
+  false-promotion, utility, repair, protection, and cost margins before the
+  outcome-bearing pilot.
 
 The paper release gate now also requires a frozen protocol and a digest-bound
 release attestation.  The internal `docs/iclr-2027/` tree is explicitly excluded

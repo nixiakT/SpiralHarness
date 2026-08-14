@@ -7,6 +7,11 @@ import pytest
 
 import spiral_harness.benchmark.penguin_public as subject
 from spiral_harness.benchmark.penguin_public_evidence import PenguinProtocolBinding
+from spiral_harness.core.canonical import (
+    callable_source_sha256,
+    canonical_json_bytes,
+    sha256_bytes,
+)
 from spiral_harness.core.models import ComponentKind, HarnessManifest
 from spiral_harness.execution.contracts import BackendResponse, BackendTokenUsage
 from spiral_harness.storage.artifact_store import ArtifactStore
@@ -220,8 +225,15 @@ def test_live_runner_mirrors_call_schedule_and_persists_states(tmp_path: Path) -
     assert result.payload["call_schedule"] == "5N+1R+5N1+1R+5N2"
     assert result.payload["total_tokens"] == 17 * 15
     assert result.artifact_ref.media_type == subject.PENGUIN_PUBLIC_RESULT_MEDIA_TYPE
-    assert result.artifact_ref.sha256 == (
-        "77a3ae8354578f5e6b86ad4e6a96663dff019dd24a890c646f6376bf5803d269"
+    assert result.artifact_ref.sha256 == sha256_bytes(canonical_json_bytes(result.payload))
+    assert result.payload["local_implementation_source_sha256"] == sha256_bytes(
+        Path(subject.__file__).read_bytes()
+    )
+    assert result.payload["invariant_compiler_sha256"] == callable_source_sha256(
+        subject.compile_fixed_line_invariants
+    )
+    assert result.payload["output_contract_sha256"] == callable_source_sha256(
+        subject.normalize_evidence_fixed_lines
     )
     persisted_refs = {
         result.payload["worker_harness_ref"]["sha256"],
@@ -233,6 +245,15 @@ def test_live_runner_mirrors_call_schedule_and_persists_states(tmp_path: Path) -
     store = ArtifactStore(tmp_path / "run" / "artifacts")
     assert subject.verify_penguin_public_result(store, result.artifact_ref) == result.payload
     assert "round one guidance" not in str(result.payload)
+
+    repeated = subject.run_public_self_evolution(
+        output=tmp_path / "repeated-run",
+        backend=SequenceBackend(outputs),
+        model="dashscope/qwen3-coder-flash",
+        max_output_tokens=256,
+    )
+    assert repeated.payload == result.payload
+    assert repeated.artifact_ref == result.artifact_ref
 
 
 @pytest.mark.parametrize("runs", [1, 4])

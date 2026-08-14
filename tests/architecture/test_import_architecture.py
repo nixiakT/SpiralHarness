@@ -365,6 +365,19 @@ def test_internal_import_graph_is_acyclic() -> None:
     assert not components, f"internal import cycles:\n{rendered}"
 
 
+def test_production_artifacts_never_fingerprint_cpython_bytecode() -> None:
+    violations: list[str] = []
+    for module in _source_modules().values():
+        for node in ast.walk(module.tree):
+            if isinstance(node, ast.Attribute) and node.attr == "co_code":
+                violations.append(_display(module, node, "CPython bytecode fingerprint"))
+
+    assert not violations, (
+        "content identities must hash canonical source or a declared implementation artifact; "
+        "CPython bytecode changes across supported interpreters:\n" + "\n".join(violations)
+    )
+
+
 def test_non_package_modules_are_not_import_only_forwarders() -> None:
     violations: list[str] = []
     for module in _source_modules().values():

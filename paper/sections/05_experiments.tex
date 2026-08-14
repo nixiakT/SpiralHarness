@@ -1,176 +1,128 @@
 \section{Prospective Evaluation Design}
 \label{sec:experiments}
 
-Before confirmatory search, an immutable preregistration will freeze the design
-and answer three primary questions: Does the joint mechanism-visible,
-mechanism-gated policy outperform a score-only, performance-gated policy under
-an otherwise identical budget?  Does it improve over the unmodified harness?
-Does it increase verified repair on controlled faults?  The current protocol is
-\evidenceblocked{pilot-pending rather than preregistered}; its margins, roster,
-replication count, and analysis must be frozen before any main-study outcome.
+The confirmatory study asks one question: does \fullarm{} make adaptive commit
+decisions that are both \emph{credible} and \emph{useful}?  Credibility is
+measured by family-level false promotion on controlled faults; usefulness is
+measured once on untouched real-task data.  The answer is positive only when
+both primary families and all non-inferiority gates pass.  The current design is
+\evidenceblocked{pilot-pending: margins delegated below, the roster, replication
+count, analysis, and sealed authority are not frozen}.
 
-\subsection{Conditions and matched budgets}
+\subsection{Conditions and matching}
 
 \begin{table}[t]
   \caption{Real-task conditions.  \scorearm{} is the matched control for the
-  joint deployable-policy contrast; prompt-only is a scope baseline, not a
-  substitute for the controlled-fault factorial.}
+  joint deployable-policy contrast.}
   \label{tab:conditions}
   \centering
   \begin{tabular}{p{1.05in}p{4.00in}}
     \toprule
-    \textbf{Condition} & \textbf{Authorized search behavior} \\
+    \textbf{Condition} & \textbf{Authorized behavior} \\
     \midrule
-    \purearm & Task payload through the provider-minimal wrapper only; no seed
-      prompt, memory, skill, tool, middleware, or control-flow harness. \\
+    \purearm & Provider-minimal task call; no harness or search. \\
     \staticarm & Frozen seed harness; no search. \\
-    Random-valid & Uniform finite-catalog mutation under the same stopping and
-      execution ceilings. \\
-    Prompt-only & Optimizer edits prompts only; its feedback view is frozen and
-      disclosed. \\
-    \scorearm & Full mutation grammar; aggregate score, uncertainty, resource
-      totals, and a frozen utility/protected-behavior/cost decision only (not
-      a redaction of the full mechanism gate). \\
-    \fullarm & Same grammar and budget as \scorearm, plus source-linked
-      activation, adherence, behavior, revert, and placebo evidence. \\
+    Random-valid & Uniform without-replacement draw from the eligible remainder
+      of a frozen finite catalog under matched ceilings. \\
+    Prompt-only & Prompt mutations under a frozen disclosed feedback view. \\
+    \scorearm & Full grammar; performance-only feedback and promotion projection. \\
+    \fullarm & Same measured calls and grammar as \scorearm; source-linked
+      mechanism feedback and mechanism-gated promotion. \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-\purearm{} is an evaluation reference, not a search policy.  Within each
-model--task--search-seed block it shares the exact provider-resolved solver
-revision, inference configuration, task/group/rollout coordinates, and scoring
-contract with every other arm.  Only provider-required serialization and the
-task payload are permitted.  Its lack of optimizer calls is measured rather
-than padded into fictitious search use; all actual evaluation usage is charged.
-The single-call \purearm{} contrast measures effectiveness, not equal model budget.
-A separate \(\textsc{Pure@B}\) reference spends FULL's frozen model-call/token
-ceiling on independent provider-minimal samples combined by a task-native,
-nonadaptive rule fixed without grader or sealed feedback.  The cross-task
-contrast is defined only if every primary task freezes such a total rule.
+Within each model--task--search-seed block, \scorearm{} and \fullarm{} must share the
+seed harness, exact model revision, role settings, mutation grammar, task and
+rollout coordinates, nomination rule, query topology, and hard call/token
+ceilings.  The trusted plane must execute the same mechanism probes and blinded
+judge calls in both arms and charge them to both; SCORE receives only the frozen
+performance projection, while its mechanism outputs remain feedback-free shadow
+measurements.  Thus evidence collection and information disclosure are not
+confounded with extra calls.  The real-task contrast therefore estimates the joint deployable
+policy, not feedback alone.  A controlled-fault \(2\times2\) crosses score or
+mechanism-visible feedback with performance-only or mechanism-gated promotion;
+component effects and a shuffled-evidence placebo are secondary.  Exact arm
+projections, matching rules, and the factorial are specified in
+Appendix~\ref{app:evaluation-details}.
 
-Within every model--task--seed block, \scorearm{} and \fullarm{} share the seed
-harness, proposer and sampling settings, editable surfaces, proposals per
-round, solver, task and rollout coordinates, nomination rule, number of gate
-queries, and hard resource ceilings.  Cache state is neutralized or charged
-symmetrically.  All proposer, diagnoser, solver, grader, retry, and failed-call
-usage is retained.  The primary same-model condition additionally requires one
-exact provider-resolved model revision for every model-mediated role.  A role
-may have a preregistered decoding configuration, but the role mapping and every
-such configuration are identical across policies; any stronger external
-proposer is analyzed only as a separate harness-optimization baseline.
+\purearm{} is an effectiveness reference with the same solver revision and
+task coordinates, not a budget-matched search policy.  \(\textsc{Pure@B}\)
+will separately spend FULL's ex-ante call/token ceiling on independent
+provider-minimal samples under a task-native aggregation rule frozen without
+grader or sealed feedback.  Same-model self-evolution requires one exact
+provider-resolved revision for every model-mediated role and no manual or
+stronger-model candidate choice; otherwise the run is a heterogeneous harness-
+optimization baseline.
 
-The planned controlled-fault study uses a $2\times2$ decomposition that crosses
-the optimizer view (score-only or mechanism-visible) with the promotion rule
-(performance-only or mechanism-gated).  Its SS, MS, SM, and MM cells estimate
-conditional guidance and promotion-policy simple effects plus their interaction;
-MM is \fullarm{} and SS is \scorearm{}.  The authority freezes all nominations
-at index $q$ before opening their shared fresh block; isolated contexts are
-counterbalanced by a verifier-owned seed.  Treatment-induced candidates may
-differ, so the coefficients are adaptive-policy intention-to-treat effects, not
-candidate-level mediation.  A shuffled mechanism packet is the information-
-volume placebo.  Reportability requires runtime closure over all four cells,
-receipts, failures, and one-time block consumption.
+The prospective fixed roster contains
+\designvalue{three open model configurations from at least two families} and
+\designvalue{four source-separated task families spanning mathematical,
+heterogeneous-reasoning, classification, and structured-generation behavior}.
+One complete search run is the repeated algorithmic unit; rollouts inside a run
+are not independent replications.
 
-\paragraph{External harness optimizers.}
-Secondary comparisons include Meta-Harness-style and Self-Harness optimizers
-\citep{lee2026metaharness,zhang2026selfharness}.  Missing executable components
-are labeled paper-algorithm reconstructions, never official reproductions.
-Stronger role models make a baseline heterogeneous and ineligible for the
-same-model or $>10$-point claim.  PenguinHarness's public recursive example
-\citep{prismshadow2026penguin} remains exploratory unless its auditable
-multi-task suite and graders are released before the freeze.
+\subsection{Co-primary decision rule}
 
-\subsection{Models, tasks, and independent runs}
-
-The prospective roster targets
-\designvalue{three open model configurations spanning at least two families}
-and \designvalue{four task families}: mathematical generation, multi-type
-reasoning, high-label classification with group separation, and strict
-structured generation or coding with source/time separation.  Availability
-smoke tests may select deployable endpoints but may not inspect benchmark
-scores.  Every arm within a cell uses the same exact model revision and
-inference configuration.
-
-One complete search is the repeated algorithmic unit.  The number of independent
-search seeds is \evidenceblocked{a closed disjoint pilot, calibrated analysis,
-and attested input closure are incomplete}.  Rollout repeats do not count as
-independent search replications.  The repository's analytic proxy and basic
-nested-bootstrap prototype cannot select a formal seed count or produce
-confirmatory evidence (Appendix~\ref{app:power-proxy}).
-
-\subsection{Estimands and analysis}
-
-For fixed model and task rosters \(\mathcal{M},\mathcal{T}\), each primary unit
-has a frozen programmatic binary-success rubric and source-group weighting.
-Then \(\mu(a,m,t)\) averages over that target and the frozen randomization, so
-0.10 is ten success-probability points rather than arbitrary normalization;
-incompatible official metrics are secondary.  Cells receive equal weight:
+For the frozen model--task roster, let binary-success cell means define
 \begin{align}
 \Delta_{\mathrm{policy}}
-  &= \frac{1}{|\mathcal{M}||\mathcal{T}|}
-     \sum_{m,t}\left[\mu(\text{\fullarm},m,t)
-       -\mu(\text{\scorearm},m,t)\right],\\
+  &= \operatorname{avg}_{m,t}\{\mu(\text{\fullarm},m,t)
+       -\mu(\text{\scorearm},m,t)\},\\
 \Delta_{\mathrm{e2e}}
-  &= \frac{1}{|\mathcal{M}||\mathcal{T}|}
-     \sum_{m,t}\left[\mu(\text{\fullarm},m,t)
-       -\mu(\text{\staticarm},m,t)\right].
+  &= \operatorname{avg}_{m,t}\{\mu(\text{\fullarm},m,t)
+       -\mu(\text{\staticarm},m,t)\}.
 \end{align}
-The prospective secondary bare-model reference is
-\begin{equation}
-\Delta_{\mathrm{pure}}
-  = \frac{1}{|\mathcal{M}||\mathcal{T}|}
-    \sum_{m,t}\left[\mu(\text{\fullarm},m,t)
-      -\mu(\text{\purearm},m,t)\right].
-\end{equation}
-Define \(\Delta_{\mathrm{pure@B}}\) analogously for \(\textsc{Pure@B}\).
-Here \(\Delta_{\mathrm{policy}}\) is the joint MM--SS deployable-policy effect;
-it does not by itself isolate feedback visibility or promotion verification.
-The third estimand is the \fullarm{}-minus-\scorearm{} difference in
-verified-repair probability on HarnessFaultBench.  The prospective superiority
-margins are 0.02 absolute binary-success probability (two percentage points)
-for each real-task contrast and 0.15 for verified repair.  The three one-sided nulls put the corresponding effect at
-or below its margin and use Holm--Bonferroni family-wise \(\alpha=0.05\)
-\citep{holm1979simple}.  The primary statistical pass requires all three
-Holm-corrected one-sided margin tests to reject.  A full headline conclusion
-additionally requires every protected-behavior, cost, provenance, and leakage
-constraint to close.  Their exact margins, missingness rules, and multiplicity
-families remain \evidenceblocked{delegated design values that must be frozen
-before confirmatory search}.  Verified repair will be weighted equally over the
-eventual frozen model--repair-stratum cells.
+Cells receive equal weight.  The two co-primary families are:
+\begin{enumerate}
+  \item \textbf{Commit reliability.}  On independent null/unrepairable fault
+  families, the one-sided simultaneous upper bound for
+  \(p_{\mathrm{FP}}(\text{\fullarm})\) must be below 0.05, and the paired
+  FULL--SCORE reduction must exceed a positive
+  \designvalue{operationally frozen false-promotion margin \(\delta_{\mathrm{FP}}\)}.
+  Both tests use one-sided Holm control within this family
+  \citep{holm1979simple}.
+  \item \textbf{Sealed usefulness.}  One-sided Holm tests must establish
+  \(\Delta_{\mathrm{policy}}>0.02\) and
+  \(\Delta_{\mathrm{e2e}}>0.02\) on the prospectively binary scale.
+\end{enumerate}
+The headline ``credible adaptive commit'' is the intersection of both families
+and simultaneous protected-behavior and cost non-inferiority, plus provenance,
+leakage, and missingness closure.  This is an intersection--union decision: low
+false promotion cannot compensate for absent sealed benefit, and high utility
+cannot compensate for harmful commits.  Verified-repair improvement, harmful-
+promotion probability, accepted-edit precision, and component effects are key
+secondary endpoints with their own frozen multiplicity families.  Zero accepted
+edits makes precision undefined and cannot satisfy sealed usefulness.
 
-The method-development selector combines all three Holm SESOI rejections with
-simultaneous lower bounds above 0.10 for the two real-task contrasts.  It omits
-protected, cost, provenance, leakage, PURE, PURE@B, and external-claim power, so it
-cannot freeze sample size.  An effect on a null margin has only calibrated
-type-I rejection probability, not 0.90 power.
-Any $>10$-percentage-point statement, including
-\(\Delta_{\mathrm{pure}}\) or \(\Delta_{\mathrm{pure@B}}\), requires every preregistered claim-family
-simultaneous multiplicity-adjusted one-sided lower confidence bound to be
-strictly greater than 0.10.  This is not the verified-repair primary margin,
-which remains 0.15.
+Any \(>10\)-percentage-point statement is a separate, independently
+preregistered headline family.  Before search, it must enumerate every contrast,
+model, task, and baseline it will name and power the corresponding simultaneous
+one-sided bounds.  It passes only if every multiplicity-adjusted lower bound is
+strictly above 0.10 on the binary-success scale.  It cannot be added after the
+sealed audit, borrowed from the co-primary tests, or used for post-seal sample-
+size continuation or method iteration.
 
-The current method-development prototype uses the declared equal-cell macro
-estimand and a basic nested bootstrap that resamples search seeds within
-model--task cells, task groups within runs, and repeats within groups.  It has
-not completed coverage calibration, been frozen as the confirmatory estimator,
-or consumed an authority-attested sealed dataset.  It therefore cannot freeze
-the formal seed count or license a result.  The final preregistration must bind
-one validated estimator with no outcome-selected fallback.  Failure-as-zero is
-the intended intention-to-treat analysis, accompanied by complete-case and
-worst-case sensitivity analyses.  Individual model, task, surface, and factor
-findings are corrected or labeled exploratory.
+Every benefit, false-promotion, repair, protection, and cost margin must be
+justified from a signed deployment utility/risk budget before the outcome-
+bearing pilot; the pilot estimates nuisance variation and power, not a favorable
+effect threshold.  The current nested-bootstrap analyzer and prospective simulator are
+method-development prototypes: they predate this reliability family, lack
+coverage calibration and authority-attested inputs, and cannot freeze the
+sample size or support a claim.  The formal estimator, family dependence,
+failure mapping, and all margins are frozen before the disjoint pilot and
+confirmatory outcomes (Appendix~\ref{app:power-proxy}).
 
-\subsection{Selection closure, sealing, and cost}
+\subsection{One-time sealing and reporting}
 
-Search stops at the first frozen round, proposal, nomination, optimizer-call,
-resource, patience, or invalid-candidate limit.  All configured cells,
-including failures, must close before the sealed authority accepts champion
-hashes.  It evaluates the entire grid in one release.  A post-unseal change
-starts a new preregistration and new sealed lineage.
+All search cells must close before the target sealed authority receives the
+signed registry of committed edits and final champions.  One authorization must evaluate the entire
+registry under the same utility, protected-slice, cost, and missingness rules
+used at the gate, and releases aggregates only.  A post-unseal failure ends that
+lineage; changing the method requires a new preregistration and independently
+committed sealed set.
 
-We report score and protected outcomes alongside uncached and cached input,
-output/reasoning tokens, normalized frozen-price cost, actual billed cost when
-available, wall time, tool calls, failures, and retries.  Score per million
-tokens and a Pareto frontier complement absolute outcomes; cost is not hidden
-inside the optimized objective.
+We retain failures and report utility, protected outcomes, calls, uncached and
+cached tokens, normalized and billed cost, wall time, retries, and score per
+million tokens.  Exact retry, failure-as-zero, missingness, external-baseline,
+and resource rules are in Appendix~\ref{app:evaluation-details}.

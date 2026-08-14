@@ -5,7 +5,8 @@ An empirical claim may replace an \texttt{EVIDENCE BLOCKED} marker only when its
 artifact chain binds: (i) the immutable preregistration and amendment history;
 (ii) model, inference, runtime, grader, task-group, and price-table hashes;
 (iii) every configured search closure, including failed calls and retries;
-(iv) the one-time sealed authorization and signed aggregate release; (v) the
+(iv) the signed registry of committed edits and one-time sealed aggregate
+release; (v) the
 prespecified estimate, uncertainty interval, and multiplicity result; and (vi)
 the deterministic table or figure source.  A result exposed before these
 conditions is development evidence and stays out of the confirmatory table.
@@ -13,25 +14,38 @@ conditions is development evidence and stays out of the confirmatory table.
 \section{Primary Hypotheses}
 \label{app:hypotheses}
 
-The three one-sided primary margin hypotheses are:
+The commit-reliability family contains two one-sided hypotheses:
 \begin{align*}
-H_{01} &: \Delta_{\mathrm{policy}} \leq 0.02,
-  && H_{11}: \Delta_{\mathrm{policy}} > 0.02,\\
-H_{02} &: \Delta_{\mathrm{e2e}} \leq 0.02,
-  && H_{12}: \Delta_{\mathrm{e2e}} > 0.02,\\
-H_{03} &: \Delta_{\mathrm{repair}} \leq 0.15,
-  && H_{13}: \Delta_{\mathrm{repair}} > 0.15.
+H_{0R1} &: p_{\mathrm{FP}}(\text{\fullarm}) \geq 0.05,
+  && H_{1R1}: p_{\mathrm{FP}}(\text{\fullarm}) < 0.05,\\
+H_{0R2} &: p_{\mathrm{FP}}(\text{\scorearm})
+ -p_{\mathrm{FP}}(\text{\fullarm}) \leq \delta_{\mathrm{FP}},
+  && H_{1R2}: p_{\mathrm{FP}}(\text{\scorearm})
+ -p_{\mathrm{FP}}(\text{\fullarm}) > \delta_{\mathrm{FP}}.
 \end{align*}
-Holm--Bonferroni controls the family-wise error rate at 0.05.  The primary
-statistical pass requires rejection of all three corresponding one-sided margin
-nulls after Holm correction; a point estimate above a margin is insufficient.
-The stronger project preference for a ten-percentage-point improvement is a
-separate claim family on the prospectively binary success-probability scale; an
-arbitrary normalized continuous score does not acquire percentage-point units.
-It may be reported only when every applicable,
-preregistered simultaneous multiplicity-adjusted one-sided lower confidence
-bound is strictly greater than 0.10; it is never a reason to reopen or continue
-tuning on the same sealed release.
+Here \(\delta_{\mathrm{FP}}>0\) is justified from a signed operational risk
+budget and frozen before the outcome-bearing pilot.  The
+sealed-usefulness family tests
+\(H_{0U1}:\Delta_{\mathrm{policy}}\leq0.02\) and
+\(H_{0U2}:\Delta_{\mathrm{e2e}}\leq0.02\) against larger effects.  Each family
+uses one-sided Holm--Bonferroni FWER 0.05, and every null in both families must
+be rejected.  The full headline additionally requires simultaneous protected-
+behavior and cost non-inferiority plus provenance, leakage, and missingness
+closure.  The conjunction prevents a reject-all policy from passing on low
+false promotion alone.  Verified-repair improvement at the prospective 0.15
+margin, harmful promotion, and accepted-edit precision are key secondary
+families rather than substitutes for this decision.
+The 0.02 utility, 0.15 repair, protected-behavior, and cost margins likewise
+require operational justification and are fixed before that pilot; pilot effect
+sizes are nuisance/power inputs, not margin selectors.
+
+Any ten-percentage-point statement is an independent preregistered headline
+family on the binary-success scale.  Its exact contrasts and simultaneous
+multiplicity adjustment must be fixed and powered before search; every one-
+sided lower bound must be strictly greater than 0.10.  A normalized score does
+not acquire percentage-point units.  The family cannot be declared after
+unsealing, and sealed outcomes cannot trigger sample-size continuation or
+method iteration in the same lineage.
 
 \section{Prospective Sizing Boundary}
 \label{app:power-proxy}
@@ -56,22 +70,110 @@ selector's \emph{combined sizing event} is the conjunction of all three
 Holm-corrected SESOI-margin rejections and the two real-task simultaneous
 one-sided lower bounds above 0.10.  It excludes PURE, PURE@B, and external
 claim-family sizing as well as protected-behavior, cost, provenance, and leakage
-constraints, so it is not the full headline pass and cannot freeze the final
-sample size.  At a true effect exactly on its minimum boundary, a valid
+constraints.  More importantly, it contains no family-level false-promotion
+endpoint or harmful-promotion process and therefore predates the present
+co-primary design.  It is not the full headline pass and cannot freeze the
+final sample size.  At a true effect exactly on its minimum boundary, a valid
 one-sided margin test rejects only at its calibrated type-I rate; 0.90 combined-event
 power requires a prospectively justified alternative strictly above every
 margin.
 
-The prototype generates H3 independently of H1/H2 and simulates no failure or
-missingness process.  Its diagnostic null stream covers only the joint SESOI
-boundary---not partial nulls or the H1/H2 0.10 boundaries---and neither proves
-that boundary least favourable nor gates selection.  It chooses the first
+The prototype generates its legacy repair endpoint independently of its two
+real-task endpoints and simulates no false-promotion, failure, or missingness
+process.  Its diagnostic null stream covers only the legacy joint SESOI
+boundary---not partial nulls, reliability nulls, or 0.10 boundaries---and
+neither proves that boundary least favourable nor gates selection.  It chooses the first
 candidate whose 95\% Wilson lower bound for calibration combined-event power
 meets a caller-declared target, then applies the criterion once on an independent
 validation stream; failure yields no recommendation and no larger fallback.  A
-formal design must freeze the target and roster, cover plausible H3 dependence,
-ICC and failure modes, and make independent boundary/partial-null strong-FWER
-audits a fail-closed prerequisite.
+formal design must freeze the target and roster; simulate family-level false and
+harmful promotion, plausible endpoint dependence, ICC, and failure modes; and
+make independent boundary/partial-null strong-FWER audits a fail-closed
+prerequisite.
+
+\section{Detailed Evaluation Protocol}
+\label{app:evaluation-details}
+
+\paragraph{Feedback and budget closure.}
+\scorearm{} and \fullarm{} receive the same authenticated aggregate score,
+interval, cost, and performance-only decision over utility, protected behavior,
+and cost.  SCORE cannot read item outputs, trajectories, localization, or any
+activation, adherence, behavior, revert, or placebo packet.  FULL may read only
+the source-linked mechanism fields authorized before search.  A confidence
+projection derives its level, endpoints, estimator version, and analysis-plan
+identity from one authority-owned objective artifact; callers cannot supply
+interval endpoints.  Every solver, diagnoser, proposer, materializer, ranker,
+nominator, mechanism-judge, grader, retry, and failed-call charge remains in
+the ledger.  Matching fixes ex-ante coordinate
+rules and ceilings, not post-treatment candidate contents or realized tokens.
+
+\paragraph{References and baselines.}
+\purearm{} receives the official task payload plus provider-required
+serialization, with no system prompt, examples, memory, skill, tool,
+middleware, or routing logic.  \(\textsc{Pure@B}\) reserves FULL's full
+model-call and token ceiling before execution and maps its complete independent
+sample multiset to one output through a total, task-native, nonadaptive rule.
+Random-valid uses a frozen finite catalog; prompt-only cannot serve as SCORE if
+it receives item feedback.  Meta-Harness-style and Self-Harness optimizers are
+secondary: missing public components make an implementation a paper-algorithm
+reconstruction, and any stronger role model makes it heterogeneous and
+ineligible for same-model or ten-point claims.
+
+\paragraph{Tasks, sealing, and failures.}
+Availability-only smoke tests select endpoint feasibility without benchmark
+scores.  Tasks bind source/template/generator families, binary rubrics, group
+weights, and a never-opened sealed partition before search.  All conditions and
+failed runs reach terminal closure before one authorization evaluates every
+committed-edit hash and final champion.  Malformed output, refusal, candidate-
+caused timeout, or crash scores zero with cost retained.  A preregistered
+infrastructure retry replaces the complete matched block, not one favorable
+arm; revision drift invalidates the entire model--task--seed block.  The primary
+analysis is intention-to-treat with failure-as-zero, complete-case and worst-
+case sensitivity analyses.  We report absolute outcomes, protected slices,
+uncached/cached input, output/reasoning tokens, normalized and billed cost, wall
+time, failures, retries, score per million tokens, and a Pareto frontier.
+
+\section{Prospective HarnessFaultBench Design}
+\label{app:fault-design}
+
+\begin{table}[h]
+  \caption{Prospective fault factors.  Semantically impossible combinations are
+  compatibility-masked before sampling.}
+  \label{tab:fault-factors}
+  \centering
+  \begin{tabular}{p{1.25in}p{3.80in}}
+    \toprule
+    \textbf{Factor} & \textbf{Levels} \\
+    \midrule
+    Mutable surface & prompt; memory/retrieval; tool/schema/routing;
+      output middleware; control flow/skill routing \\
+    Causal stage & selection/activation; adherence/conflict;
+      behavior/transformation; output/verification contract \\
+    Structure & sparse or dense prevalence; single or interacting/masked
+      double fault; correlated non-causal distractor present or absent \\
+    Distribution & IID gate or held-out template/source shift \\
+    Repairability & repairable; oracle-optimal no-fault; out-of-policy \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The generator freezes each oracle-correct harness, injected fault, true causal
+surface and trigger, admissible repair, exact revert, neutral placebo,
+protected-clean behavior, repairability, split groups, and artifact hashes.
+The sampling target---not the observed outcomes---sets the factor weights.
+Each independent family receives one preregistered primary optimizer seed,
+shared across policies.  Family-level false promotion equals one if any invalid
+edit is committed during that complete family--seed campaign.  Policies are
+paired within family, and family-clustered inference integrates optimizer
+randomness over the prospective seed draw.  A harmful promotion is a
+commit whose atomic sealed audit fails the identical utility-benefit,
+protected-behavior, or cost rule.  Accepted-edit precision counts only commits
+that satisfy the oracle mechanism and every sealed gate; if its denominator is
+zero it is reported as undefined, not 100\%.  Search seeds, scenario roles, and
+rollouts within one generated family do not increase the family sample size.
+Any secondary multi-seed analysis freezes either a family mean or an any-over-
+seeds campaign event before outcomes and never treats seeds as independent
+families.
 
 \section{Factorial Decomposition and Fresh-Block Validity}
 \label{app:factorial}
@@ -102,12 +204,14 @@ Thus a shorthand budget such as \(\alpha/Q\) can only be the total envelope
 for nomination block \(q\); it must still be divided or validly combined across
 conditions and gate dimensions so that the displayed global sum is at most
 0.05.
-Then the probability of any campaign false promotion is at most \(\alpha\).
-Indeed, an invalid intersection-gate promotion rejects at least one true null.
-A union bound over those rejections, followed by conditional super-uniformity
-and iterated expectation, gives
+Define a \emph{statistical false authorization} as a promotion for which at
+least one prespecified fresh-block gate null is true.  Under the displayed
+conditions, the campaign-wise probability of at least one such authorization
+is at most \(\alpha\).  Indeed, that intersection-gate authorization rejects at
+least one true null.  A union bound over those rejections, followed by
+conditional super-uniformity and iterated expectation, gives
 \(
-  \Pr(\text{any false promotion})
+  \Pr(\text{any statistical false authorization})
   \leq\sum_{q,a,j}\mathbb E[
   \Pr(P_{qaj}\leq\alpha_{qaj}\mid\mathcal F_{q-1})]
   \leq\sum_{q,a,j}\alpha_{qaj}\leq\alpha.
@@ -116,7 +220,13 @@ Dependence from paired conditions is allowed.  Unique block identifiers alone
 do not establish the premise: unopened source/family groups, candidate freezing,
 isolated feedback, grader integrity, and complete consumption accounting are
 required evidence.  Reusing a gate family after adapting to its aggregate
-invalidates this argument even if the rollout seed changes.
+invalidates this argument even if the rollout seed changes.  This guarantee is
+conditional on fresh blocks, calibrated tests, and complete alpha accounting.
+It does not cover harm revealed only under sealed distribution shift, grader or
+policy exploits outside the tested claims, provenance violations, or judge and
+model misspecification; those are reported separately as harmful or protocol-
+invalid promotions.  In particular, it is not a proof that the broader false-
+promotion event in Section~\ref{sec:problem} is bounded by \(\alpha\).
 
 \section{Figure Accessibility}
 \label{app:figure-accessibility}
@@ -126,8 +236,8 @@ line style, not color alone.  Left-to-right boxes in the upper container show
 the mutable observe--diagnose--mutate loop.  The lower blue container shows a
 matched quartet followed by activation, adherence, behavior, and
 utility/protection/cost gates.  A dashed return arrow carries only a redacted
-decision.  A separate tan box receives champion hashes after all search cells
-close and releases one aggregate evaluation.  Candidate execution sits in a
+decision.  A separate tan box receives the commit registry and champion hashes
+after all search cells close and releases one aggregate evaluation.  Candidate execution sits in a
 dashed untrusted-runtime box without grader, target, or secret access.
 
 Figure~\ref{fig:factorial-decomposition} is a labeled two-by-two grid.  Columns

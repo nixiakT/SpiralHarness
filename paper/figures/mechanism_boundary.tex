@@ -40,7 +40,7 @@
 
   \node[draw=black, dashed, rounded corners=2pt, below=7mm of quartet,
         minimum width=34mm, align=center, fill=white] (sandbox)
-        {Untrusted candidate runtime\\no grader, targets, or secrets};
+        {Target untrusted runtime\\no grader, targets, or secrets};
   \node[note, below=8mm of constraints, text width=58mm] (trustnote)
         {Frozen tasks, grader, schedule, evidence authorities, usage ledger,
          and campaign error budget};
@@ -61,11 +61,11 @@
   % crossing without changing the arrow's routing or meaning.
   \node[anchor=north west, font=\bfseries\sffamily, fill=TrustedFill,
         inner sep=1pt] at ($(trusted.north west)+(2mm,-1mm)$)
-        {Independent verification plane};
+        {Target independent verification plane};
 
   \node[box, fill=SealedFill, below=10mm of trusted.south, minimum width=68mm]
-        (sealed) {External sealed authority\\all-cell barrier $\rightarrow$
-        champion hashes $\rightarrow$ one atomic aggregate release};
+        (sealed) {Target external sealed authority\\all-cell barrier $\rightarrow$
+        commit registry + champions $\rightarrow$ one atomic release};
   \draw[flow] (trusted.south) --
         node[right, note] {all search cells close} (sealed.north);
   \node[note, right=3mm of sealed.east, align=left]

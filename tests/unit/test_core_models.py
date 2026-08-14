@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import FrozenInstanceError
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-from spiral_harness.core.canonical import canonical_json_bytes, canonical_sha256
+from spiral_harness.core.canonical import (
+    callable_source_sha256,
+    canonical_json_bytes,
+    canonical_sha256,
+    module_source_sha256,
+    sha256_bytes,
+)
 from spiral_harness.core.models import (
     HARNESS_MANIFEST_MEDIA_TYPE,
     ArtifactRef,
@@ -24,6 +32,10 @@ def artifact(digit: str, *, size: int = 1, media_type: str = "text/plain") -> Ar
 
 def component(name: str, kind: ComponentKind, digit: str) -> HarnessComponentRef:
     return HarnessComponentRef(name=name, kind=kind, artifact=artifact(digit))
+
+
+def source_fingerprint_fixture(value: int) -> int:
+    return value + 1
 
 
 def hypothesis() -> MutationHypothesis:
@@ -269,3 +281,26 @@ def test_canonical_json_revalidates_bypassed_model_instances() -> None:
 def test_canonical_json_rejects_non_finite_numbers(value: float) -> None:
     with pytest.raises(ValueError):
         canonical_json_bytes({"value": value})
+
+
+def test_callable_source_fingerprint_hashes_source_not_cpython_bytecode() -> None:
+    expected_source = b"def source_fingerprint_fixture(value: int) -> int:\n    return value + 1\n"
+
+    assert callable_source_sha256(source_fingerprint_fixture) == sha256_bytes(expected_source)
+    assert callable_source_sha256(source_fingerprint_fixture) != sha256_bytes(
+        source_fingerprint_fixture.__code__.co_code
+    )
+    with pytest.raises(TypeError, match="Python function"):
+        callable_source_sha256(len)
+
+
+def test_module_source_fingerprint_includes_normalized_module_bundle() -> None:
+    module = sys.modules[__name__]
+    source = Path(__file__).read_text(encoding="utf-8")
+    normalized = source.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n") + "\n"
+
+    assert module_source_sha256(module) == sha256_bytes(normalized.encode("utf-8"))
+    with pytest.raises(TypeError, match="Python module"):
+        module_source_sha256(source_fingerprint_fixture)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="source is unavailable"):
+        module_source_sha256(sys)

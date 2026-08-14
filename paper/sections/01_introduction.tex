@@ -25,13 +25,12 @@ do so?
 We ask a narrower question than whether a model can rewrite a harness:
 
 \begin{quote}
-Given a fixed solver model, mutation space, and search budget, what evidence is
-sufficient to promote an adaptively selected harness edit as a reproducible
-improvement?
+Given a fixed solver model, mutation space, and search budget, when is there
+enough evidence to \emph{commit} an adaptively selected harness edit?
 \end{quote}
 
-Our answer is \systemname, a protocol that separates a mutable evolution plane
-from an independent verification plane and a one-time sealed authority
+Our answer is \systemname, a protocol whose target architecture separates a
+mutable evolution plane from an independent verification plane and a one-time sealed authority
 (Figure~\ref{fig:mechanism-boundary}).  Each candidate is an immutable child of
 one parent and declares a typed, bounded mutation plus a falsifiable mechanism
 hypothesis.  Before utility can authorize promotion, matched interventions ask
@@ -50,31 +49,34 @@ not a redaction of the full mechanism gate.  The solver, proposer, mutation
 grammar, task coordinates, and budget are otherwise held fixed.  The real-task
 \fullarm{}--\scorearm{} contrast estimates the effect of the complete deployable
 policy: it changes both optimizer feedback and the promotion rule.  A
-controlled-fault \(2\times2\) factorial separately estimates feedback-guidance,
-promotion-verification, and interaction effects.  The central empirical
-question is whether the joint \fullarm{} policy reduces false promotion and
-improves sealed utility relative to \scorearm{}.
+controlled-fault \(2\times2\) factorial prospectively estimates feedback-guidance,
+promotion-verification, and interaction effects under its randomized design.  The central empirical claim
+is an intersection rather than a score-only win: the joint \fullarm{} policy
+must control and reduce family-level false promotion, improve sealed utility
+relative to \scorearm{} and the unmodified harness, and pass protected-behavior
+and cost non-inferiority.  The usefulness requirements prevent a conservative
+reject-all policy from appearing safe.
 
 \paragraph{Contributions.}
-This draft makes four contributions, with empirical claims deliberately kept
+This draft makes three contributions, with empirical claims deliberately kept
 separate from design claims:
 \begin{itemize}
-  \item A formal promotion problem for adaptive harness search, with typed
-  atomic mutations and an explicit trusted surface that candidates cannot edit.
-  \item A randomized mechanism gate using child, parent, revert, and matched
-  placebo arms, campaign-level error control, and explicit utility, regression,
-  safety, and resource constraints.
-  \item A prospective factorial design for HarnessFaultBench whose oracle causal
-  surface would permit measurement of localization, verified repair, and false
-  promotion rather than score alone.
-  \item A prospective same-model, budget-matched study across harness surfaces
-  and real tasks.  Its protocol and main conclusion are
+  \item A formal commit decision for adaptive harness search, with immutable
+  typed edits, an explicit trusted surface, and family-level false promotion as
+  a co-primary endpoint rather than a diagnostic afterthought.
+  \item A randomized mechanism gate using child, parent, exact-revert, and
+  matched-placebo arms, campaign-level error control, and distinct utility,
+  protected-behavior, and resource constraints.
+  \item A prospective same-model study that joins a controlled-fault
+  feedback-by-promotion factorial to one-time sealed real-task evaluation.  Its
+  protocol and conjunctive conclusion are
   \evidenceblocked{pending preregistration, independent search replications, and
   atomic sealed release}.
 \end{itemize}
 
 We do not claim the first self-improving harness, activation check, statistical
-gate, held-out acceptance test, or use of execution evidence.  The remaining
-prospective distinction is child--parent--revert--placebo attribution along an
-activation--adherence--behavior chain, campaign-level false-promotion
-measurement, and factorial separation of feedback from promotion authority.
+gate, held-out acceptance test, or use of execution evidence.  The narrower
+prospective distinction is a decision rule for credible adaptive commits:
+child--parent--revert--placebo attribution along an
+activation--adherence--behavior chain, primary family-level false-promotion
+control, and factorial separation of feedback from promotion authority.

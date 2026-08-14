@@ -17,6 +17,7 @@ from spiral_harness.execution.contracts import (
     ResolvedHarness,
 )
 from spiral_harness.execution.model import FixedModelRunner, ModelBackend
+from spiral_harness.execution.runtime_identity import current_python_runtime_identity
 from spiral_harness.storage.artifact_store import ArtifactStore
 from spiral_harness.verification.models import TrialObservation
 
@@ -55,7 +56,10 @@ def build_live_gsm8k_spec(
         revision="hosted-snapshot-2026-08-13",
         tokenizer="provider-reported",
         tokenizer_revision="hosted-snapshot-2026-08-13",
-        runtime="spiral-harness-live-smoke-py3.12@2026-08-13",
+        runtime=current_python_runtime_identity(
+            component="spiral-harness-live-smoke",
+            revision="2026-08-14.v2",
+        ),
         inference=InferenceConfig(
             temperature=temperature,
             top_p=top_p,

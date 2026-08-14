@@ -5,18 +5,18 @@ preregistration nor a result.
 
 ## Question
 
-Given a fixed solver model, mutation space, and search budget, what evidence is
-sufficient to promote an adaptively selected harness edit as a reproducible
-improvement?
+Given a fixed solver model, mutation space, and search budget, when is there
+enough evidence to commit an adaptively selected harness edit credibly?
 
 The working title is:
 
-> **MGV-Harness: Mechanism-Gated Verification for Self-Evolving LLM
-> Harnesses**
+> **MGV-Harness: When to Commit Adaptive LLM Harness Edits**
 
 The paper should not sell “an LLM edits its own prompt or harness” as the new
-idea.  That capability is already established.  The proposed contribution is
-to measure and control *false promotion* during adaptive harness search.
+idea.  That capability is already established.  The proposed contribution is a
+decision rule for when an adaptive edit can be committed: primary family-level
+false-promotion control joined conjunctively to sealed utility superiority and
+protected-behavior/cost non-inferiority.
 
 ## Main treatment
 
@@ -45,7 +45,10 @@ coordinates as FULL; `FULL - PURE` is a secondary effectiveness contrast and
 currently evidence-blocked.  It is not model-call/token-budget matched.
 `PURE@B` separately spends FULL's frozen ex-ante model-call/token ceiling on
 independent PURE samples under a nonadaptive task-native aggregation rule; a
-cross-task effect exists only when every primary task freezes a total rule.
+cross-task effect exists only when every primary task freezes a total rule.  Its
+prospective contract now commits every task/evaluation-unit/sample allocation,
+distinct seed, retry allowance, and token cap and joins the split, grader,
+query-DAG, and retry identities to FULL; no live execution is thereby attested.
 
 “Same model” means one exact provider-resolved model identity and revision for
 solver, diagnosis, proposal, materialization, candidate ranking, and nomination,
@@ -154,16 +157,30 @@ six-surface trust-closure fixture.  Its 28 scenarios per partition are four
 roles within seven families, not 28 independent families, and deterministic
 benchmark middleware rather than base-model output drives behavior.  It is not
 a live-model, optimizer-capability, self-evolution, or powered benchmark result.
+A separate raw-output development path now fits `SS/MS/SM/MM` on one paired
+exploration block, jointly freezes the four candidates, and executes all
+attribution quartets on a source/group-disjoint fixture GATE block in one
+offline-replayable `4*(28+1+4*28)=116+448=564`-call process-local ledger.  Its
+fixed `SS->MS->SM->MM` dispatch is not confirmatory counterbalancing.  The runner explicitly does
+not attest live provider delivery or served revision, independent freeze/gate
+timing, one-time grant consumption, or cross-process atomicity, and therefore
+does not change this scientific evidence boundary.
 
 ## Required empirical pattern
 
-The central conclusion is supported only if all three Holm-corrected one-sided
-margin tests pass, FULL improves on SCORE on the atomic sealed release,
-protected behavior and cost close under their frozen margins and multiplicity
-rules, and the upper confidence bound on false promotion meets the safety
-target.  A benchmark score increase without the matched mechanism result is an
-end-to-end pilot, not evidence for the paper's proposed mechanism.  Any
-`>10 pp` statement additionally requires all claim-family simultaneous
-multiplicity-adjusted one-sided lower confidence bounds to be strictly above
-`0.10` on the prospectively binary success-probability scale; an arbitrary
-normalized-score difference is not a percentage-point effect.
+The central conclusion is supported only if both false-promotion tests
+(absolute FULL control and paired improvement over SCORE), both sealed-utility
+tests (FULL over SCORE and STATIC), and every protected/cost NI and trust-closure
+gate pass.  All are frozen before confirmation; low false promotion without
+sealed usefulness is reject-all behavior, while utility without the reliability
+family is not a credible-commit result.  Harmful promotion and accepted-edit
+precision remain key secondary endpoints and precision is undefined at zero
+commits.
+
+Any `>10 pp` statement is a separate headline family whose exact members,
+power, and simultaneous multiplicity-adjusted one-sided lower bounds are frozen
+before search; every bound must be strictly above `0.10` on the binary-success
+scale.  The atomic sealed release is terminal.  It cannot trigger more seeds,
+tasks, contrasts, sample-size continuation, or method tuning in the same
+lineage; a changed method requires a new preregistration and independently
+committed sealed set.

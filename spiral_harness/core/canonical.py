@@ -9,9 +9,12 @@ never enter the ledger.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import math
-from collections.abc import Mapping
+import textwrap
+from collections.abc import Callable, Mapping
+from types import ModuleType
 from typing import Any
 
 from pydantic import BaseModel
@@ -113,10 +116,55 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _normalized_python_source(value: object) -> bytes:
+    try:
+        source = inspect.getsource(value)
+    except (OSError, TypeError) as error:
+        raise ValueError("Python source is unavailable") from error
+    normalized = textwrap.dedent(source).replace("\r\n", "\n").replace("\r", "\n")
+    return (normalized.rstrip("\n") + "\n").encode("utf-8")
+
+
+def callable_source_sha256(function: Callable[..., object]) -> str:
+    """Hash canonical source text, never interpreter-specific bytecode.
+
+    CPython bytecode is neither a complete implementation identity nor stable
+    across supported Python versions.  Source fingerprints normalize indentation
+    and line endings, then require a recoverable Python source definition.  This
+    helper is intended for module-level Python callables shipped with the source
+    distribution; dynamically generated functions fail closed.
+    """
+
+    if not inspect.isfunction(function):
+        raise TypeError("source fingerprint requires a Python function")
+    return sha256_bytes(_normalized_python_source(function))
+
+
+def module_source_sha256(module: ModuleType) -> str:
+    """Hash a module's normalized source as an implementation-bundle identity.
+
+    A function-only hash omits module constants and local helpers that can alter
+    its behavior.  Module-level source is the smallest fail-closed bundle for
+    benchmark adapters whose prompt builders depend on that surrounding state.
+    Built-in, namespace, and bytecode-only modules fail closed.
+    """
+
+    if not inspect.ismodule(module):
+        raise TypeError("source fingerprint requires a Python module")
+    return sha256_bytes(_normalized_python_source(module))
+
+
 def canonical_sha256(value: Any) -> str:
     """Hash a value's canonical JSON representation."""
 
     return sha256_bytes(canonical_json_bytes(value))
 
 
-__all__ = ["canonical_json", "canonical_json_bytes", "canonical_sha256", "sha256_bytes"]
+__all__ = [
+    "callable_source_sha256",
+    "canonical_json",
+    "canonical_json_bytes",
+    "canonical_sha256",
+    "module_source_sha256",
+    "sha256_bytes",
+]

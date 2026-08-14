@@ -7,6 +7,7 @@ from spiral_harness.benchmark.gsm8k import GSM8KBenchmarkAdapter
 from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.experiment import ProtocolPartition
 from spiral_harness.execution.contracts import FrozenModelSpec, InferenceConfig
+from spiral_harness.execution.runtime_identity import current_python_runtime_identity
 from spiral_harness.experiments.development_four_arm_contracts import (
     DEVELOPMENT_MAX_MODEL_CALLS,
     BenchmarkKind,
@@ -32,7 +33,10 @@ def build_development_model_spec(
         revision="gateway-route-unattested-2026-08-14",
         tokenizer="provider-managed-unattested",
         tokenizer_revision="gateway-route-unattested-2026-08-14",
-        runtime="spiral-harness-development-four-arm-py3.12@v1",
+        runtime=current_python_runtime_identity(
+            component="spiral-harness-development-four-arm",
+            revision="v2",
+        ),
         inference=InferenceConfig(
             temperature=0.0,
             top_p=1.0,

@@ -33,7 +33,7 @@ COMPILER_VERSION = "spiral-harness.harness-fault-compiler:v4-multi-surface"
 CONTROL_MATCH_KIND = "per-component-exact-utf8-byte-length-v2"
 _SCAFFOLD_PREFIX = "HFB4_FROZEN_COMPONENT\nPAYLOAD_BEGIN\n"
 _SCAFFOLD_SUFFIX = "\nPAYLOAD_END\n"
-_PAYLOAD_WIDTH = 384
+_PAYLOAD_WIDTH = 2_048
 _COMPONENT_SPECS = (
     ("system-prompt", ComponentKind.PROMPT),
     ("retrieval-policy", ComponentKind.MEMORY),
@@ -66,6 +66,29 @@ _RULE_PAYLOADS = {
         "Length-matched neutral control; preserve the legacy branch for every request."
     ),
 }
+
+_MODEL_SOLVER_PROTOCOL = """
+Return exactly one compact JSON object with keys `answer` and `observable`; no
+markdown or extra keys. Read FAULT_FAMILY, CONTEXT, PRIMARY, and SECONDARY from
+the user message. The RULE line selects a branch. CONSTANT_LEGACY and
+CONTROL_NEUTRAL always select LEGACY. CONSTANT_SAFE always selects SAFE.
+ROUTED_POLICY selects LEGACY in context-1, SAFE in context-0, and in context-x
+selects SAFE only for prompt-instruction-precedence, tool-schema-validation,
+middleware-canonicalization, and skill-scope-activation. A family patch selects
+LEGACY in context-1/context-x; in context-0 it selects SAFE only for its named
+families (PROMPT_MEMORY: prompt+memory, TOOL: both tool families, RUNTIME:
+middleware+control-flow+skill), otherwise LEGACY. SAFE answers MATCH for
+prompt-instruction-precedence, tool-schema-validation,
+middleware-canonicalization, skill-scope-activation and DIFFERENT otherwise;
+LEGACY reverses that. SAFE observable labels are trusted-instruction,
+scoped-memory, validated-schema, authorized-route, guarded-flow, scoped-skill
+and use PRIMARY. LEGACY labels are payload-instruction, global-memory,
+unchecked-schema, fallback-route, legacy-flow, default-skill and use SECONDARY.
+Format those observables as label=<compact JSON string>. For
+middleware-canonicalization the sole label is compared: SAFE compares
+strip+casefold(PRIMARY)|strip+casefold(SECONDARY), LEGACY compares the exact raw
+PRIMARY|SECONDARY, again encoded as one compact JSON string.
+""".strip()
 
 
 class HarnessFaultCompilationError(ValueError):
@@ -122,7 +145,10 @@ def parse_fault_repair_action(text: str) -> FaultRepairAction:
 
 
 def _component_payload(name: str, rule_id: RepairRuleId) -> bytes:
-    payload = f"COMPONENT={name}\nRULE={rule_id.value}\n{_RULE_PAYLOADS[rule_id]}"
+    solver_protocol = (
+        f"\nMODEL_SOLVER_PROTOCOL:\n{_MODEL_SOLVER_PROTOCOL}" if name == "system-prompt" else ""
+    )
+    payload = f"COMPONENT={name}\nRULE={rule_id.value}\n{_RULE_PAYLOADS[rule_id]}{solver_protocol}"
     encoded = payload.encode("ascii")
     if len(encoded) > _PAYLOAD_WIDTH:  # pragma: no cover - frozen constants
         raise RuntimeError("frozen component payload exceeds scaffold width")
@@ -138,6 +164,7 @@ COMPILER_FINGERPRINT = canonical_sha256(
         "scaffold_suffix": _SCAFFOLD_SUFFIX,
         "payload_width": _PAYLOAD_WIDTH,
         "rule_payloads": tuple((rule.value, _RULE_PAYLOADS[rule]) for rule in RepairRuleId),
+        "model_solver_protocol": _MODEL_SOLVER_PROTOCOL,
         "control_match": CONTROL_MATCH_KIND,
     }
 )
@@ -408,6 +435,32 @@ def compile_fault_repair(
     return HarnessFaultCompilationRecord(manifest=compilation, manifest_ref=manifest_ref)
 
 
+def publish_faulty_parent_harness(
+    store: ArtifactStore,
+    spec: FrozenModelSpec,
+) -> ArtifactRef:
+    """Publish the candidate-independent faulty parent before proposal generation.
+
+    The returned manifest is byte-identical to the parent reconstructed by any
+    later :func:`compile_fault_repair` call for the same frozen model spec.
+    """
+
+    if type(store) is not ArtifactStore:
+        raise TypeError("store must be an exact ArtifactStore")
+    checked_spec = FrozenModelSpec.model_validate(spec, strict=True)
+    components = _surface_components(RepairRuleId.CONSTANT_LEGACY)
+    manifest = _execution_manifest(checked_spec, components, None)
+    prompt = next(item for item in components if item.name == "system-prompt")
+    expected_prompt = _component_payload(prompt.name, RepairRuleId.CONSTANT_LEGACY)
+    if store.put_bytes(expected_prompt, media_type="text/plain") != prompt.artifact:
+        raise HarnessFaultCompilationError("parent prompt publication changed exact bytes")
+    ref = store.put_json(manifest, media_type=HARNESS_MANIFEST_MEDIA_TYPE)
+    expected_ref = _json_ref(manifest, HARNESS_MANIFEST_MEDIA_TYPE)
+    if ref != expected_ref:
+        raise HarnessFaultCompilationError("parent harness publication changed its graph")
+    return ref
+
+
 def verify_fault_compilation(
     store: ArtifactStore,
     spec: FrozenModelSpec,
@@ -473,5 +526,6 @@ __all__ = [
     "MatchedComponentBytes",
     "compile_fault_repair",
     "parse_fault_repair_action",
+    "publish_faulty_parent_harness",
     "verify_fault_compilation",
 ]

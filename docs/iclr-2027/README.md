@@ -17,6 +17,10 @@ store.
 - `mechanism-factorial-design.md` separates feedback guidance from promotion
   verification and states the fresh-block/runtime evidence needed for either
   causal claim.
+- `benchmark-statistical-matrix.md` audits every planned model, benchmark, arm,
+  fault control, external comparator, licence boundary, repeated unit, and
+  statistical closure needed to execute the ICLR 2027 study without inventing a
+  power result.
 - `third-party-audit.md` records Meta-Harness code/data provenance and
   redistribution limits.
 - `internal-red-team-review.md` is a simulated reviewer/AC audit and blocking

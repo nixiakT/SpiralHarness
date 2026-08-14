@@ -4,7 +4,7 @@ Last verified against official pages: 2026-08-14 (Asia/Shanghai).  Recheck 72
 hours and 24 hours before each deadline because the call labels dates as
 planned and some reviewer-page text contains stale year/date fragments.
 
-Official sources:
+Official sources (all accessed 2026-08-14, Asia/Shanghai):
 
 - [Call for Papers](https://iclr.cc/Conferences/2027/CallForPapers)
 - [Author Guidelines](https://iclr.cc/Conferences/2027/AuthorGuidelines)
@@ -52,7 +52,8 @@ Official sources:
 ## Required and recommended statements
 
 - [ ] Include the required AI use statement outside the main-text page limit.
-  (The optional ethics statement, not the AI statement, has a one-page cap.)
+  The official template caps this statement at one page; the recommended ethics
+  statement also has a one-page cap.
   It must disclose AI assistance with hypothesis/idea
   refinement, experimental feedback/design, implementation, result
   interpretation, translation, literature work, writing/editing, code/artifact
@@ -88,7 +89,10 @@ Official sources:
   task-native aggregation rule; label single-call FULL-minus-PURE as an
   effectiveness rather than model-call/token-budget-matched contrast.  Do not
   define a cross-task PURE@B estimand unless every primary task binds a total
-  aggregation rule.
+  aggregation rule.  The prospective contract now also freezes every
+  task/evaluation-unit/sample allocation and joins the model, split, grader,
+  query DAG, retry policy, calls, attempts, and tokens to FULL; a runtime must
+  still emit receipts proving those allocations were honored.
 - [ ] Before changing protocol status from `pilot-pending` to `frozen`, bind
   exact served models, task/source manifests, `S`, `Q`, repeats, budgets,
   factorial/fault-family roster, retry/failure rules, analysis/container hashes,
@@ -110,6 +114,14 @@ Official sources:
 - [ ] Close the controlled-fault `SS/MS/SM/MM` factorial at runtime.  Planned
   topology, equal seeds, or an `atomic=true` manifest do not establish executed
   feedback, promotion, or interaction effects.
+- [ ] Assign one primary optimizer seed to each independent fault family and
+  pair it across policies.  Treat family as `n`; extra seeds require one frozen
+  family aggregate and must not enter an exact-binomial or seed-level analysis
+  as independent families.  Freeze stratum weights for a fractional roster.
+- [ ] Execute and charge the same mechanism probes and blinded judge calls in
+  SCORE and FULL.  Keep SCORE's mechanism results as feedback-free shadow
+  measurements so disclosure/promotion, rather than purchased call topology,
+  defines the treatment.
 - [ ] Source both confidence-interval endpoints and their estimator from the
   independent objective artifact; no reportable decision may depend on a
   caller-supplied bound.
@@ -118,13 +130,14 @@ Official sources:
 - [ ] Do not use the current equal-cell basic nested-bootstrap/power prototype
   to freeze `S` or label evidence confirmatory until coverage calibration,
   boundary-null auditing, closed-pilot provenance, and sealed input attestation
-  are complete.  The current code selects on all three Holm SESOI rejections
-  plus the H1/H2 simultaneous `>10 pp` bounds; it still omits PURE/external
-  `>10 pp`, protected, cost, and provenance headline closure and therefore
-  cannot freeze the final sample size.  It also assumes H3 independence and no
-  failures, audits neither partial nulls nor H1/H2 `0.10` boundaries, and leaves
-  the Wilson-bound power target caller-declared.  Freeze the target/candidate
-  sequence/no-fallback rule, cover H3 dependence and ICC, require one-sided
+  are complete.  The current code's legacy event selects on three old SESOI
+  rejections plus two simultaneous `>10 pp` bounds; it omits the new family-
+  level false-promotion co-primary family, harmful promotion, NI, PURE/external
+  headline families, cost, and provenance closure and therefore cannot freeze
+  the final sample size.  It also assumes legacy repair independence and no
+  failures, and leaves the Wilson-bound power target caller-declared.  Freeze
+  the target/candidate sequence/no-fallback rule, cover reliability/endpoint
+  dependence and ICC, require one-sided
   Monte Carlo upper-bound or theoretical type-I validation, and make every
   audit failure fail closed.
 - [ ] For any `>10 pp` statement, require every applicable claim-family
@@ -133,17 +146,32 @@ Official sources:
   prospectively frozen binary success-probability scale so `0.10` actually means
   ten percentage points; never apply that label to an arbitrary normalized
   continuous score.
+- [ ] Freeze the exact members and power of every `>10 pp` headline family
+  before search.  Never add tasks, seeds, contrasts, or method iterations after
+  the atomic sealed release; a changed method requires a new preregistration and
+  independently committed sealed set.
 - [ ] Freeze every protected/cost estimand, margin, missingness rule, and
   multiplicity family.  Verify total adaptive gate spending over every
   `(nomination, condition, dimension)` is at most `0.05`.
+- [ ] Obtain operational signoff for `delta_FP`, utility/repair SESOIs, protected
+  NI margins, and cost ceilings before the outcome-bearing pilot; never select a
+  margin from a favorable pilot effect.
 - [ ] Describe HarnessFault v4 only as a deterministic seven-family/six-surface
   trust-closure fixture.  Its 28 scenarios per partition are not 28 independent
   families and do not support live-model, optimizer, self-evolution, or powered
   benchmark claims.
+- [ ] Describe the 564-call four-context HarnessFault path only as fixture-backed
+  process-local development plumbing.  Its shared paired fit block, joint
+  candidate freeze, source/group-disjoint fixture GATE block, and offline ledger replay do not
+  attest provider revision, freeze/gate wall-clock order, one-time block
+  consumption, cross-process atomicity, or a powered/reportable result.
 - [ ] Prefer programmatic mechanism evidence.  For every unavoidable LLM judge,
   freeze identity/revision, prompt/rubric, decoding, blindness, sampling frame,
   disjoint human calibration set, agreement and class-conditional error bounds,
   acceptance thresholds, adjudication, abstention, and failure rules.
+- [ ] Add a blinded naturally occurring fault subset and external adversarial
+  audit; accept semantic-equivalent alternative repairs, calibrate placebo
+  neutrality, and cluster shared generator/template sources.
 - [ ] Release an anonymous artifact with lock/container hashes, frozen configs,
   manifests, receipts, raw aggregate inputs, and deterministic plot/table
   scripts.

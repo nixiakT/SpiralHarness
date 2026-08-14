@@ -7,6 +7,16 @@ have not finished.
 
 ## Official template provenance
 
+The following official ICLR 2027 sources were accessed on 2026-08-14
+(Asia/Shanghai):
+
+- Author Guidelines:
+  <https://iclr.cc/Conferences/2027/AuthorGuidelines>
+- AI Policy for Authors:
+  <https://iclr.cc/Conferences/2027/AIPolicyForAuthors>
+- LaTeX style archive:
+  <https://media.iclr.cc/Conferences/ICLR2027/iclr-2027-style-files.zip>
+
 The official archive was obtained from:
 
 - <https://media.iclr.cc/Conferences/ICLR2027/iclr-2027-style-files.zip>
@@ -154,7 +164,8 @@ action pinned to a full commit SHA), mount only the anonymous checkout, and run
    emits `MGVH_MAIN_TEXT_PAGES=<n>` immediately before the statements,
    and the CI script enforces `n <= 9`. Keep the AI use, ethics, and
    reproducibility statements before references as required/recommended by the
-   official shell.
+   official shell. The required AI-use statement does not count toward the main
+   limit and must itself remain within one page.
 2. Inspect the log for undefined references/citations, overfull boxes, missing
    glyphs, duplicate labels, and PDF-string warnings. View the figure at 100%
    and in grayscale.

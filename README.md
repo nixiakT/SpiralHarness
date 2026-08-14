@@ -114,6 +114,26 @@ The M0.2 verification and experiment-control kernel includes:
 - a deterministic controlled-fault vertical slice with logically disjoint
   exploration and gate rosters, pre-gate mechanism probes, a frozen experiment
   contract, and content-addressed artifact/lifecycle lineage.
+- a separate model-output-driven HarnessFault development slice with canonical
+  `SS/MS/SM/MM` profiles, source-linked or explicitly shuffled feedback, one
+  same-frozen-spec proposal, raw-output-scored parent/candidate/revert/placebo calls,
+  an exact `4N+1` attempt ledger, an automatic gate, and offline provenance
+  replay. Its result type is permanently public-development-only and cannot be
+  serialized as sealed, confirmatory, provider-attested, or reportable evidence.
+- a four-context HarnessFault development closure that fits `SS/MS/SM/MM` on
+  one paired exploration block, freezes all four model-authored candidates,
+  then executes their complete quartets on one source/group-disjoint fixture GATE
+  block before any automatic gate is dispatched. The default fixture closes a
+  single 564-call ledger (116 candidate-defining and 448 gate-attribution
+  calls), uses fixed `SS→MS→SM→MM` dispatch rather than confirmatory
+  counterbalancing, and supports offline replay, while explicitly declining independent
+  freeze-time, one-time grant-consumption, cross-process atomicity, provider-
+  session, or served-revision attestation.
+- a prospective task-bound `PURE@B` contract that redirects FULL's complete
+  call, provider-attempt, and token ceilings to enumerated bare-model samples;
+  it freezes one total aggregation rule per declared task, globally distinct
+  sample seeds, per-unit/per-sample allocations, and exact model/split/grader/
+  query-DAG/retry joins while explicitly providing no runtime attestation.
 
 The first M1 benchmark/runner foundation now also includes:
 
@@ -362,7 +382,7 @@ LiteLLM, set credentials in the environment and run an exploration-only smoke
 slice:
 
 ```bash
-export LITELLM_BASE_URL=http://10.130.138.46:8010/v1
+export LITELLM_BASE_URL=https://your-litellm-gateway.example/v1
 export LITELLM_API_KEY=...
 uv run spiral benchmark smoke-gsm8k --model dashscope/qwen36-35b-a3b --limit 3
 ```
@@ -371,6 +391,43 @@ The smoke command refuses the sealed partition and writes a
 `non_reportable_gsm8k_smoke` artifact. It is useful for endpoint/model/prompt
 wiring and rough failure inspection only; it is not a sealed or reportable
 benchmark result.
+
+To inspect the executable one-step self-evolution study without credentials,
+network access, output writes, or model calls, run:
+
+```bash
+uv run spiral benchmark dev-four-arm --dry-run
+```
+
+The plan contains 16 unique public development tasks: four fit and four
+holdout items from each of GSM8K and BBH. It deliberately schedules 58 model
+calls rather than 16: eight shared STATIC parent-fit calls, two same-frozen-spec
+proposal calls, sixteen candidate-fit calls, and eight holdout tasks crossed
+with PURE, STATIC, SCORE, and FULL. TRUE PURE is a one-user-message reference.
+SCORE sees two aggregate fit scores; development FULL sees only fit questions,
+outputs, and correctness labels, never gold answers or holdout content. Both
+candidates freeze before either is evaluated, selection is automatic, and the
+holdout opens only after the selection artifact is persisted.
+
+Live mode reads only `LITELLM_BASE_URL` and `LITELLM_API_KEY` from the process
+environment and refuses gate/sealed partitions, symlink outputs, and nonempty
+output directories:
+
+```bash
+uv run spiral benchmark dev-four-arm \
+  --model dashscope/qwen36-35b-a3b \
+  --output runs/development-four-arm
+```
+
+This is permanently public development evidence. The four arms are not
+budget-matched: PURE uses eight holdout calls, STATIC uses its eight shared fit
+and eight holdout calls, while SCORE and FULL each use one proposal, eight
+candidate-fit, and eight holdout slots. SCORE versus development FULL isolates
+the feedback view only; both use the same performance selector, so this runner
+does not estimate the paper's joint feedback-plus-promotion-policy treatment.
+Eight public holdout tasks cannot support confirmatory inference or a `>10 pp`
+claim. Provider-declared identity metadata also cannot establish one exact
+served model revision without signed receipts.
 
 When present, top-level provider response fields such as `model` and
 `system_fingerprint` are persisted with each execution as

@@ -5,12 +5,17 @@ from __future__ import annotations
 import json
 import math
 import re
+import sys
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
 from spiral_harness.benchmark.gsm8k_smoke import build_live_gsm8k_spec
-from spiral_harness.core.canonical import sha256_bytes
+from spiral_harness.core.canonical import (
+    callable_source_sha256,
+    module_source_sha256,
+    sha256_bytes,
+)
 from spiral_harness.core.models import HARNESS_MANIFEST_MEDIA_TYPE
 from spiral_harness.execution.contracts import ModelRequest, ResolvedHarness
 from spiral_harness.execution.model import ModelBackend
@@ -235,7 +240,10 @@ def run_symptom_evaluation(
             "kind": "retrieval-classifier",
             "arm": arm,
             "retrieval_k": retrieval_k,
-            "prompt_builder_sha256": sha256_bytes(build_prompt.__code__.co_code),
+            "prompt_builder_sha256": callable_source_sha256(
+                build_pure_prompt if arm == "pure" else build_prompt
+            ),
+            "implementation_module_sha256": module_source_sha256(sys.modules[__name__]),
         },
         media_type=HARNESS_MANIFEST_MEDIA_TYPE,
     )

@@ -100,6 +100,18 @@ provenance.
 
 ## Adaptive gate validity
 
+The gate manifest distinguishes exact predicates from stochastic claims.
+Activation, policy, provenance, leakage, roster, and accounting checks are
+source-bound deterministic predicates and fail closed.  For every stochastic
+adherence, intended-behavior, utility, protected-behavior, or cost link it
+freezes: the observation unit; child--parent and required child--exact-revert/
+matched-placebo contrasts; null; operationally justified superiority or non-
+inferiority margin; missingness mapping; test; and assigned `(q,a,j)` alpha.
+Promotion requires every declared contrast, not a selected favorable member.
+A model-judged link must propagate the preregistered class-conditional
+calibration-error bound into its worst-case interval; failed calibration or an
+unsupported semantic-equivalence class yields `inconclusive`.
+
 Alpha spending does not make a p-value valid when an optimizer repeatedly
 adapts to aggregates from the same held-out items.  Before search, the gate
 authority must partition source/template/generator families into `Q` disjoint,
@@ -138,10 +150,11 @@ P(p[q,a,j] <= x | F[q-1]) <= x  for every x in [0,1].
 
 If a promotion rejects every active null required by the intersection gate and
 the predictable thresholds satisfy
-`sum(q,a,j) alpha[q,a,j] <= alpha = 0.05`, then the
-probability of at least one campaign false promotion is at most `alpha` by
-conditional super-uniformity and a union bound over the first rejected true
-null.  With multiple matched conditions the sum and union range over condition
+`sum(q,a,j) alpha[q,a,j] <= alpha = 0.05`, then the probability of at least one
+**statistical false authorization**---a promotion for which at least one
+prespecified fresh-block gate null is true---is at most `alpha` by conditional
+super-uniformity and a union bound over the first rejected true null.  With
+multiple matched conditions the sum and union range over condition
 as well as nomination and gate dimension; pairing does not require independence
 between conditions.  This guarantee does not hold merely because threshold
 labels sum to `alpha`; conditional validity is an assumption stronger than
@@ -150,19 +163,27 @@ candidate freezing, isolated feedback, grader integrity and complete query
 accounting must be attested, and the statistical model must justify why they
 imply the stated conditional super-uniformity.
 
+This is deliberately narrower than the study's oracle false-promotion event.
+It does not control harm visible only under sealed distribution shift, grader or
+policy exploits outside the tested nulls, provenance violations, or judge/model
+misspecification.  Those remain separate harmful or protocol-invalid promotion
+outcomes in the family-level operating-characteristic study.
+
 Accordingly, `alpha/Q` can only abbreviate the total envelope for one nomination
 block.  It does not authorize every condition and gate dimension to spend
 `alpha/Q` separately; the full `(q,a,j)` sum must remain at most `0.05`.
 
 ## Factorial estimands and replication
 
-One complete matched search-seed block, containing one end-to-end run per
-condition, is the independent repeated unit for factorial contrasts.  The four
-condition runs are paired by model, fault-family block and search seed rather
-than counted as four independent replicates.  Rollouts, control arms and
-scenarios inside a search are measurements, not additional search replicates.
-Fault generator family/source groups are the item-side resampling unit, and
-model-by-family cells receive equal weight.
+One primary fault block contains an independently generated family, one
+independently sampled primary optimizer seed, and one complete end-to-end run
+per condition.  The four condition runs share that seed and schedule.  Family
+is the independent cluster and conditions are paired within it; neither the
+four cells nor extra seed repeats are independent replicates.  Rollouts, control
+arms and scenarios inside a search are measurements.  A secondary multi-seed
+analysis must reduce each family to one prospectively fixed mean or any-over-
+seeds event and use family-clustered inference.  Model-by-family cells receive
+the preregistered fixed-roster and stratum weights.
 
 Because later candidates are treatment-induced, the factorial estimates policy
 effects over adaptive runs.  A separately corrected, secondary operating-
@@ -183,22 +204,24 @@ outcome ~ mechanism_feedback + mechanism_gate
 with search-run and fault-family clustering appropriate to the outcome.  Under
 treatment coding, report the two conditional simple effects and interaction
 with simultaneous intervals; if marginal main effects are desired, define them
-separately before outcomes.  The existing real-task `MM - SS` and
-`MM - STATIC` endpoints remain the primary deployable-policy questions;
-component effects form a separately corrected secondary family unless the
-preregistration explicitly replaces a primary endpoint before any relevant
-outcome is visible.  Scenario rollouts must never be counted as independent
-`n` for a factorial claim.
+separately before outcomes.  Family-level false-promotion control/reduction and
+the real-task `MM - SS` and `MM - STATIC` endpoints form the two co-primary
+families of the conjunctive credible-commit decision.  Component effects remain
+a separately corrected secondary family unless a preregistration replaces an
+endpoint before any relevant outcome is visible.  Scenario rollouts must never
+be counted as independent `n` for a factorial claim.
 
 ## Information-volume placebo
 
 On the controlled-fault subset, add `M~M`: its optimizer receives the same
 packet schema, byte/token envelope and call budget as `MM`, but an explicitly
-labeled placebo projection permutes evidence within a frozen model, surface,
-fault-family, severity and round stratum.  The independent promotion authority
-continues to consume the genuine source-linked packet.  The placebo projection
-must not masquerade as source-linked evidence or enter the mechanism gate.  Its
-permutation is authority-owned and fixed before outcomes.
+authority-labeled placebo projection permutes evidence within a frozen model,
+surface, fault-family, severity and round stratum.  The proposer sees the same
+common `mechanism-visible` view label in `M~M` and `MM`; placebo assignment and
+the authority's source mapping are blinded, and deterministic padding preserves
+the frozen envelope.  The independent promotion authority continues to consume
+the genuine source-linked packet.  The placebo projection cannot enter the
+mechanism gate.  Its permutation is authority-owned and fixed before outcomes.
 
 This arm tests whether gains require correctly linked mechanism evidence rather
 than merely more tokens, additional fields, or a generic signal that a failure
@@ -252,6 +275,23 @@ and families that no constant mutation is near the oracle.  It needs repairable,
 no-fault,
 unrepairable, correlated-distractor, protected-hard-negative and interacting
 fault families under a frozen sampling target.
+Because an author-built generator can favor the proposed gate, the powered
+study must add a blinded naturally occurring fault subset, external adversarial
+audit, semantic-equivalence classes for alternative valid repairs, blinded
+adjudication of novel legal repairs, placebo behavioral-neutrality calibration,
+and source/template clustering.  The optimizing model's uncalibrated preference
+cannot validate its own mechanism claim.
+
+The separate four-context development runner is a stronger plumbing check, not
+the missing experiment.  In one process it uses a paired exploration block for
+all four condition-local candidates, persists a joint freeze, and then runs
+four condition-specific sets of 28 child/parent/revert/placebo gate quartets on
+a source/group-disjoint fixture GATE block before automatic gate dispatch.  Its
+default topology is `4 * (28 fit-parent + 1 proposer + 4 * 28 gate) = 116 + 448
+= 564` calls.  It dispatches contexts in fixed `SS -> MS -> SM -> MM` order;
+prospective counterbalancing is not implemented.  Offline code-order replay does not independently
+attest freeze/gate time, one-time grant consumption, cross-process atomicity,
+provider-session isolation, or an exact served revision.
 
 ## Self-evolution closure
 
@@ -266,7 +306,8 @@ baselines remain separate:
 
 - `PURE` uses only the task payload and provider-minimal wrapper, with no seed
   harness surfaces, under the same exact solver configuration and coordinates;
-- `PURE@B` spends the same frozen ex-ante model-call/token ceiling as `MM` on
+- `PURE@B` spends the same frozen ex-ante model-call/token ceiling as real-task
+  `FULL` on
   independent PURE samples under a nonadaptive, task-native aggregation rule;
 - `STATIC` measures the unmodified harness using the same solver model;
 - `RANDOM` measures the finite mutation grammar without optimizer intelligence;

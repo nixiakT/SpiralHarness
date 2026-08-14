@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -9,6 +10,15 @@ from spiral_harness.benchmark.datasets import GSM8K_PROVENANCE
 from spiral_harness.cli import app
 from spiral_harness.core.experiment import ProtocolPartition
 
+_ANSI_OSC = re.compile(r"\x1b\](?:[^\x07\x1b]|\x1b(?!\\))*(?:\x07|\x1b\\)")
+_ANSI_CSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def _strip_terminal_escapes(value: str) -> str:
+    """Remove OSC and CSI sequences without importing Typer's private Click fork."""
+
+    return _ANSI_CSI.sub("", _ANSI_OSC.sub("", value))
+
 
 def test_version_option() -> None:
     result = CliRunner().invoke(app, ["--version"])
@@ -18,13 +28,24 @@ def test_version_option() -> None:
 
 
 def test_penguin_help_distinguishes_canonical_and_reduced_schedules() -> None:
-    result = CliRunner().invoke(app, ["benchmark", "penguin-public", "--help"])
+    result = CliRunner().invoke(
+        app,
+        ["benchmark", "penguin-public", "--help"],
+        color=True,
+    )
 
     assert result.exit_code == 0
-    normalized_output = " ".join(result.output.replace("│", " ").split())
+    without_ansi = _strip_terminal_escapes(result.output)
+    normalized_output = " ".join(without_ansi.replace("│", " ").split())
     assert "canonical 17-call public schedule" in normalized_output
     assert "1-4 are" in normalized_output
     assert "reduced noncanonical exploratory variants" in normalized_output
+
+
+def test_terminal_escape_stripper_covers_rich_colors_and_osc_titles() -> None:
+    decorated = "\x1b]0;SpiralHarness\x07\x1b[1;31mvisible\x1b[0m"
+
+    assert _strip_terminal_escapes(decorated) == "visible"
 
 
 def test_controlled_demo_command_emits_replay_root(tmp_path) -> None:

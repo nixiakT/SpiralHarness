@@ -22,7 +22,7 @@ from spiral_harness.benchmark.penguin_public_evidence import (
     PenguinProtocolBinding,
     verify_penguin_public_result,
 )
-from spiral_harness.core.canonical import canonical_sha256, sha256_bytes
+from spiral_harness.core.canonical import callable_source_sha256, canonical_sha256, sha256_bytes
 from spiral_harness.core.models import (
     HARNESS_MANIFEST_MEDIA_TYPE,
     ArtifactRef,
@@ -591,9 +591,9 @@ def run_public_self_evolution(
         ),
         "state_persistence": "strict-text-block-to-content-addressed-artifact-v1",
         "invariant_compiler": "position-stable-non-empty-lines-v1",
-        "invariant_compiler_sha256": sha256_bytes(compile_fixed_line_invariants.__code__.co_code),
+        "invariant_compiler_sha256": callable_source_sha256(compile_fixed_line_invariants),
         "output_contract": "evidence-fixed-lines-v1",
-        "output_contract_sha256": sha256_bytes(normalize_evidence_fixed_lines.__code__.co_code),
+        "output_contract_sha256": callable_source_sha256(normalize_evidence_fixed_lines),
         "reflection_information": "rejected/accepted reports and previous state only; no scorer",
         "generations": trajectory,
         "rounds": [

@@ -1,56 +1,49 @@
 \section{Related Work}
 \label{sec:related}
 
-\paragraph{Optimization beyond model weights.}
-DSPy compiles LM programs, GEPA evolves prompts from reflective feedback,
-automated agent design searches workflows, and STOP improves code-level
-artifacts \citep{khattab2023dspy,agrawal2025gepa,hu2025adas,zelikman2024stop}.
-We study promotion evidence after such adaptive optimization.
+DSPy, GEPA, agent-design search, and STOP optimize prompts, programs, workflows,
+or code \citep{khattab2023dspy,agrawal2025gepa,hu2025adas,zelikman2024stop}.
+Meta-Harness, Agentic Harness Engineering, Self-Harness, and PenguinHarness move
+this search to persistent harness state
+\citep{lee2026metaharness,lin2026ahe,zhang2026selfharness,
+prismshadow2026penguin}.  These systems establish that harness edits can be
+generated; we study the narrower decision of when an adaptively selected edit
+should be committed.  Accordingly, \systemname{} is positioned as a commit-
+control layer behind an optimizer, not as a universally stronger search
+algorithm.
 
-\paragraph{Harness optimization and self-evolution.}
-Meta-Harness exposes source, traces, and scores to a coding-agent proposer;
-Agentic Harness Engineering emphasizes observability; and Self-Harness performs
-weakness mining and regression-gated updates
-\citep{lee2026metaharness,lin2026ahe,zhang2026selfharness}.  PenguinHarness
-demonstrates persistent instruction editing in a recursive public example
-\citep{prismshadow2026penguin}.  These systems rule out ``first self-evolving
-harness'' claims.  Meta-Harness asks what program an outer agent discovers;
-our factorial asks whether feedback or promotion authority changes policy
-outcomes.
+The closest boundary is verification.  Harness Updating Is Not Harness Benefit
+separates authorship from activation and adherence; HarnessBank already combines
+activation, paired significance, and gain gates; HarnessFix and HarnessCompass
+add localized, regression-aware or constrained evolution
+\citep{lin2026updating,luo2026harnessbank,chen2026harnessfix,
+zhang2026harnesscompass}.  HarnessOpt-Bench and Evo-Bench evaluate held-out
+optimizer capability and transfer \citep{ursekar2026harnessopt,
+huang2026evobench}.  Our unverified distinction is primary family-level false-
+promotion control joined to sealed usefulness, with child--parent--revert--
+placebo attribution and a feedback-by-promotion factorial.
 
-Harness Updating Is Not Harness Benefit already distinguishes authorship from
-activation and adherence, and HarnessBank combines activation,
-paired-significance, and positive-gain gates
-\citep{lin2026updating,luo2026harnessbank}.  HarnessOpt-Bench evaluates held-out
-normalized gain in a trusted environment, while Evo-Bench fixes a policy model
-and evaluates a long-horizon evolver
-\citep{ursekar2026harnessopt,huang2026evobench}.  They measure optimizer
-capability and generalization rather than identifying which promotion evidence
-caused an update to survive.  At our audit cutoff neither had a public
-executable release, so both remain paper-only comparators unless that changes
-before the experiment freeze.
+\begin{table}[t]
+  \caption{Closest cited boundaries.  Entries summarize each source's emphasized
+  contribution, not an assertion that every omitted feature is impossible.}
+  \label{tab:related-boundary}
+  \centering
+  \begin{tabular}{p{0.95in}p{1.72in}p{2.28in}}
+    \toprule
+    \textbf{Work} & \textbf{Emphasized contribution} & \textbf{Question retained here} \\
+    \midrule
+    Meta-/Self-Harness & Full-harness or recursive editing & When an adaptive edit is credible to commit \\
+    HarnessBank & Activation, paired significance, gain gate & Revert/placebo chain and campaign endpoint \\
+    PACE / SEAL & Sequential testing or external acceptance & Mechanism evidence and sealed usefulness jointly \\
+    HarnessOpt-/Evo-Bench & Held-out optimizer capability/transfer & Feedback $\times$ promotion-policy identification \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
-HarnessFix uses trace-grounded localization and scoped, regression-aware
-repair, while HarnessCompass combines constrained evolution, proactive agent
-feedback, and component-wise optimization
-\citep{chen2026harnessfix,zhang2026harnesscompass}.  They narrow novelty in
-diagnosis and guidance, but do not identify promotion-policy effects.
-
-SEAL motivates an acceptance signal outside a self-rewriting verifier, while
-RHO studies label-free retrospective signals \citep{guo2026seal,pan2026rho}.
-Population, routing, decentralized composition, localization, prompt-level
-recursion, and weight-updating variants broaden the search setting
-\citep{liu2026adaptive,nie2026evolvenet,wang2026handbook,chen2026harnessx,
-lee2026recursive,chen2026coharness,ning2026evoharness}.  Our unverified
-distinction is intervention-based mechanism attribution, campaign false
-promotion, and the feedback-by-promotion factorial.
-
-\paragraph{Adaptive validity.}
-Reusable evaluation can overfit held-out data \citep{dwork2015reusable}, and
-confidence sequences support optional stopping only under their stated
-filtration assumptions \citep{howard2021confidence}.  PACE directly casts each
-paired commit decision as an anytime-valid test under optional stopping
-\citep{shawn2026pace}; we therefore do not claim the first sequentially valid
-acceptor.  We add mechanism evidence, full-campaign spending, and a factorial;
-neither guarantee repairs leakage, invalid graders, dependent families, or a
-mutable authority.
+SEAL motivates an external acceptor and PACE gives paired anytime-valid commit
+tests \citep{guo2026seal,shawn2026pace}; we claim neither the first independent
+nor sequentially valid gate.  Reusable-evaluation and confidence-sequence theory
+also require their stated filtration assumptions
+\citep{dwork2015reusable,howard2021confidence}.  Campaign spending and mechanism
+evidence do not repair leakage, invalid graders, dependent families, or a mutable
+authority.

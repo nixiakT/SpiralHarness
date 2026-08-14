@@ -1,21 +1,20 @@
-The behavior of a language model is shaped not only by its weights but also by
-its \emph{harness}: prompts, memory, skills, tools, middleware, and control
-flow.  Recent systems automatically rewrite these surfaces, yet an adaptively
-selected score increase need not establish that the edit was active, followed,
-or causally responsible, and repeated promotion tests can overfit their own
-validation process.  We formulate self-evolving harnesses as a verification
-problem and introduce \systemname, a training-free, mechanism-gated protocol.
-Candidates are typed atomic mutations; a promotion authority outside the
-mutable harness evaluates matched child, parent, revert, and neutral-placebo
-interventions, then checks activation, adherence, intended behavior, utility,
-protected behavior, and cost under a campaign-level error budget.  We also
-specify a prospective HarnessFaultBench design with known causal surfaces and a
-budget-matched joint-policy comparison between mechanism-visible,
-mechanism-gated and score-only, performance-gated search using the same exact
-model configuration.  A controlled-fault feedback-by-promotion factorial is
-designed to separate conditional policy-component effects.  Confirmatory claims
-remain
-\evidenceblocked{the protocol is not frozen and the independent searches and
-one-time sealed evaluation have not been completed}.  This explicit boundary
-prevents development pilots from being mistaken for evidence that mechanism
-gating improves self-evolution.
+Language models increasingly rewrite their own prompts, tools, memory, and
+control flow.  The unresolved decision is not whether an edit can be generated,
+but \emph{when an adaptively selected edit can be committed credibly}.  A score
+increase may reflect selection noise, an inactive instruction, a grader
+shortcut, or a hidden regression; repeated promotion tests can also overfit the
+gate itself.  We introduce \systemname, a training-free protocol that treats
+commit authorization as a separate statistical decision.  The protocol requires
+an authority outside the mutable harness to evaluate typed edits through matched
+child, parent, exact-revert, and neutral-placebo interventions, then check
+activation, adherence, intended behavior, utility, protected behavior, and cost
+under a campaign-level error budget.  Our prospective headline is deliberately conjunctive: the full
+policy must control and reduce family-level false promotion, improve one-time
+sealed utility over score-only search and the unmodified harness, and pass
+protected-behavior and cost non-inferiority.  Thus a reject-all gate cannot
+succeed.  A prospective controlled-fault factorial is designed to estimate
+mechanism-feedback, promotion-rule, and interaction effects.  All empirical conclusions remain
+\evidenceblocked{the protocol is pilot-pending and neither the powered fault
+roster nor the independent searches and atomic sealed audit have been
+completed}.  We report the boundary explicitly rather than treating
+development pilots as evidence of credible self-evolution.

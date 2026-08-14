@@ -21,14 +21,15 @@ from typing import Annotated, Literal, Self
 from pydantic import Field, field_validator, model_validator
 
 from spiral_harness.core.canonical import canonical_sha256
-from spiral_harness.core.models import NonEmptyStr, Sha256
 from spiral_harness.experiments.confirmatory_resources import (
+    AdaptiveConditionContext,
     AdaptiveExecutionCeilings,
     AdaptiveProtocolCommitments,
     ExAnteAdaptiveTopology,
     ModelMediatedRole,
     ModelRoleCeiling,
     ProspectiveConfirmatoryModel,
+    RealTaskEvaluationCommitments,
 )
 
 CONFIRMATORY_FOUR_ARM_DESIGN_MEDIA_TYPE = (
@@ -36,8 +37,6 @@ CONFIRMATORY_FOUR_ARM_DESIGN_MEDIA_TYPE = (
 )
 FAULT_FACTORIAL_DESIGN_MEDIA_TYPE = "application/vnd.spiral-harness.fault-factorial-design.v1+json"
 PURE_AT_B_PLAN_MEDIA_TYPE = "application/vnd.spiral-harness.pure-at-b-plan.v1+json"
-
-PositiveInt = Annotated[int, Field(gt=0, strict=True)]
 
 
 class ConfirmatoryArmProfileError(ValueError):
@@ -107,14 +106,6 @@ class SearchBudgetScope(StrEnum):
     SCORE_FULL_EX_ANTE = "score-full-ex-ante"
 
 
-class AggregationMethod(StrEnum):
-    """Frozen, grader-independent PURE@B aggregation families."""
-
-    MAJORITY_BINARY = "majority-binary"
-    NORMALIZED_ARTIFACT_PLURALITY = "normalized-artifact-plurality"
-    TASK_NATIVE_FIXED = "task-native-fixed"
-
-
 _REAL_TASK_ARM_ORDER = (
     RealTaskArm.PURE,
     RealTaskArm.STATIC,
@@ -126,6 +117,13 @@ _FAULT_FACTORIAL_ORDER = (
     FaultFactorialCell.MS,
     FaultFactorialCell.SM,
     FaultFactorialCell.MM,
+)
+_REAL_TASK_ADAPTIVE_CONTEXTS = (AdaptiveConditionContext.SCORE, AdaptiveConditionContext.FULL)
+_FAULT_FACTORIAL_CONTEXTS = (
+    AdaptiveConditionContext.SS,
+    AdaptiveConditionContext.MS,
+    AdaptiveConditionContext.SM,
+    AdaptiveConditionContext.MM,
 )
 _REAL_TASK_PROFILE = MappingProxyType(
     {
@@ -254,14 +252,15 @@ def make_real_task_arm_profile(arm: RealTaskArm) -> RealTaskArmProfile:
 
 
 class RealTaskArmPlan(ProspectiveConfirmatoryModel):
-    """One condition plus optional adaptive resources.
+    """One condition with shared evaluation and optional adaptive resources.
 
     PURE and STATIC intentionally have no adaptive topology or search ceiling.
     Their usage is measured, not padded to look search-budget matched.
     """
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     profile: RealTaskArmProfile
+    evaluation_commitments: RealTaskEvaluationCommitments
     adaptive_topology: ExAnteAdaptiveTopology | None = None
     adaptive_ceilings: AdaptiveExecutionCeilings | None = None
 
@@ -279,9 +278,16 @@ class RealTaskArmPlan(ProspectiveConfirmatoryModel):
         if (
             adaptive
             and self.adaptive_topology is not None
-            and self.adaptive_topology.condition_context_count != 2
+            and self.adaptive_topology.condition_context_ids != _REAL_TASK_ADAPTIVE_CONTEXTS
         ):
-            raise ValueError("real-task adaptive plans require exactly two condition contexts")
+            raise ValueError("real-task adaptive plans require exact SCORE and FULL contexts")
+        if (
+            adaptive
+            and self.adaptive_topology is not None
+            and self.evaluation_commitments
+            != self.adaptive_topology.protocol_commitments.evaluation_commitments
+        ):
+            raise ValueError("adaptive evaluation commitments differ from their topology")
         return self
 
     @property
@@ -292,7 +298,7 @@ class RealTaskArmPlan(ProspectiveConfirmatoryModel):
 class ConfirmatoryFourArmDesign(ProspectiveConfirmatoryModel):
     """Structural real-task plan with a matched adaptive SCORE/FULL pair."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     protocol_version: Literal["confirmatory-real-task-four-arm-v1"] = (
         "confirmatory-real-task-four-arm-v1"
     )
@@ -333,6 +339,9 @@ class ConfirmatoryFourArmDesign(ProspectiveConfirmatoryModel):
 
     @model_validator(mode="after")
     def _enforce_matched_adaptive_pair(self) -> Self:
+        evaluation_anchor = self.arm(RealTaskArm.PURE).evaluation_commitments
+        if any(plan.evaluation_commitments != evaluation_anchor for plan in self.arms[1:]):
+            raise ValueError("PURE, STATIC, SCORE, and FULL evaluation commitments must be exact")
         score = self.arm(RealTaskArm.SCORE)
         full = self.arm(RealTaskArm.FULL)
         if score.adaptive_topology != full.adaptive_topology:
@@ -341,7 +350,7 @@ class ConfirmatoryFourArmDesign(ProspectiveConfirmatoryModel):
             raise ValueError("SCORE and FULL ex-ante ceilings differ")
         if score.adaptive_topology is None:  # pragma: no cover - arm invariant
             raise ValueError("matched adaptive topology is missing")
-        if score.adaptive_topology.condition_context_count != 2:
+        if score.adaptive_topology.condition_context_ids != _REAL_TASK_ADAPTIVE_CONTEXTS:
             raise ValueError("real-task adaptive topology must isolate exactly SCORE and FULL")
 
         score_profile = score.profile.model_dump(
@@ -385,6 +394,7 @@ def make_confirmatory_four_arm_design(
 
     topology = ExAnteAdaptiveTopology.model_validate(adaptive_topology, strict=True)
     ceilings = AdaptiveExecutionCeilings.model_validate(adaptive_ceilings, strict=True)
+    evaluation_commitments = topology.protocol_commitments.evaluation_commitments
     plans = []
     for arm in _REAL_TASK_ARM_ORDER:
         profile = make_real_task_arm_profile(arm)
@@ -392,139 +402,12 @@ def make_confirmatory_four_arm_design(
         plans.append(
             RealTaskArmPlan(
                 profile=profile,
+                evaluation_commitments=evaluation_commitments,
                 adaptive_topology=topology if adaptive else None,
                 adaptive_ceilings=ceilings if adaptive else None,
             )
         )
     return ConfirmatoryFourArmDesign(arms=tuple(plans))
-
-
-class PureAtBAggregationRule(ProspectiveConfirmatoryModel):
-    """Total, nonadaptive aggregation fixed without grader or sealed feedback."""
-
-    schema_version: Literal["1"] = "1"
-    rule_id: NonEmptyStr
-    method: AggregationMethod
-    implementation_fingerprint: Sha256
-    normalizer_fingerprint: Sha256
-    output_domain_fingerprint: Sha256
-    tie_breaker: Literal["first-sample-in-frozen-order"] = "first-sample-in-frozen-order"
-    failed_sample_policy: Literal["abstain-and-all-abstain-select-first"] = (
-        "abstain-and-all-abstain-select-first"
-    )
-    adaptive: Literal[False] = False
-    grader_feedback_used: Literal[False] = False
-    sealed_feedback_used: Literal[False] = False
-    total_for_every_output_multiset: Literal[True] = True
-
-    @field_validator("rule_id", mode="before")
-    @classmethod
-    def _rule_id_is_exact(cls, value: object) -> object:
-        if isinstance(value, str) and (not value or value != value.strip()):
-            raise ValueError("PURE@B rule_id must be exact and non-empty")
-        return value
-
-    @property
-    def fingerprint(self) -> str:
-        return canonical_sha256(self)
-
-
-class PureAtBPlan(ProspectiveConfirmatoryModel):
-    """Separate FULL-budget-matched bare-model sampling reference."""
-
-    schema_version: Literal["1"] = "1"
-    four_arm_design: ConfirmatoryFourArmDesign
-    four_arm_design_fingerprint: Sha256
-    aggregation: PureAtBAggregationRule
-    model_spec_fingerprint: Sha256
-    solver_config_fingerprint: Sha256
-    sample_seed_schedule_fingerprint: Sha256
-    pure_sample_count_ceiling: PositiveInt
-    pure_model_call_ceiling: PositiveInt
-    pure_token_ceiling: PositiveInt
-    max_attempts_per_sample: PositiveInt
-    pure_model_attempt_ceiling: PositiveInt
-    pure_attempt_token_ceiling: PositiveInt
-    budget_match_scope: Literal["FULL-ex-ante-logical-call-provider-attempt-and-token-ceilings"] = (
-        "FULL-ex-ante-logical-call-provider-attempt-and-token-ceilings"
-    )
-    same_solver_configuration_required: Literal[True] = True
-    independent_samples_required: Literal[True] = True
-    sample_independence_definition: Literal[
-        "distinct-precommitted-seeds-with-no-cross-sample-mutable-state"
-    ] = "distinct-precommitted-seeds-with-no-cross-sample-mutable-state"
-    hidden_grader_best_of_k_permitted: Literal[False] = False
-    same_solver_configuration_attested: Literal[False] = False
-    sample_independence_attested: Literal[False] = False
-    aggregation_execution_attested: Literal[False] = False
-    execution_attested: Literal[False] = False
-    provider_identity_attested: Literal[False] = False
-    sealed_evidence: Literal[False] = False
-    reportable_result: Literal[False] = False
-
-    @model_validator(mode="after")
-    def _bind_full_ex_ante_budget(self) -> Self:
-        if self.four_arm_design_fingerprint != self.four_arm_design.fingerprint:
-            raise ValueError("PURE@B design fingerprint differs from its four-arm design")
-        full = self.four_arm_design.arm(RealTaskArm.FULL)
-        ceilings = full.adaptive_ceilings
-        topology = full.adaptive_topology
-        if ceilings is None or topology is None:  # pragma: no cover - four-arm invariant
-            raise ValueError("FULL adaptive topology or ceilings are missing")
-        commitments = topology.protocol_commitments
-        if self.model_spec_fingerprint != commitments.model_spec_fingerprint:
-            raise ValueError("PURE@B model-spec fingerprint differs from FULL")
-        if self.solver_config_fingerprint != commitments.solver_config_fingerprint:
-            raise ValueError("PURE@B solver configuration differs from FULL")
-        if self.pure_model_call_ceiling != ceilings.max_total_model_calls:
-            raise ValueError("PURE@B model-call ceiling differs from FULL")
-        if self.pure_sample_count_ceiling != self.pure_model_call_ceiling:
-            raise ValueError("each PURE@B sample must consume one model-call slot")
-        if self.pure_token_ceiling != ceilings.max_total_tokens:
-            raise ValueError("PURE@B token ceiling differs from FULL")
-        if self.max_attempts_per_sample != ceilings.max_attempts_per_model_call:
-            raise ValueError("PURE@B per-sample attempt ceiling differs from FULL")
-        if self.pure_model_attempt_ceiling != ceilings.max_total_model_attempts:
-            raise ValueError("PURE@B provider-attempt ceiling differs from FULL")
-        if self.pure_attempt_token_ceiling != ceilings.max_total_attempt_tokens:
-            raise ValueError("PURE@B attempt-token ceiling differs from FULL")
-        return self
-
-    @property
-    def fingerprint(self) -> str:
-        return canonical_sha256(self)
-
-
-def make_pure_at_b_plan(
-    *,
-    four_arm_design: ConfirmatoryFourArmDesign,
-    aggregation: PureAtBAggregationRule,
-    sample_seed_schedule_fingerprint: Sha256,
-) -> PureAtBPlan:
-    """Derive PURE@B ceilings from FULL rather than accepting a second budget."""
-
-    design = ConfirmatoryFourArmDesign.model_validate(four_arm_design, strict=True)
-    rule = PureAtBAggregationRule.model_validate(aggregation, strict=True)
-    full = design.arm(RealTaskArm.FULL)
-    ceilings = full.adaptive_ceilings
-    topology = full.adaptive_topology
-    if ceilings is None or topology is None:  # pragma: no cover - four-arm invariant
-        raise ConfirmatoryArmProfileError("FULL adaptive topology or ceilings are missing")
-    commitments = topology.protocol_commitments
-    return PureAtBPlan(
-        four_arm_design=design,
-        four_arm_design_fingerprint=design.fingerprint,
-        aggregation=rule,
-        model_spec_fingerprint=commitments.model_spec_fingerprint,
-        solver_config_fingerprint=commitments.solver_config_fingerprint,
-        sample_seed_schedule_fingerprint=sample_seed_schedule_fingerprint,
-        pure_sample_count_ceiling=ceilings.max_total_model_calls,
-        pure_model_call_ceiling=ceilings.max_total_model_calls,
-        pure_token_ceiling=ceilings.max_total_tokens,
-        max_attempts_per_sample=ceilings.max_attempts_per_model_call,
-        pure_model_attempt_ceiling=ceilings.max_total_model_attempts,
-        pure_attempt_token_ceiling=ceilings.max_total_attempt_tokens,
-    )
 
 
 class FaultFactorialProfile(ProspectiveConfirmatoryModel):
@@ -569,8 +452,8 @@ class FaultFactorialCellPlan(ProspectiveConfirmatoryModel):
 
     @model_validator(mode="after")
     def _require_four_condition_contexts(self) -> Self:
-        if self.adaptive_topology.condition_context_count != 4:
-            raise ValueError("fault factorial topology must isolate exactly four conditions")
+        if self.adaptive_topology.condition_context_ids != _FAULT_FACTORIAL_CONTEXTS:
+            raise ValueError("fault factorial topology must isolate exact SS, MS, SM, and MM")
         return self
 
     @property
@@ -617,8 +500,8 @@ class FaultFactorialDesign(ProspectiveConfirmatoryModel):
     @model_validator(mode="after")
     def _enforce_shared_non_treatment_coordinates(self) -> Self:
         anchor = self.cells[0]
-        if anchor.adaptive_topology.condition_context_count != 4:
-            raise ValueError("fault factorial topology must isolate exactly four conditions")
+        if anchor.adaptive_topology.condition_context_ids != _FAULT_FACTORIAL_CONTEXTS:
+            raise ValueError("fault factorial topology must isolate exact SS, MS, SM, and MM")
         for cell in self.cells[1:]:
             if cell.adaptive_topology != anchor.adaptive_topology:
                 raise ValueError("factorial cells have different ex-ante topologies")
@@ -662,7 +545,6 @@ __all__ = [
     "PURE_AT_B_PLAN_MEDIA_TYPE",
     "AdaptiveExecutionCeilings",
     "AdaptiveProtocolCommitments",
-    "AggregationMethod",
     "ConfirmatoryArmProfileError",
     "ConfirmatoryFourArmDesign",
     "EvidenceComputationMode",
@@ -676,8 +558,6 @@ __all__ = [
     "ModelRoleCeiling",
     "OptimizerFeedbackMode",
     "PromotionRule",
-    "PureAtBAggregationRule",
-    "PureAtBPlan",
     "RealTaskArm",
     "RealTaskArmPlan",
     "RealTaskArmProfile",
@@ -686,6 +566,5 @@ __all__ = [
     "make_confirmatory_four_arm_design",
     "make_fault_factorial_design",
     "make_fault_factorial_profile",
-    "make_pure_at_b_plan",
     "make_real_task_arm_profile",
 ]

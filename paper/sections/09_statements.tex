@@ -1,28 +1,32 @@
 \subsection*{AI use statement}
 
-Generative AI tools were used in this work for hypothesis and idea refinement,
-experimental-design feedback, implementation support, literature organization,
-translation, interpretation of development pilots and method-development
-diagnostics, conceptual and statistical formulation, synthetic benchmark and
-fixture design, manuscript drafting and editing, code and artifact generation,
-and production of scientific figures and schematics.  They have not been used
-to generate, alter, or fill in confirmatory observations; that study has not
-been completed.
-No AI-generated rationale is treated as empirical evidence.  Human authors
-remain responsible for source and plagiarism checks, review and testing of
-AI-assisted code, recomputation of prespecified analyses from immutable
-aggregates, inspection of every table and figure, and the final text, claims,
-code, and artifacts.  The submission-readiness checklist records these checks;
-this working draft does not represent an unchecked item as complete.
+Generative AI tools assisted with hypothesis and idea refinement,
+experimental-design feedback, conceptual and statistical formulation,
+implementation, tests and artifacts, literature organization and translation,
+interpretation of development pilots and method-development diagnostics,
+manuscript drafting and editing, scientific figures, and compliance and
+red-team audits.  They were not used to generate, alter, or impute confirmatory
+observations, and no absent experiment or result is filled from model output;
+the confirmatory study has not been completed.  No generative-AI output is
+treated as an observation, ground truth, source validation, or empirical
+evidence.
+
+Human authors remain responsible for the final text, claims, code, and
+artifacts.  Automated tests and AI-assisted audits do not substitute for human
+verification.  Before submission, the authors must inspect every retained
+AI-assisted change, complete source and plagiarism checks, review and test the
+code, recompute prespecified analyses from immutable aggregates, and inspect
+every table, figure, and supplement artifact.  This working draft does not
+represent any incomplete human check as complete.
 
 \subsection*{Ethics statement}
 
 Self-modifying harnesses can amplify unsafe instructions, poisoning, privilege
 escalation, secret leakage, deceptive evaluator behavior, and excessive
-resource use.  Our design limits editable surfaces, denies candidates grader
-and sealed-set authority, records provenance and usage, tests protected
-behavior, and retains an exact parent for rollback.  These controls are not a
-security proof; deployment with tools or sensitive data requires process
+resource use.  The present implementation provides typed, in-process limits on
+editable surfaces, provenance, usage, and exact-parent rollback; it does not yet
+provide the target out-of-process denial of grader and sealed-set authority or a
+hostile-code sandbox.  These controls are not a security proof; deployment with tools or sensitive data requires process
 isolation, least privilege, network and secret controls, independent audit, and
 human authority over release.  Benchmark calls also consume energy and shared
 model-serving resources, so we report failures and all role-specific usage

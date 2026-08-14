@@ -1,16 +1,10 @@
 \section{Limitations}
 \label{sec:limitations}
 
-First, confirmatory evidence is not yet available; all performance, causal, and
-generality conclusions remain blocked.  Second, controlled faults make causal
-surfaces observable but may underrepresent the ambiguity and interactions of
-real harness failures.  Third, activation and adherence probes can themselves
-perturb behavior, and a passed probe is not proof that every downstream gain
-came from the declared mechanism.  Fourth, inference applies to a fixed roster
-of models and tasks rather than all future systems.  Fifth, the present logical
-separation uses in-process capabilities; hostile candidate code requires an
-out-of-process evaluator, sandbox, asymmetric signing, secret isolation, and
-atomic release service.  Finally, mechanism gating adds calls and latency,
-whose value is empirical.  FULL--SCORE is joint; the planned factorial
-estimates policy components but, after candidate divergence, not candidate-level
-mediation.
+Without confirmation, all empirical claims remain blocked.  Controlled faults
+simplify real failures, and probes may perturb behavior, so inference covers
+only the frozen roster.  The in-process boundary is not hostile-code isolation;
+deployment needs sandboxing and secret controls.  Rare commits can yield low
+false promotion; precision is undefined at zero, and sealed utility only limits
+this tradeoff.  Gating adds cost.  FULL--SCORE is joint; the factorial is
+component-level, not mediation.
