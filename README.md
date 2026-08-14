@@ -328,7 +328,8 @@ from plumbing-only demos:
   `dashscope/qwen3-coder-flash`, Penguin 4.0/10 versus Spiral N+2 9.6/10;
 - [Native Meta-Harness comparison](docs/meta-harness-native-comparison.md): upstream
   `MemorySystem`, loader, runner, and grader with pure, few-shot, paper-reconstruction, and Spiral
-  arms under `dashscope/qwen3-coder-flash`;
+  arms under `dashscope/qwen3-coder-flash`; frozen USPTO Spiral reaches 14%, versus 0% pure and 2%
+  for the paper-algorithm reconstruction;
 - [Earlier Meta-Harness data compatibility port](docs/same-model-self-evolution-results.md):
   Spiral-native prompts and adapters, retained with an explicit non-native protocol warning.
 

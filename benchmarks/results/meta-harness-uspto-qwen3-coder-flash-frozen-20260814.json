@@ -16,6 +16,7 @@
     "source_sha256": "33c9b13093e6ca5a4f956aa972fd686aec42cd80abee4b17bf90296ef64a8687",
     "native_adapter_sha256": "43352e8de28649abdcb9e7b9bac193ec3e4fa8d2b1b414f388f52ebd4b1d79ec",
     "memory_artifact_sha256": "10962ad51f31321960fb521b3827f46d6b42a28e9ef2241948202e87da807fa0",
+    "frozen_commit": "e37768409a8ad1405ca6b49cdf4e4cdc0ef34980",
     "selection_policy": "validation-only mechanism development; freeze before first test run"
   },
   "validation_results": {
@@ -39,7 +40,41 @@
     "spiral_minus_paper_reconstruction": 33.33333333333333
   },
   "test": {
-    "status": "not_run",
-    "opened_before_candidate_freeze": false
+    "status": "complete",
+    "opened_before_candidate_freeze": false,
+    "results": {
+      "pure": {"correct": 0, "total": 100, "accuracy": 0.0},
+      "paper_reconstruction": {"correct": 2, "total": 100, "accuracy": 0.02},
+      "frozen_spiral": {"correct": 14, "total": 100, "accuracy": 0.14}
+    },
+    "delta_percentage_points": {
+      "spiral_minus_pure": 14.0,
+      "spiral_minus_paper_reconstruction": 12.0
+    },
+    "paired_counts": {
+      "versus_pure": {"gains": 14, "regressions": 0, "both_correct": 0},
+      "versus_paper_reconstruction": {
+        "gains": 13,
+        "regressions": 1,
+        "both_correct": 1
+      }
+    },
+    "paired_bootstrap_95_percent": {
+      "resamples": 20000,
+      "seed": 42,
+      "spiral_minus_pure": [0.08, 0.21],
+      "spiral_minus_paper_reconstruction": [0.05, 0.19]
+    },
+    "mechanism_decomposition": {
+      "retrieval_draft_correct": 10,
+      "compiler_fixed": 5,
+      "compiler_regressed": 1,
+      "compiled_correct": 14
+    },
+    "artifact_sha256": {
+      "pure": "a9b01f8c5d5ec87b09b712d0996d641623da688ed487f1c329789254136062bc",
+      "paper_reconstruction": "0c3a1ec6aac80590844e86ac02e3ba1b2ad6fcd2b2295ea80f6a5a92e9f0358e",
+      "frozen_spiral": "500512f2f853b243a4990b9fd08a0bbcd0e3800450e4c3c6714099d5b14a112a"
+    }
   }
 }

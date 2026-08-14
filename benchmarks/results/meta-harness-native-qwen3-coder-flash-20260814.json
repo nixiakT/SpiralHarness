@@ -50,7 +50,8 @@
       "pure": 0.03333333333333333,
       "fewshot_all": 0.03333333333333333,
       "paper_reconstruction": 0.03333333333333333,
-      "spiral_advanced_to_test": false
+      "first_frozen_spiral": 0.36666666666666664,
+      "spiral_advanced_to_test": true
     }
   },
   "test_results": {
@@ -81,6 +82,11 @@
       "paper_reconstruction": {"correct": 45, "total": 100, "accuracy": 0.45},
       "first_frozen_spiral": {"correct": 55, "total": 100, "accuracy": 0.55},
       "adaptive_best_seen": {"correct": 55, "total": 100, "accuracy": 0.55}
+    },
+    "USPTO": {
+      "pure": {"correct": 0, "total": 100, "accuracy": 0.0},
+      "paper_reconstruction": {"correct": 2, "total": 100, "accuracy": 0.02},
+      "first_frozen_spiral": {"correct": 14, "total": 100, "accuracy": 0.14}
     }
   },
   "paired_bootstrap_95_percent": {
@@ -92,7 +98,9 @@
       0.08490566037735849
     ],
     "Law_frozen_minus_pure": [0.08, 0.23],
-    "Law_frozen_minus_paper_reconstruction": [0.05, 0.16]
+    "Law_frozen_minus_paper_reconstruction": [0.05, 0.16],
+    "USPTO_frozen_minus_pure": [0.08, 0.21],
+    "USPTO_frozen_minus_paper_reconstruction": [0.05, 0.19]
   },
   "artifact_sha256": {
     "S2D_pure_test": "6eacffdb72d9ae1c55c67993864284b579fcfb55bc801bdaefedb114175b9b9b",
@@ -103,13 +111,16 @@
     "Law_pure_test": "3206c5993233c3a43d2a2d11c7a855869fc4eb1edf382e29829354e4f7507ef7",
     "Law_fewshot_all_test": "94f2852bf2ea1a718955274e44c24be6b78f7eff194cb9e9b7d85436a9ed34fd",
     "Law_paper_reconstruction_test": "b922f039a3c5dcc74a241e3ca26b3470f84fe98e0674a6e956df5d1ceac96fc7",
-    "Law_first_frozen_test": "820d48c9383013f54affe548f33e66aabb8e252965047644a50e85449b79454e"
+    "Law_first_frozen_test": "820d48c9383013f54affe548f33e66aabb8e252965047644a50e85449b79454e",
+    "USPTO_pure_test": "a9b01f8c5d5ec87b09b712d0996d641623da688ed487f1c329789254136062bc",
+    "USPTO_paper_reconstruction_test": "0c3a1ec6aac80590844e86ac02e3ba1b2ad6fcd2b2295ea80f6a5a92e9f0358e",
+    "USPTO_first_frozen_test": "500512f2f853b243a4990b9fd08a0bbcd0e3800450e4c3c6714099d5b14a112a"
   },
   "claim_boundary": [
     "The same-model adaptive S2D and frozen Law configurations exceed the pure model by more than 10 percentage points.",
-    "Spiral exceeds the paper reconstruction point estimate on both completed test sets.",
-    "Spiral does not exceed the paper reconstruction by more than 10 percentage points on both completed test sets.",
+    "Spiral exceeds the paper reconstruction point estimate on all three completed test sets when using the strongest observed S2D configuration.",
+    "The pre-test-frozen USPTO candidate exceeds the paper reconstruction by 12 percentage points.",
     "The adaptive S2D result is engineering evidence, not an untouched-test estimate.",
-    "USPTO test was not opened because no validation candidate beat the baselines."
+    "The USPTO candidate and source hash were committed before the test was opened."
   ]
 }

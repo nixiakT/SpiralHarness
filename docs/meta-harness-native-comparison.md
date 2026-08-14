@@ -76,11 +76,14 @@ unspecified choice, including Unicode tokenization, tie breaking, contrastive-pa
 |---|---:|---:|---:|---:|
 | Symptom2Disease | 58% | 58% | 76% | **88%** (score-band router) |
 | LawBench | 32% | 14% | 42% | **54%** (taxonomy router) |
-| USPTO | 3.33% | 3.33% | 3.33% | no candidate advanced |
+| USPTO | 3.33% | 3.33% | 3.33% | **36.67%** (reaction-aware compiler) |
 
 Later validation-only experiments reached 56% on LawBench by adding compact local evidence. On
 S2D, a grouped-memory/local/NB plurality reached 90%, but it was tested only after the public test
-had already been exposed and is not a fresh held-out result.
+had already been exposed and is not a fresh held-out result. USPTO initially had no candidate to
+advance; a later task-structure audit identified that its outputs are unique precursor sets rather
+than repeated class labels. Reaction-family retrieval plus validation-selected high-confidence
+reverse-reaction templates then reached 11/30 and was frozen before test.
 
 ## Complete test results
 
@@ -88,6 +91,7 @@ had already been exposed and is not a fresh held-out result.
 |---|---:|---:|---:|---:|---:|---:|
 | Symptom2Disease | 212 | 62.26% | 69.81% | 84.43% | 81.13% | **88.68%** local evidence |
 | LawBench | 100 | 40.00% | 17.00% | 45.00% | **55.00%** | 55.00% |
+| USPTO | 100 | 0.00% | — | 2.00% | **14.00%** | — |
 
 The S2D first frozen router failed to generalize: 88% validation became 81.13% test and lost to the
 paper reconstruction. Once that test result was observed, later S2D runs became adaptive public-
@@ -98,6 +102,12 @@ LawBench is cleaner: the first frozen candidate scored 55%, ten points above the
 reconstruction and fifteen above the pure model. It changed ten paper-reconstruction errors to
 correct answers and introduced no regressions.
 
+USPTO is the cleanest threshold result. Candidate source and validation evidence were committed as
+`e377684` before the test was opened. The frozen candidate scored 14%, fourteen points above pure
+and twelve above the paper reconstruction. Relative to the reconstruction it corrected 13 errors,
+regressed on one item, and shared one correct item. Its paired bootstrap 95% interval is
+`[+5, +19]` points; versus pure it is `[+8, +21]` points.
+
 For reference, the paper reports GPT-OSS-120B test scores of 14.0% USPTO, 86.8% S2D, and 45.0%
 LawBench for its selected harness. Those numbers use a different solver and do not form a
 same-model comparison with this study.
@@ -107,45 +117,51 @@ same-model comparison with this study.
 The native results support these claims:
 
 - relative to the pure model, the strongest observed Spiral configuration improves S2D by
-  26.42 points and frozen LawBench by 15 points;
+  26.42 points, frozen LawBench by 15 points, and frozen USPTO by 14 points;
 - the corresponding paired bootstrap 95% intervals are `[+19.81, +33.02]` and
-  `[+8.00, +23.00]` points;
+  `[+8.00, +23.00]` for S2D and Law, plus `[+8.00, +21.00]` for USPTO;
 - relative to the paper reconstruction, adaptive S2D improves by 4.25 points and frozen LawBench
-  by exactly 10 points;
-- Spiral beats the reconstruction's point estimate on both completed test sets, but does **not**
-  exceed it by more than ten points on both.
+  by exactly 10 points, while frozen USPTO improves by 12 points;
+- USPTO therefore provides a same-model, pre-test-frozen result exceeding the paper reconstruction
+  by more than ten percentage points.
 
 For adaptive S2D, the descriptive paired difference interval is `[+0.47, +8.49]` points, but it
 does not account for candidate selection after test exposure and is not a valid confirmatory
-interval. For frozen LawBench versus the reconstruction it is `[+5.00, +16.00]` points.
-
-USPTO test remained unopened because pure, few-shot, and reconstruction tied at 1/30 on validation;
-advancing one would not be evidence-based. This is a negative result for the chosen Qwen solver,
-not evidence that the paper's GPT-OSS-120B score is wrong.
+interval. For frozen LawBench versus the reconstruction it is `[+5.00, +16.00]` points. The frozen
+USPTO interval is confirmatory for the fixed split and candidate, subject to the small benchmark's
+usual external-validity limits.
 
 ## Self-evolution evidence
 
 The validation trajectory demonstrates executable mechanism search rather than model switching:
 
-| Candidate | S2D | Law | Decision |
-|---|---:|---:|---|
-| Paper Label-Primed reconstruction | 76% | 42% | comparison arm |
-| Pure-draft verification | 62% | 46% | retain only for sparse taxonomy |
-| Compact local evidence | 84% | 42% | S2D candidate |
-| Score-band / taxonomy routers | 88% | 54% | first frozen winners |
-| Local-majority / local taxonomy | 88% | 56% | adaptive candidates |
-| Grouped-memory plurality | 90% | — | adaptive S2D candidate |
+| Candidate | S2D | Law | USPTO | Decision |
+|---|---:|---:|---:|---|
+| Paper Label-Primed reconstruction | 76% | 42% | 3.33% | comparison arm |
+| Pure-draft verification | 62% | 46% | — | retain only for sparse taxonomy |
+| Compact local evidence | 84% | 42% | — | S2D candidate |
+| Score-band / taxonomy routers | 88% | 54% | — | first frozen winners |
+| Local-majority / local taxonomy | 88% | 56% | — | adaptive candidates |
+| Grouped-memory plurality | 90% | — | — | adaptive S2D candidate |
+| Reaction-family retrieval | — | — | 3.33% | diagnose near-miss outputs |
+| Retrieval + reaction compiler | — | — | **36.67%** | frozen USPTO winner |
 
 The mechanism evolved from global per-label coverage toward compact query evidence, preservation of
 the model-only prior for unseen LawBench labels, output-contract cleanup, and candidate routing.
-This is bounded evidence-derived evolution; it is not yet unrestricted LLM generation of arbitrary
-harness source like Meta-Harness's Opus proposer.
+For USPTO it changed task representation entirely: unique SMILES answers stopped being treated as
+class labels, same-family structural analogues reduced distraction, and deterministic templates
+handled only validation-supported high-confidence transformations. A post-test decomposition found
+the retrieval draft correct on 10/100; the compiler fixed five errors and introduced one regression,
+for a net 14/100. This is bounded evidence-derived evolution; it is not yet unrestricted LLM
+generation of arbitrary harness source like Meta-Harness's Opus proposer.
 
 ## Context and artifacts
 
 The paper reconstruction used about 8.6K additional characters per S2D query and 94.2K per LawBench
 query. Compact local S2D used about 3.5K. Multi-call Spiral token totals cannot be compared from the
 saved usage counters because repeated candidates intentionally reused the upstream prompt cache.
+On USPTO, reaction-aware Spiral used about 2.0K additional characters and 118,946 total tokens,
+versus 18.4K characters and 1,008,826 tokens for the paper reconstruction.
 
 | Artifact | SHA-256 |
 |---|---|
@@ -155,6 +171,9 @@ saved usage counters because repeated candidates intentionally reused the upstre
 | Law pure test | `3206c5993233c3a43d2a2d11c7a855869fc4eb1edf382e29829354e4f7507ef7` |
 | Law paper reconstruction test | `b922f039a3c5dcc74a241e3ca26b3470f84fe98e0674a6e956df5d1ceac96fc7` |
 | Law first frozen test | `820d48c9383013f54affe548f33e66aabb8e252965047644a50e85449b79454e` |
+| USPTO pure test | `a9b01f8c5d5ec87b09b712d0996d641623da688ed487f1c329789254136062bc` |
+| USPTO paper reconstruction test | `0c3a1ec6aac80590844e86ac02e3ba1b2ad6fcd2b2295ea80f6a5a92e9f0358e` |
+| USPTO first frozen test | `500512f2f853b243a4990b9fd08a0bbcd0e3800450e4c3c6714099d5b14a112a` |
 
 Item-level artifacts contain public benchmark prompts, targets, and predictions and remain outside
 Git. The committed machine-readable summary contains only aggregate evidence.
@@ -163,7 +182,7 @@ Git. The committed machine-readable summary contains only aggregate evidence.
 
 [`spiral_native.py`](../benchmarks/meta_harness_native/spiral_native.py) is a credential-free adapter
 template for the upstream native runner. Copy it into upstream `agents/`, put both repositories on
-`PYTHONPATH`, and select `paper`, `local`, `score-band`, or `taxonomy` through
+`PYTHONPATH`, and select `paper`, `retrosynthesis`, `local`, `score-band`, or `taxonomy` through
 `SPIRAL_META_HARNESS_MODE`. The upstream release must also pass `os.environ.get("LITELLM_API_KEY")`
 to its existing `LLM` constructor when using an authenticated custom API base. No credential should
 be written into either repository or an artifact.
