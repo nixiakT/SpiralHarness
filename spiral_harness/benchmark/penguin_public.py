@@ -15,9 +15,23 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from spiral_harness.benchmark.gsm8k_smoke import build_live_gsm8k_spec
+from spiral_harness.benchmark.penguin_public_evidence import (
+    PENGUIN_PROTOCOL_BINDING_MEDIA_TYPE,
+    PENGUIN_PUBLIC_RESULT_MEDIA_TYPE,
+    PENGUIN_TRUSTED_PLANE_VERSION,
+    PenguinProtocolBinding,
+    verify_penguin_public_result,
+)
 from spiral_harness.core.canonical import canonical_sha256, sha256_bytes
-from spiral_harness.core.models import HARNESS_MANIFEST_MEDIA_TYPE, ArtifactRef
-from spiral_harness.execution.contracts import ModelRequest, ResolvedHarness
+from spiral_harness.core.models import (
+    HARNESS_MANIFEST_MEDIA_TYPE,
+    ArtifactRef,
+    BudgetPolicy,
+    ComponentKind,
+    HarnessComponentRef,
+    HarnessManifest,
+)
+from spiral_harness.execution.contracts import FrozenModelSpec, ModelRequest, ResolvedHarness
 from spiral_harness.execution.model import ModelBackend
 from spiral_harness.storage.artifact_store import ArtifactStore
 
@@ -26,9 +40,6 @@ PENGUIN_REVISION = "d14be6fce255cca1cecea3622805c28ad9a5b45a"
 PENGUIN_PUBLIC_SOURCE = "examples/self-improving-agent/self-evolve-recursive.ts"
 PENGUIN_PUBLIC_SOURCE_SHA256 = "dc46ab7735444876c5f0c20ae5aacc75def2e18051ec87f42617901d6694fa2d"
 PENGUIN_OFFICIAL_SUITE_PUBLIC = False
-PENGUIN_PUBLIC_RESULT_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.penguin-public-self-evolution.v1+json"
-)
 
 # These are copied byte-for-byte from the public example at PENGUIN_REVISION.
 # Apache-2.0 provenance is recorded in THIRD_PARTY.yml.
@@ -88,18 +99,33 @@ Delta is an internal experimentation platform launched in Q4 2025 running 1,200 
 Reviewed-by: Aurora Team
 """
 
-PUBLIC_PROTOCOL_SHA256 = canonical_sha256(
-    {
-        "schema": "spiral-harness/penguin-public-protocol/v1",
-        "upstream_revision": PENGUIN_REVISION,
-        "upstream_source_sha256": PENGUIN_PUBLIC_SOURCE_SHA256,
-        "task": TASK,
-        "notes": NOTES,
-        "accepted_reports": [REFERENCE_1, REFERENCE_2, REFERENCE_3],
-        "runs_per_generation": 5,
-        "scorer": "penguin-self-evolve-recursive-score-v1",
-    }
-)
+PENGUIN_CANONICAL_RUNS_PER_GENERATION = 5
+
+
+def _require_runs_per_generation(runs_per_generation: int) -> None:
+    if type(runs_per_generation) is not int or not 1 <= runs_per_generation <= 5:
+        raise ValueError("runs_per_generation must be an integer from 1 through 5")
+
+
+def penguin_public_protocol_sha256(runs_per_generation: int) -> str:
+    """Bind one exact repeated-run schedule without aliasing the canonical protocol."""
+
+    _require_runs_per_generation(runs_per_generation)
+    return canonical_sha256(
+        {
+            "schema": "spiral-harness/penguin-public-protocol/v1",
+            "upstream_revision": PENGUIN_REVISION,
+            "upstream_source_sha256": PENGUIN_PUBLIC_SOURCE_SHA256,
+            "task": TASK,
+            "notes": NOTES,
+            "accepted_reports": [REFERENCE_1, REFERENCE_2, REFERENCE_3],
+            "runs_per_generation": runs_per_generation,
+            "scorer": "penguin-self-evolve-recursive-score-v1",
+        }
+    )
+
+
+PUBLIC_PROTOCOL_SHA256 = penguin_public_protocol_sha256(PENGUIN_CANONICAL_RUNS_PER_GENERATION)
 
 _STATE_BLOCK = re.compile(r"\A\s*<SPIRAL_STATE>\s*(.*?)\s*</SPIRAL_STATE>\s*\Z", re.S)
 _MAX_STATE_CHARS = 16_000
@@ -136,7 +162,7 @@ class ModelCall:
 
 @dataclass(frozen=True, slots=True)
 class PenguinPublicRunResult:
-    """One complete 5 + reflection + 5 + reflection + 5 trajectory."""
+    """One complete repeated-run, reflection, and recursive-reflection trajectory."""
 
     artifact_ref: ArtifactRef
     payload: dict[str, object]
@@ -369,14 +395,14 @@ def run_public_self_evolution(
 ) -> PenguinPublicRunResult:
     """Run the public protocol using controlled text-to-state persistence.
 
-    The call schedule mirrors Penguin's example: five N executions, one
-    reflection, five N+1 executions, one recursive reflection, and five N+2
-    executions.  Candidate states are selected on the public validation task;
-    no scores or scorer details are returned to the reflection model.
+    Five runs per generation exactly mirror Penguin's public example. Other
+    positive counts are separately identified reduced exploratory schedules.
+    Candidate states are selected on the public validation task; no scores or
+    scorer details are returned to the reflection model.
     """
 
-    if type(runs_per_generation) is not int or runs_per_generation < 1:
-        raise ValueError("runs_per_generation must be a positive integer")
+    protocol_sha256 = penguin_public_protocol_sha256(runs_per_generation)
+    canonical_schedule = runs_per_generation == PENGUIN_CANONICAL_RUNS_PER_GENERATION
     if type(max_output_tokens) is not int or max_output_tokens < 1:
         raise ValueError("max_output_tokens must be a positive integer")
     if timeout_seconds <= 0:
@@ -390,17 +416,24 @@ def run_public_self_evolution(
         max_output_tokens=max_output_tokens,
         timeout_seconds=timeout_seconds,
     )
+    local_source_sha256 = sha256_bytes(Path(__file__).read_bytes())
     worker_harness = _publish_harness(
         store,
-        kind="penguin-public-report-worker",
+        role="worker",
         system_prompt=_EXECUTION_SYSTEM,
-        spec_fingerprint=spec.fingerprint,
+        spec=spec,
+        protocol_sha256=protocol_sha256,
+        runs_per_generation=runs_per_generation,
+        local_source_sha256=local_source_sha256,
     )
     reflection_harness = _publish_harness(
         store,
-        kind="penguin-public-text-state-reflector",
+        role="reflection",
         system_prompt=_REFLECTION_SYSTEM,
-        spec_fingerprint=spec.fingerprint,
+        spec=spec,
+        protocol_sha256=protocol_sha256,
+        runs_per_generation=runs_per_generation,
+        local_source_sha256=local_source_sha256,
     )
 
     calls: list[dict[str, object]] = []
@@ -427,6 +460,8 @@ def run_public_self_evolution(
         calls.append(
             {
                 "task_id": task_id,
+                "harness_ref": harness.harness_ref.model_dump(mode="json"),
+                "resolved_prompt_sha256": harness.resolved_prompt_sha256,
                 "request_sha256": canonical_sha256(
                     {"system": harness.system_prompt, "user": prompt, "seed": seed}
                 ),
@@ -516,20 +551,44 @@ def run_public_self_evolution(
     promote_two = float(generation_two["mean"]) >= float(generation_one["mean"])
 
     trajectory = [baseline, generation_one, generation_two]
+    kind = "penguin_public_self_evolution_compatible_run"
+    disclaimer = (
+        "This runs PenguinHarness's public self-evolve-recursive task, evidence, call "
+        "schedule, "
+        "and grader through Spiral's text-state middleware. It is not Penguin's unreleased "
+        "15-task data-analysis or 40-task coding suite."
+    )
+    if not canonical_schedule:
+        kind = "penguin_public_reduced_self_evolution_exploratory_run"
+        disclaimer = (
+            "Reduced exploratory schedule only: this preserves PenguinHarness's public "
+            "self-evolve-recursive task, evidence, and grader, but it does not use the canonical "
+            "five runs per generation. It is not Penguin's unreleased 15-task data-analysis or "
+            "40-task coding suite."
+        )
     payload: dict[str, object] = {
         "schema_version": "1",
-        "kind": "penguin_public_self_evolution_compatible_run",
+        "kind": kind,
         "benchmark": "penguin-harness/self-evolve-recursive",
         "upstream_repository": PENGUIN_REPOSITORY,
         "upstream_revision": PENGUIN_REVISION,
         "upstream_source": PENGUIN_PUBLIC_SOURCE,
         "upstream_source_sha256": PENGUIN_PUBLIC_SOURCE_SHA256,
-        "protocol_sha256": PUBLIC_PROTOCOL_SHA256,
+        "protocol_sha256": protocol_sha256,
+        "protocol_class": "canonical" if canonical_schedule else "noncanonical_exploratory",
+        "reportable_as_canonical": canonical_schedule,
         "official_15_40_suite_public": PENGUIN_OFFICIAL_SUITE_PUBLIC,
         "model": model,
         "spec_fingerprint": spec.fingerprint,
+        "model_fingerprint": spec.model_fingerprint,
+        "runtime_fingerprint": spec.runtime_fingerprint,
+        "local_implementation_source_sha256": local_source_sha256,
+        "worker_harness_ref": worker_harness.harness_ref.model_dump(mode="json"),
+        "reflection_harness_ref": reflection_harness.harness_ref.model_dump(mode="json"),
         "runs_per_generation": runs_per_generation,
-        "call_schedule": "5N+1R+5N1+1R+5N2" if runs_per_generation == 5 else "mirrored",
+        "call_schedule": (
+            f"{runs_per_generation}N+1R+{runs_per_generation}N1+1R+{runs_per_generation}N2"
+        ),
         "state_persistence": "strict-text-block-to-content-addressed-artifact-v1",
         "invariant_compiler": "position-stable-non-empty-lines-v1",
         "invariant_compiler_sha256": sha256_bytes(compile_fixed_line_invariants.__code__.co_code),
@@ -554,44 +613,62 @@ def run_public_self_evolution(
         "total_tokens": sum(
             int(call["input_tokens"]) + int(call["output_tokens"]) for call in calls
         ),
-        "disclaimer": (
-            "This runs PenguinHarness's public self-evolve-recursive task, evidence, call "
-            "schedule, "
-            "and grader through Spiral's text-state middleware. It is not Penguin's unreleased "
-            "15-task data-analysis or 40-task coding suite."
-        ),
+        "disclaimer": disclaimer,
     }
     artifact_ref = store.put_json(payload, media_type=PENGUIN_PUBLIC_RESULT_MEDIA_TYPE)
     return PenguinPublicRunResult(artifact_ref=artifact_ref, payload=payload)
 
 
 def _publish_harness(
-    store: ArtifactStore, *, kind: str, system_prompt: str, spec_fingerprint: str
+    store: ArtifactStore,
+    *,
+    role: str,
+    system_prompt: str,
+    spec: FrozenModelSpec,
+    protocol_sha256: str,
+    runs_per_generation: int,
+    local_source_sha256: str,
 ) -> ResolvedHarness:
     prompt_ref = store.put_bytes(system_prompt.encode(), media_type="text/plain; charset=utf-8")
-    manifest_ref = store.put_json(
-        {
-            "schema_version": "2",
-            "kind": kind,
-            "spec_fingerprint": spec_fingerprint,
-            "protocol_sha256": PUBLIC_PROTOCOL_SHA256,
-            "components": [
-                {
-                    "name": "system_prompt",
-                    "kind": "prompt",
-                    "artifact": prompt_ref.model_dump(mode="json"),
-                }
-            ],
-            "budget": {"max_tokens": 0},
-        },
-        media_type=HARNESS_MANIFEST_MEDIA_TYPE,
+    binding = PenguinProtocolBinding(
+        role=role,
+        spec_fingerprint=spec.fingerprint,
+        protocol_sha256=protocol_sha256,
+        runs_per_generation=runs_per_generation,
+        upstream_revision=PENGUIN_REVISION,
+        upstream_source_sha256=PENGUIN_PUBLIC_SOURCE_SHA256,
+        local_implementation_source_sha256=local_source_sha256,
     )
+    binding_ref = store.put_json(binding, media_type=PENGUIN_PROTOCOL_BINDING_MEDIA_TYPE)
+    manifest = HarnessManifest(
+        model_fingerprint=spec.model_fingerprint,
+        runtime_fingerprint=spec.runtime_fingerprint,
+        trusted_plane_version=PENGUIN_TRUSTED_PLANE_VERSION,
+        components=(
+            HarnessComponentRef(
+                name="system_prompt",
+                kind=ComponentKind.PROMPT,
+                artifact=prompt_ref,
+            ),
+            HarnessComponentRef(
+                name="penguin_protocol",
+                kind=ComponentKind.CONTROL_FLOW,
+                artifact=binding_ref,
+            ),
+        ),
+        budget=BudgetPolicy(max_tokens=spec.inference.max_output_tokens),
+    )
+    manifest_ref = store.put_json(manifest, media_type=HARNESS_MANIFEST_MEDIA_TYPE)
+    if store.get_json(manifest_ref, HarnessManifest) != manifest:
+        raise RuntimeError("persisted Penguin harness manifest changed")
     return ResolvedHarness.from_prompt(harness_ref=manifest_ref, system_prompt=system_prompt)
 
 
 __all__ = [
     "NOTES",
+    "PENGUIN_CANONICAL_RUNS_PER_GENERATION",
     "PENGUIN_OFFICIAL_SUITE_PUBLIC",
+    "PENGUIN_PUBLIC_RESULT_MEDIA_TYPE",
     "PENGUIN_PUBLIC_SOURCE_SHA256",
     "PENGUIN_REVISION",
     "PUBLIC_PROTOCOL_SHA256",
@@ -608,7 +685,9 @@ __all__ = [
     "extract_state",
     "merge_reflected_state",
     "normalize_evidence_fixed_lines",
+    "penguin_public_protocol_sha256",
     "run_public_self_evolution",
     "score_report",
+    "verify_penguin_public_result",
     "verify_penguin_source",
 ]

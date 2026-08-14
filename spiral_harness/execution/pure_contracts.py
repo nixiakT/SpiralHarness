@@ -21,6 +21,7 @@ from spiral_harness.execution.contracts import (
     ExecutionStatus,
     FrozenModelSpec,
     ModelUsage,
+    ProviderIdentityObservation,
 )
 
 _Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -111,6 +112,7 @@ class PureReferenceExecution(_FrozenPureModel):
     status: ExecutionStatus
     usage: ModelUsage
     spec: FrozenModelSpec
+    provider_identity_observation: ProviderIdentityObservation | None = None
     execution_fingerprint: _Sha256
     request_sha256: _Sha256
     error: ExecutionError | None
@@ -125,6 +127,16 @@ class PureReferenceExecution(_FrozenPureModel):
             raise ValueError("request_sha256 does not match the exact PURE request")
         if self.capabilities != self.request.capabilities:
             raise ValueError("execution capabilities differ from the PURE request")
+        if self.provider_identity_observation is not None:
+            if self.provider_identity_observation.requested_model != self.spec.model:
+                raise ValueError("provider identity requested_model does not match the frozen spec")
+            if (
+                self.provider_identity_observation.backend_fingerprint
+                != self.spec.backend_fingerprint
+            ):
+                raise ValueError(
+                    "provider identity backend_fingerprint does not match the frozen spec"
+                )
         if self.status is ExecutionStatus.COMPLETED:
             if self.output is None:
                 raise ValueError("completed execution requires an output")

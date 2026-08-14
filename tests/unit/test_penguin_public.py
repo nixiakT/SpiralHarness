@@ -6,7 +6,10 @@ from pathlib import Path
 import pytest
 
 import spiral_harness.benchmark.penguin_public as subject
+from spiral_harness.benchmark.penguin_public_evidence import PenguinProtocolBinding
+from spiral_harness.core.models import ComponentKind, HarnessManifest
 from spiral_harness.execution.contracts import BackendResponse, BackendTokenUsage
+from spiral_harness.storage.artifact_store import ArtifactStore
 
 GOOD_REPORT = """<!-- ACME-DATA-PLATFORM -->
 # Report: Project Aurora
@@ -158,6 +161,30 @@ def test_verify_penguin_source_is_byte_exact(tmp_path: Path, monkeypatch) -> Non
         subject.verify_penguin_source(source)
 
 
+def test_protocol_hash_binds_run_count_and_preserves_canonical_identity() -> None:
+    assert subject.PENGUIN_CANONICAL_RUNS_PER_GENERATION == 5
+    assert subject.PUBLIC_PROTOCOL_SHA256 == (
+        "edbfffe1cc2577fa13124678147e83ca509946c58d81e256ed046f125dfe13de"
+    )
+    assert subject.penguin_public_protocol_sha256(5) == subject.PUBLIC_PROTOCOL_SHA256
+    assert (
+        len(
+            {
+                subject.penguin_public_protocol_sha256(1),
+                subject.penguin_public_protocol_sha256(4),
+                subject.penguin_public_protocol_sha256(5),
+            }
+        )
+        == 3
+    )
+
+
+@pytest.mark.parametrize("runs", [0, -1, 6, True])
+def test_protocol_hash_rejects_invalid_run_count(runs: int) -> None:
+    with pytest.raises(ValueError, match="from 1 through 5"):
+        subject.penguin_public_protocol_sha256(runs)
+
+
 def test_live_runner_mirrors_call_schedule_and_persists_states(tmp_path: Path) -> None:
     outputs = [PLAIN_REPORT] * 5
     outputs += ["<SPIRAL_STATE>round one guidance</SPIRAL_STATE>"]
@@ -186,14 +213,99 @@ def test_live_runner_mirrors_call_schedule_and_persists_states(tmp_path: Path) -
         generation["evidence_fixed_line_contract"] for generation in result.payload["generations"]
     ] == [False, False, True]
     assert result.payload["official_15_40_suite_public"] is False
+    assert result.payload["kind"] == "penguin_public_self_evolution_compatible_run"
+    assert result.payload["protocol_sha256"] == subject.PUBLIC_PROTOCOL_SHA256
+    assert result.payload["protocol_class"] == "canonical"
+    assert result.payload["reportable_as_canonical"] is True
+    assert result.payload["call_schedule"] == "5N+1R+5N1+1R+5N2"
     assert result.payload["total_tokens"] == 17 * 15
     assert result.artifact_ref.media_type == subject.PENGUIN_PUBLIC_RESULT_MEDIA_TYPE
+    assert result.artifact_ref.sha256 == (
+        "77a3ae8354578f5e6b86ad4e6a96663dff019dd24a890c646f6376bf5803d269"
+    )
+    persisted_refs = {
+        result.payload["worker_harness_ref"]["sha256"],
+        result.payload["reflection_harness_ref"]["sha256"],
+    }
+    assert {request.harness_ref.sha256 for _, request in backend.calls} == persisted_refs
+    assert {call["harness_ref"]["sha256"] for call in result.payload["calls"]} == persisted_refs
+    assert all(call["resolved_prompt_sha256"] for call in result.payload["calls"])
+    store = ArtifactStore(tmp_path / "run" / "artifacts")
+    assert subject.verify_penguin_public_result(store, result.artifact_ref) == result.payload
     assert "round one guidance" not in str(result.payload)
 
 
-@pytest.mark.parametrize("runs", [0, -1, True])
+@pytest.mark.parametrize("runs", [1, 4])
+def test_reduced_schedule_has_distinct_identity_and_harness_binding(
+    tmp_path: Path, runs: int
+) -> None:
+    outputs = [PLAIN_REPORT] * runs
+    outputs += ["<SPIRAL_STATE>round one guidance</SPIRAL_STATE>"]
+    outputs += [GOOD_REPORT] * runs
+    outputs += ["<SPIRAL_STATE>round two guidance</SPIRAL_STATE>"]
+    outputs += [GOOD_REPORT] * runs
+    backend = SequenceBackend(outputs)
+    output = tmp_path / f"run-{runs}"
+
+    result = subject.run_public_self_evolution(
+        output=output,
+        backend=backend,
+        model="dashscope/qwen3-coder-flash",
+        runs_per_generation=runs,
+        max_output_tokens=256,
+    )
+
+    expected_protocol_sha256 = subject.penguin_public_protocol_sha256(runs)
+    assert len(backend.calls) == 3 * runs + 2
+    assert result.payload["kind"] == "penguin_public_reduced_self_evolution_exploratory_run"
+    assert result.payload["protocol_sha256"] == expected_protocol_sha256
+    assert result.payload["protocol_sha256"] != subject.PUBLIC_PROTOCOL_SHA256
+    assert result.payload["protocol_class"] == "noncanonical_exploratory"
+    assert result.payload["reportable_as_canonical"] is False
+    assert result.payload["call_schedule"] == f"{runs}N+1R+{runs}N1+1R+{runs}N2"
+    assert str(result.payload["disclaimer"]).startswith("Reduced exploratory schedule only")
+    assert result.payload["total_tokens"] == (3 * runs + 2) * 15
+
+    store = ArtifactStore(output / "artifacts")
+    harness_refs = {request.harness_ref.sha256: request.harness_ref for _, request in backend.calls}
+    assert len(harness_refs) == 2
+    for harness_ref in harness_refs.values():
+        manifest = store.get_json(harness_ref, HarnessManifest)
+        assert manifest.model_fingerprint == result.payload["model_fingerprint"]
+        protocol_component = next(
+            component
+            for component in manifest.components
+            if component.kind is ComponentKind.CONTROL_FLOW
+        )
+        binding = store.get_json(protocol_component.artifact, PenguinProtocolBinding)
+        assert binding.protocol_sha256 == expected_protocol_sha256
+        assert binding.runs_per_generation == runs
+    assert subject.verify_penguin_public_result(store, result.artifact_ref) == result.payload
+
+
+def test_offline_verifier_rejects_call_manifest_tampering(tmp_path: Path) -> None:
+    outputs = [PLAIN_REPORT, "<SPIRAL_STATE>one</SPIRAL_STATE>"]
+    outputs += [GOOD_REPORT, "<SPIRAL_STATE>two</SPIRAL_STATE>", GOOD_REPORT]
+    output = tmp_path / "tamper"
+    result = subject.run_public_self_evolution(
+        output=output,
+        backend=SequenceBackend(outputs),
+        model="dashscope/qwen3-coder-flash",
+        runs_per_generation=1,
+        max_output_tokens=256,
+    )
+    tampered = {**result.payload, "calls": [dict(call) for call in result.payload["calls"]]}
+    tampered["calls"][0]["resolved_prompt_sha256"] = "0" * 64
+    store = ArtifactStore(output / "artifacts")
+    tampered_ref = store.put_json(tampered, media_type=subject.PENGUIN_PUBLIC_RESULT_MEDIA_TYPE)
+
+    with pytest.raises(ValueError, match="prompt hash is not manifest-bound"):
+        subject.verify_penguin_public_result(store, tampered_ref)
+
+
+@pytest.mark.parametrize("runs", [0, -1, 6, True])
 def test_live_runner_rejects_invalid_run_count(tmp_path: Path, runs: int) -> None:
-    with pytest.raises(ValueError, match="positive integer"):
+    with pytest.raises(ValueError, match="from 1 through 5"):
         subject.run_public_self_evolution(
             output=tmp_path / "run",
             backend=SequenceBackend([]),

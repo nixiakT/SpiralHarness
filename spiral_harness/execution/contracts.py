@@ -479,12 +479,54 @@ class ModelUsage(_FrozenExecutionModel):
         return 0
 
 
+class ProviderIdentityObservation(_FrozenExecutionModel):
+    """Unauthenticated identity metadata declared in one provider response.
+
+    This value records an observation only.  It is neither a signed receipt nor
+    evidence that the provider actually served the declared model identity.
+    """
+
+    schema_version: Literal["1"] = "1"
+    trust_level: Literal["provider-declared"] = "provider-declared"
+    requested_model: ExactNonEmptyText
+    response_model: ExactNonEmptyText | None = None
+    system_fingerprint: ExactNonEmptyText | None = None
+    backend_fingerprint: ExactNonEmptyText
+
+    @field_validator(
+        "requested_model",
+        "response_model",
+        "system_fingerprint",
+        "backend_fingerprint",
+    )
+    @classmethod
+    def identity_strings_are_not_blank(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("provider identity strings must not be blank")
+        return value
+
+    @model_validator(mode="after")
+    def provider_declared_at_least_one_identity_value(self) -> Self:
+        if self.response_model is None and self.system_fingerprint is None:
+            raise ValueError(
+                "provider identity observation requires a response model or system fingerprint"
+            )
+        return self
+
+    @property
+    def fingerprint(self) -> str:
+        """Hash the canonical observation payload without claiming attestation."""
+
+        return canonical_sha256(self)
+
+
 class BackendResponse(_FrozenExecutionModel):
     """Minimal score-free value returned by a provider adapter."""
 
     output: str
     usage: BackendTokenUsage
     cost_usd: Annotated[float, Field(ge=0, strict=True)] | None = None
+    provider_identity_observation: ProviderIdentityObservation | None = None
 
 
 class ExecutionStatus(StrEnum):
@@ -521,6 +563,7 @@ class ModelExecution(_FrozenExecutionModel):
     status: ExecutionStatus
     usage: ModelUsage
     spec: FrozenModelSpec
+    provider_identity_observation: ProviderIdentityObservation | None = None
     execution_fingerprint: ExecutionSha256
     request_sha256: ExecutionSha256
     error: ExecutionError | None
@@ -533,6 +576,16 @@ class ModelExecution(_FrozenExecutionModel):
             raise ValueError("request user_prompt does not match candidate-facing question")
         if self.request_sha256 != self.request.fingerprint:
             raise ValueError("request_sha256 does not match the exact request")
+        if self.provider_identity_observation is not None:
+            if self.provider_identity_observation.requested_model != self.spec.model:
+                raise ValueError("provider identity requested_model does not match the frozen spec")
+            if (
+                self.provider_identity_observation.backend_fingerprint
+                != self.spec.backend_fingerprint
+            ):
+                raise ValueError(
+                    "provider identity backend_fingerprint does not match the frozen spec"
+                )
         if self.status is ExecutionStatus.COMPLETED:
             if self.output is None:
                 raise ValueError("completed execution requires an output")
@@ -638,6 +691,7 @@ __all__ = [
     "ModelExecutionRecord",
     "ModelRequest",
     "ModelUsage",
+    "ProviderIdentityObservation",
     "ResolvedHarness",
     "resolve_system_prompt",
 ]

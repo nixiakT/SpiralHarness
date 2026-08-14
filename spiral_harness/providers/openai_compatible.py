@@ -20,6 +20,7 @@ from spiral_harness.execution.contracts import (
     BackendTokenUsage,
     FrozenModelSpec,
     ModelRequest,
+    ProviderIdentityObservation,
 )
 from spiral_harness.execution.pure_contracts import PureReferenceRequest
 
@@ -94,7 +95,17 @@ class OpenAICompatibleChatBackend:
         _require_complete_chat_choice(response)
         output = _extract_chat_output(response)
         usage = _extract_usage(response)
-        return BackendResponse(output=output, usage=usage, cost_usd=None)
+        identity = _extract_provider_identity_observation(
+            response,
+            requested_model=checked_spec.model,
+            backend_fingerprint=checked_spec.backend_fingerprint,
+        )
+        return BackendResponse(
+            output=output,
+            usage=usage,
+            cost_usd=None,
+            provider_identity_observation=identity,
+        )
 
     def invoke_pure(
         self,
@@ -135,6 +146,11 @@ class OpenAICompatibleChatBackend:
             output=_extract_chat_output(response),
             usage=_extract_usage(response),
             cost_usd=None,
+            provider_identity_observation=_extract_provider_identity_observation(
+                response,
+                requested_model=checked_spec.model,
+                backend_fingerprint=checked_spec.backend_fingerprint,
+            ),
         )
 
     def list_models(self, *, timeout_seconds: float = 15.0) -> tuple[str, ...]:
@@ -286,6 +302,37 @@ def _extract_usage(response: dict[str, Any]) -> BackendTokenUsage:
             "chat completion completion token usage must be an integer"
         )
     return BackendTokenUsage(input_tokens=input_tokens, output_tokens=output_tokens)
+
+
+def _extract_provider_identity_observation(
+    response: dict[str, Any],
+    *,
+    requested_model: str,
+    backend_fingerprint: str,
+) -> ProviderIdentityObservation | None:
+    """Capture optional provider-declared identity fields without attesting them."""
+
+    response_model = _extract_optional_identity_string(response, "model")
+    system_fingerprint = _extract_optional_identity_string(response, "system_fingerprint")
+    if response_model is None and system_fingerprint is None:
+        return None
+    return ProviderIdentityObservation(
+        requested_model=requested_model,
+        response_model=response_model,
+        system_fingerprint=system_fingerprint,
+        backend_fingerprint=backend_fingerprint,
+    )
+
+
+def _extract_optional_identity_string(response: dict[str, Any], field_name: str) -> str | None:
+    value = response.get(field_name)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise OpenAICompatibleBackendError(
+            f"chat completion {field_name} must be a non-empty string or null"
+        )
+    return value
 
 
 def _redacted_http_error_detail(exc: urllib.error.HTTPError) -> str:

@@ -27,10 +27,12 @@ from spiral_harness.execution.contracts import (
     ExecutionStatus,
     FrozenModelSpec,
     InferenceConfig,
+    ProviderIdentityObservation,
 )
 from spiral_harness.execution.model import paired_execution_fingerprint
 from spiral_harness.execution.pure_contracts import (
     PureReferenceCapabilities,
+    PureReferenceExecution,
     PureReferenceRequest,
     materialize_pure_request,
 )
@@ -225,6 +227,15 @@ def test_pure_runner_uses_same_paired_identity_and_settles_shared_ledger(tmp_pat
     assert ledger.state().completed_attempts == 1
     assert ledger.state().charged_tokens == 7
     assert store.get_json(record.execution_ref, type(record.execution)) == record.execution
+    legacy_payload = record.execution.model_dump(mode="python")
+    legacy_payload.pop("provider_identity_observation")
+    assert (
+        PureReferenceExecution.model_validate(
+            legacy_payload,
+            strict=True,
+        ).provider_identity_observation
+        is None
+    )
 
 
 def test_reference_id_is_derived_from_the_complete_frozen_plan() -> None:
@@ -421,12 +432,19 @@ def test_pure_known_usage_overrun_is_persisted_and_poisons_ledger(tmp_path: Path
     store = ArtifactStore(tmp_path / "artifacts")
     budget = _budget(per_attempt=16)
     ledger = AttemptLedger(store, ledger_id="pure-reference-fixture", budget=budget)
+    observed_identity = ProviderIdentityObservation(
+        requested_model="fixture/exact-model",
+        response_model="fixture/exact-model-served-revision",
+        system_fingerprint="fp_pure_fixture_snapshot",
+        backend_fingerprint=_BACKEND,
+    )
     runner = PureModelRunner(
         spec=_spec(),
         backend=_TerminalPureBackend(
             BackendResponse(
                 output="too expensive",
                 usage=BackendTokenUsage(input_tokens=18, output_tokens=1),
+                provider_identity_observation=observed_identity,
             )
         ),
         attempt_ledger=ledger,
@@ -443,6 +461,11 @@ def test_pure_known_usage_overrun_is_persisted_and_poisons_ledger(tmp_path: Path
     assert record.execution.error is not None
     assert record.execution.error.error_class is ExecutionErrorClass.USAGE_EXCEEDED
     assert record.execution.usage.total_tokens == 19
+    assert record.execution.provider_identity_observation == observed_identity
+    assert (
+        store.get_json(record.execution_ref, PureReferenceExecution).provider_identity_observation
+        == observed_identity
+    )
     assert outcome.disposition is AttemptDisposition.POISONED
     assert outcome.reported_tokens == 19
     assert outcome.charged_tokens == 19

@@ -16,6 +16,7 @@ from spiral_harness.benchmark.datasets import (
     read_dataset_snapshot,
 )
 from spiral_harness.core.canonical import canonical_sha256
+from spiral_harness.core.experiment import ProtocolPartition
 from spiral_harness.core.models import ImmutableModel, NonEmptyStr
 from spiral_harness.verification.models import TrialObservation, TrialStatus
 
@@ -123,7 +124,24 @@ class BBHLogicalDeductionSevenAdapter:
             }
         )
 
-    def task_roster(self) -> tuple[str, ...]:
+    def task_roster(
+        self,
+        partition: ProtocolPartition = ProtocolPartition.EXPLORATION,
+    ) -> tuple[str, ...]:
+        """Return the public development roster only as exploration data.
+
+        BBH publishes this task as one public development file.  Treating it as
+        a gate or sealed partition would fabricate an information-flow boundary
+        that the upstream data does not provide, so every other value fails
+        closed.  The default preserves the explicitly non-reportable smoke path;
+        protocol-driven callers should always pass the enum value.
+        """
+
+        if partition is not ProtocolPartition.EXPLORATION:
+            raise BBHDataError(
+                "BBH logical-deduction-seven exposes only the exploration partition; "
+                f"gate, sealed, and unknown partitions are unavailable: {partition!r}"
+            )
         return tuple(item.task.task_id for item in self._records)
 
     def load_task(self, task_id: str) -> BBHTask:

@@ -26,6 +26,7 @@ from spiral_harness.execution.contracts import (
     InferenceConfig,
     ModelExecution,
     ModelExecutionRecord,
+    ProviderIdentityObservation,
     ResolvedHarness,
 )
 from spiral_harness.execution.model import (
@@ -90,6 +91,7 @@ def response(
     input_tokens: int = 4,
     output_tokens: int = 2,
     cost_usd: float | None = None,
+    provider_identity_observation: ProviderIdentityObservation | None = None,
 ) -> BackendResponse:
     return BackendResponse(
         output=output,
@@ -98,6 +100,16 @@ def response(
             output_tokens=output_tokens,
         ),
         cost_usd=cost_usd,
+        provider_identity_observation=provider_identity_observation,
+    )
+
+
+def identity_observation() -> ProviderIdentityObservation:
+    return ProviderIdentityObservation(
+        requested_model="hosted/example-model",
+        response_model="example-model-served-revision",
+        system_fingerprint="fp_fixture_snapshot",
+        backend_fingerprint=BACKEND_FINGERPRINT,
     )
 
 
@@ -166,8 +178,9 @@ class InvalidResponseBackend:
 
 
 class MutableFingerprintBackend:
-    def __init__(self) -> None:
+    def __init__(self, result: BackendResponse | None = None) -> None:
         self.current = BACKEND_FINGERPRINT
+        self.result = result or response()
 
     @property
     def fingerprint(self) -> str:
@@ -176,7 +189,7 @@ class MutableFingerprintBackend:
     def invoke(self, *, spec: FrozenModelSpec, request: object) -> BackendResponse:
         del spec, request
         self.current = "changed-after-reservation"
-        return response()
+        return self.result
 
 
 def test_frozen_spec_is_strict_pinned_immutable_and_canonically_fingerprinted() -> None:
@@ -206,6 +219,34 @@ def test_frozen_spec_is_strict_pinned_immutable_and_canonically_fingerprinted() 
             top_p=1.0,
             max_output_tokens=8,
             timeout_seconds=5.0,
+        )
+
+
+def test_provider_identity_observation_is_explicitly_unattested_and_content_bound() -> None:
+    observation = identity_observation()
+
+    assert observation.trust_level == "provider-declared"
+    assert "provider_identity_attested" not in observation.model_dump(mode="json")
+    assert (
+        observation.fingerprint
+        != observation.model_copy(
+            update={"response_model": "different-provider-declaration"}
+        ).fingerprint
+    )
+    with pytest.raises(ValidationError):
+        ProviderIdentityObservation(
+            requested_model="hosted/example-model",
+            response_model=None,
+            system_fingerprint=None,
+            backend_fingerprint=BACKEND_FINGERPRINT,
+        )
+    with pytest.raises(ValidationError):
+        ProviderIdentityObservation.model_validate(
+            {
+                **observation.model_dump(mode="json"),
+                "trust_level": "attested",
+            },
+            strict=True,
         )
 
 
@@ -298,7 +339,14 @@ def test_paired_fingerprint_excludes_arm_and_prompt_but_request_hash_binds_them(
 def test_runner_reserves_before_call_then_persists_and_settles(tmp_path) -> None:
     store = ArtifactStore(tmp_path / "cas")
     ledger = attempt_ledger(store)
-    backend = InspectingBackend(ledger, response(cost_usd=0.002))
+    observed_identity = identity_observation()
+    backend = InspectingBackend(
+        ledger,
+        response(
+            cost_usd=0.002,
+            provider_identity_observation=observed_identity,
+        ),
+    )
     clock_values = iter((10.0, 10.25))
     runner = FixedModelRunner(
         spec=fixed_spec(),
@@ -330,6 +378,7 @@ def test_runner_reserves_before_call_then_persists_and_settles(tmp_path) -> None
     assert execution.latency_ms == 250.0
     assert execution.tool_calls == 0
     assert execution.cost_usd == 0.002
+    assert execution.provider_identity_observation == observed_identity
     assert runner.last_execution_ref is not None
     assert runner.last_outcome_ref == ledger.tail_ref
     assert store.get_json(runner.last_execution_ref, ModelExecution) == execution
@@ -438,7 +487,12 @@ def test_usage_overrun_is_not_gradable_and_burns_full_reservation(tmp_path) -> N
     ledger = attempt_ledger(store)
     backend = ReplayBackend(
         fingerprint=BACKEND_FINGERPRINT,
-        default_response=response("would-be-output", input_tokens=10, output_tokens=9),
+        default_response=response(
+            "would-be-output",
+            input_tokens=10,
+            output_tokens=9,
+            provider_identity_observation=identity_observation(),
+        ),
     )
     runner = FixedModelRunner(
         spec=fixed_spec(),
@@ -454,6 +508,7 @@ def test_usage_overrun_is_not_gradable_and_burns_full_reservation(tmp_path) -> N
     assert execution.usage.total_tokens == 19
     assert execution.error is not None
     assert execution.error.error_class is ExecutionErrorClass.USAGE_EXCEEDED
+    assert execution.provider_identity_observation == identity_observation()
     assert outcome.disposition is AttemptDisposition.POISONED
     assert outcome.reported_tokens == 19
     assert outcome.charged_tokens == 19
@@ -525,6 +580,39 @@ def test_backend_fingerprint_change_during_call_burns_attempt(tmp_path) -> None:
     assert outcome.disposition is AttemptDisposition.BURNED
 
 
+def test_backend_drift_preserves_usage_and_poisoning_after_response(tmp_path) -> None:
+    store = ArtifactStore(tmp_path / "cas")
+    ledger = attempt_ledger(store)
+    observed_identity = identity_observation()
+    runner = FixedModelRunner(
+        spec=fixed_spec(),
+        backend=MutableFingerprintBackend(
+            response(
+                "ungradable-after-drift",
+                input_tokens=10,
+                output_tokens=9,
+                cost_usd=0.01,
+                provider_identity_observation=observed_identity,
+            )
+        ),
+        attempt_ledger=ledger,
+    )
+
+    execution = runner.execute(task(), harness=harness(), seed=4)
+    outcome = store.get_json(ledger.tail_ref, AttemptOutcome)
+
+    assert execution.status is ExecutionStatus.FAILED
+    assert execution.output is None
+    assert execution.usage.total_tokens == 19
+    assert execution.cost_usd == 0.01
+    assert execution.provider_identity_observation == observed_identity
+    assert execution.error is not None
+    assert execution.error.error_class is ExecutionErrorClass.BACKEND_FINGERPRINT_MISMATCH
+    assert outcome.disposition is AttemptDisposition.POISONED
+    assert outcome.reported_tokens == outcome.charged_tokens == 19
+    assert ledger.state().poisoned is True
+
+
 def test_invalid_backend_result_is_failed_and_burned(tmp_path) -> None:
     store = ArtifactStore(tmp_path / "cas")
     ledger = attempt_ledger(store)
@@ -542,6 +630,34 @@ def test_invalid_backend_result_is_failed_and_burned(tmp_path) -> None:
     assert execution.error.error_class is ExecutionErrorClass.INVALID_BACKEND_RESPONSE
     assert outcome.disposition is AttemptDisposition.BURNED
     assert outcome.charged_tokens == 12
+
+
+def test_provider_identity_observation_must_bind_the_frozen_request(tmp_path) -> None:
+    store = ArtifactStore(tmp_path / "cas")
+    ledger = attempt_ledger(store)
+    mismatched_identity = identity_observation().model_copy(
+        update={"requested_model": "different/requested-model"}
+    )
+    runner = FixedModelRunner(
+        spec=fixed_spec(),
+        backend=ReplayBackend(
+            fingerprint=BACKEND_FINGERPRINT,
+            default_response=response(
+                provider_identity_observation=mismatched_identity,
+            ),
+        ),
+        attempt_ledger=ledger,
+    )
+
+    execution = runner.execute(task(), harness=harness(), seed=4)
+    outcome = store.get_json(ledger.tail_ref, AttemptOutcome)
+
+    assert execution.status is ExecutionStatus.FAILED
+    assert execution.error is not None
+    assert execution.error.error_class is ExecutionErrorClass.INVALID_BACKEND_RESPONSE
+    assert execution.provider_identity_observation is None
+    assert execution.usage.total_tokens == 6
+    assert outcome.disposition is AttemptDisposition.BURNED
 
 
 def test_execution_schema_is_score_free_and_rejects_injected_grading_fields(tmp_path) -> None:
@@ -570,6 +686,12 @@ def test_execution_schema_is_score_free_and_rejects_injected_grading_fields(tmp_
     )
     with pytest.raises(ValidationError):
         ModelExecution.model_validate({**payload, "score": 1.0}, strict=True)
+    legacy_payload = execution.model_dump(mode="python")
+    legacy_payload.pop("provider_identity_observation")
+    assert (
+        ModelExecution.model_validate(legacy_payload, strict=True).provider_identity_observation
+        is None
+    )
     with pytest.raises(ValidationError):
         CandidateTask.model_validate(
             {"task_id": "leak", "question": "?", "answer": "secret"},

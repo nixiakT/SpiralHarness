@@ -8,9 +8,12 @@ Date: 2026-08-14
 
 ## Outcome
 
-With the same `dashscope/qwen3-coder-flash` model, five runs per generation,
-the same 32,000-token output ceiling, and the exact public Penguin scorer,
-SpiralHarness reached **9.6/10** while PenguinHarness remained at **4.0/10**.
+With the same requested `dashscope/qwen3-coder-flash` model alias, five runs per
+generation, the same 32,000-token output ceiling, and the exact public Penguin
+scorer, SpiralHarness reached **9.6/10** while PenguinHarness remained at
+**4.0/10**. The gateway did not provide a signed immutable served-revision
+receipt, so this is nominal-model-matched rather than an attested exact-revision
+comparison.
 That is **+5.6/10**, **+56 percentage points**, or **+140% relative**.  The
 same-run pure-model arm scored 3.8/10, so the final evolved harness improved by
 5.8/10 over its own untreated arm.
@@ -95,8 +98,27 @@ python -m spiral_harness benchmark penguin-public \
   --output runs/penguin-public/replication
 ```
 
-The final local content-addressed result artifact is
+The historical local content-addressed result artifact is
 `1c669101d4e1b5a567af6d4c8b1e59d34b7169d80d4a41f7879c940d8f90d7aa`.
+It predates the current result-to-manifest provenance closure and remains a
+pilot record, not a closed confirmatory artifact. New runs persist the worker
+and reflection manifest references both at result level and on every model
+call, together with the resolved prompt hashes. An offline verifier reloads the
+typed manifests, protocol-binding components, prompts, and calls and rejects a
+broken or tampered edge.
+
+### Reduced exploratory schedules
+
+Five runs per generation are part of the canonical public schedule above and
+produce 17 model calls. The CLI permits values 1--4 only for wiring and
+budget-limited exploration. Such a run uses
+`3 * runs_per_generation + 2` calls, receives a distinct protocol SHA-256 bound
+to that count, and is labeled a reduced exploratory run. It is not an exact
+replication of Penguin's five-run schedule and must not be pooled or compared
+as if it were one. The result records
+`protocol_class=noncanonical_exploratory` and
+`reportable_as_canonical=false`; both valid HarnessManifest v2 artifacts bind
+the distinct protocol through typed control-flow components.
 
 ## Claim boundary
 
@@ -108,8 +130,9 @@ uses different models for Penguin, Claude Code, and Codex.  We therefore do not
 claim to have run or beaten that unreleased suite.
 
 The public recursive example also repeats one task and has no hidden test
-split.  This result is a mechanistically informative same-model pilot, not an
-estimate of cross-task generalization or a confirmatory mechanism effect.
+split. This result is a mechanistically informative nominal-model-matched
+pilot, not an estimate of cross-task generalization or a confirmatory mechanism
+effect.
 Penguin's README example of 9.8/10 used
 `qwen3.6:35b`; comparing that number directly with this model would violate the
 same-model requirement.

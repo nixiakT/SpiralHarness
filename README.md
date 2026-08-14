@@ -324,12 +324,13 @@ the [four-condition protocol](docs/baseline-protocol.md). The automatic loop,
 receipt-backed screen, and study barrier are specified in the
 [trusted search protocol](docs/search-protocol.md).
 
-## Same-model benchmark pilots
+## Nominal-model-matched benchmark pilots
 
-The current public, reproducible same-model development runs are documented
-separately from plumbing-only demos. They are exploratory pilots: their test
-sets are now exposed, they do not contain independent end-to-end search
-replications, and they are not confirmatory evidence for the ICLR study.
+The current public, reproducible nominal-model-matched development runs are
+documented separately from plumbing-only demos. They are exploratory pilots:
+their test sets are now exposed, they do not contain independent end-to-end
+search replications, the gateway aliases are not signed served-revision
+attestations, and they are not confirmatory evidence for the ICLR study.
 
 - [PenguinHarness public recursive self-evolution](docs/penguin-public-self-evolution-results.md):
   `dashscope/qwen3-coder-flash`, Penguin 4.0/10 versus Spiral N+2 9.6/10;
@@ -370,6 +371,13 @@ The smoke command refuses the sealed partition and writes a
 `non_reportable_gsm8k_smoke` artifact. It is useful for endpoint/model/prompt
 wiring and rough failure inspection only; it is not a sealed or reportable
 benchmark result.
+
+When present, top-level provider response fields such as `model` and
+`system_fingerprint` are persisted with each execution as
+`provider-declared` observations. They are content-bound diagnostics, not a
+signed served-revision attestation; same-model headline claims remain blocked
+without an independently verifiable route/revision receipt and cross-arm
+closure.
 
 ## Run the M0 vertical slice
 

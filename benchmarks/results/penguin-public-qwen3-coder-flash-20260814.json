@@ -2,7 +2,8 @@
   "schema_version": "1",
   "benchmark": "penguin-harness/self-evolve-recursive",
   "date": "2026-08-14",
-  "comparison_scope": "same-model public recursive self-evolution example",
+  "comparison_scope": "nominal-model-matched public recursive self-evolution example",
+  "exact_served_revision_attested": false,
   "reportable_as_penguin_official_suite": false,
   "upstream": {
     "repository": "https://github.com/Prism-Shadow/penguin-harness",

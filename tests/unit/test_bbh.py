@@ -12,6 +12,7 @@ from spiral_harness.benchmark.bbh import (
 )
 from spiral_harness.benchmark.bbh_middleware import BBHOutputContractMiddleware
 from spiral_harness.benchmark.bbh_smoke import run_bbh_smoke
+from spiral_harness.core.experiment import ProtocolPartition
 from spiral_harness.execution.contracts import BackendResponse, BackendTokenUsage
 
 
@@ -61,6 +62,41 @@ def test_bbh_adapter_rejects_invalid_targets(tmp_path: Path) -> None:
 
     with pytest.raises(BBHDataError, match="invalid BBH example"):
         BBHLogicalDeductionSevenAdapter(path, verify_pinned=False)
+
+
+def test_bbh_roster_exposes_public_development_only_as_exploration(tmp_path: Path) -> None:
+    adapter = BBHLogicalDeductionSevenAdapter(
+        write_bbh(tmp_path / "data.json"),
+        verify_pinned=False,
+    )
+
+    roster = adapter.task_roster(ProtocolPartition.EXPLORATION)
+
+    assert roster
+    assert roster == adapter.task_roster()
+
+
+@pytest.mark.parametrize(
+    "partition",
+    [
+        ProtocolPartition.GATE,
+        ProtocolPartition.SEALED,
+        "exploration",
+        "gate",
+        None,
+    ],
+)
+def test_bbh_roster_fails_closed_for_non_exploration_partitions(
+    tmp_path: Path,
+    partition: object,
+) -> None:
+    adapter = BBHLogicalDeductionSevenAdapter(
+        write_bbh(tmp_path / "data.json"),
+        verify_pinned=False,
+    )
+
+    with pytest.raises(BBHDataError, match="only the exploration partition"):
+        adapter.task_roster(partition)  # type: ignore[arg-type]
 
 
 def test_bbh_smoke_runs_a_deterministic_development_sample(tmp_path: Path) -> None:

@@ -24,6 +24,7 @@ from spiral_harness.execution.contracts import (
     ExecutionStatus,
     FrozenModelSpec,
     ModelUsage,
+    ProviderIdentityObservation,
 )
 from spiral_harness.execution.model import (
     BackendFingerprintMismatchError,
@@ -268,6 +269,22 @@ class PureModelRunner:
                 ExecutionErrorClass.INVALID_BACKEND_RESPONSE,
                 exc,
             )
+        identity = response.provider_identity_observation
+        if identity is not None and (
+            identity.requested_model != self._spec.model
+            or identity.backend_fingerprint != self._spec.backend_fingerprint
+        ):
+            return self._finish_failure(
+                reservation_ref=reservation_ref,
+                task=checked_task,
+                request=request,
+                execution_fingerprint=execution_fingerprint,
+                usage=response.usage,
+                latency_ms=latency_ms,
+                error_class=ExecutionErrorClass.INVALID_BACKEND_RESPONSE,
+                detail="provider identity observation does not bind the frozen PURE request",
+                cost_usd=response.cost_usd,
+            )
 
         try:
             if self._require_backend_match() != backend_fingerprint:
@@ -289,6 +306,7 @@ class PureModelRunner:
                 error_class=ExecutionErrorClass.BACKEND_FINGERPRINT_MISMATCH,
                 detail=self._exception_detail(exc),
                 cost_usd=response.cost_usd,
+                provider_identity_observation=response.provider_identity_observation,
             )
 
         if (
@@ -305,6 +323,7 @@ class PureModelRunner:
                 error_class=ExecutionErrorClass.USAGE_EXCEEDED,
                 detail="backend-reported usage exceeded a frozen token ceiling",
                 cost_usd=response.cost_usd,
+                provider_identity_observation=response.provider_identity_observation,
             )
 
         execution = self._make_execution(
@@ -317,6 +336,7 @@ class PureModelRunner:
             execution_fingerprint=execution_fingerprint,
             error=None,
             cost_usd=response.cost_usd,
+            provider_identity_observation=response.provider_identity_observation,
         )
         execution_ref = self._persist_execution(execution)
         try:
@@ -389,6 +409,7 @@ class PureModelRunner:
         error_class: ExecutionErrorClass,
         detail: str,
         cost_usd: float | None,
+        provider_identity_observation: ProviderIdentityObservation | None = None,
     ) -> PureReferenceExecutionRecord:
         execution = self._make_execution(
             task=task,
@@ -400,6 +421,7 @@ class PureModelRunner:
             execution_fingerprint=execution_fingerprint,
             error=ExecutionError(error_class=error_class, detail=detail),
             cost_usd=cost_usd,
+            provider_identity_observation=provider_identity_observation,
         )
         try:
             execution_ref = self._persist_execution(execution)
@@ -434,6 +456,7 @@ class PureModelRunner:
         execution_fingerprint: str,
         error: ExecutionError | None,
         cost_usd: float | None,
+        provider_identity_observation: ProviderIdentityObservation | None,
     ) -> PureReferenceExecution:
         return PureReferenceExecution(
             task=task,
@@ -447,6 +470,7 @@ class PureModelRunner:
                 cost_usd=cost_usd,
             ),
             spec=self._spec,
+            provider_identity_observation=provider_identity_observation,
             execution_fingerprint=execution_fingerprint,
             request_sha256=request.fingerprint,
             error=error,

@@ -17,6 +17,16 @@ def test_version_option() -> None:
     assert result.stdout.strip() == __version__
 
 
+def test_penguin_help_distinguishes_canonical_and_reduced_schedules() -> None:
+    result = CliRunner().invoke(app, ["benchmark", "penguin-public", "--help"])
+
+    assert result.exit_code == 0
+    normalized_output = " ".join(result.output.replace("│", " ").split())
+    assert "canonical 17-call public schedule" in normalized_output
+    assert "1-4 are" in normalized_output
+    assert "reduced noncanonical exploratory variants" in normalized_output
+
+
 def test_controlled_demo_command_emits_replay_root(tmp_path) -> None:
     output = tmp_path / "demo-artifacts"
 

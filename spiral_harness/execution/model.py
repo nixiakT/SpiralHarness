@@ -17,6 +17,7 @@ from spiral_harness.execution.attempts import (
     AttemptAccountingError,
     AttemptLedger,
 )
+from spiral_harness.execution.model_execution import make_model_execution
 from spiral_harness.storage.protocol import ArtifactRepository
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -378,34 +379,6 @@ class FixedModelRunner:
 
         latency_ms = self._elapsed_ms(started)
         try:
-            current_backend_fingerprint = self._backend.fingerprint
-        except Exception as exc:
-            return self._record_failure(
-                reservation_ref=reservation_ref,
-                task=checked_task,
-                request=request,
-                execution_fingerprint=execution_fingerprint,
-                request_sha256=request_sha256,
-                usage=_contracts.BackendTokenUsage(input_tokens=0, output_tokens=0),
-                latency_ms=latency_ms,
-                error_class=_contracts.ExecutionErrorClass.BACKEND_FINGERPRINT_MISMATCH,
-                detail=self._exception_detail(exc),
-                cost_usd=None,
-            )
-        if current_backend_fingerprint != backend_fingerprint:
-            return self._record_failure(
-                reservation_ref=reservation_ref,
-                task=checked_task,
-                request=request,
-                execution_fingerprint=execution_fingerprint,
-                request_sha256=request_sha256,
-                usage=_contracts.BackendTokenUsage(input_tokens=0, output_tokens=0),
-                latency_ms=latency_ms,
-                error_class=_contracts.ExecutionErrorClass.BACKEND_FINGERPRINT_MISMATCH,
-                detail="backend fingerprint changed during execution",
-                cost_usd=None,
-            )
-        try:
             response = _contracts.BackendResponse.model_validate(raw_response, strict=True)
         except Exception as exc:
             return self._record_failure(
@@ -419,6 +392,42 @@ class FixedModelRunner:
                 error_class=_contracts.ExecutionErrorClass.INVALID_BACKEND_RESPONSE,
                 detail=self._exception_detail(exc),
                 cost_usd=None,
+            )
+        identity = response.provider_identity_observation
+        if identity is not None and (
+            identity.requested_model != self._spec.model
+            or identity.backend_fingerprint != self._spec.backend_fingerprint
+        ):
+            return self._record_failure(
+                reservation_ref=reservation_ref,
+                task=checked_task,
+                request=request,
+                execution_fingerprint=execution_fingerprint,
+                request_sha256=request_sha256,
+                usage=response.usage,
+                latency_ms=latency_ms,
+                error_class=_contracts.ExecutionErrorClass.INVALID_BACKEND_RESPONSE,
+                detail="provider identity observation does not bind the frozen request",
+                cost_usd=response.cost_usd,
+            )
+        try:
+            if self._require_backend_match() != backend_fingerprint:
+                raise BackendFingerprintMismatchError(
+                    "backend fingerprint changed during execution"
+                )
+        except Exception as exc:
+            return self._record_failure(
+                reservation_ref=reservation_ref,
+                task=checked_task,
+                request=request,
+                execution_fingerprint=execution_fingerprint,
+                request_sha256=request_sha256,
+                usage=response.usage,
+                latency_ms=latency_ms,
+                error_class=_contracts.ExecutionErrorClass.BACKEND_FINGERPRINT_MISMATCH,
+                detail=self._exception_detail(exc),
+                cost_usd=response.cost_usd,
+                provider_identity_observation=response.provider_identity_observation,
             )
 
         reserved_tokens = effective_token_ceiling
@@ -437,9 +446,11 @@ class FixedModelRunner:
                 error_class=_contracts.ExecutionErrorClass.USAGE_EXCEEDED,
                 detail="backend-reported usage exceeded a frozen token ceiling",
                 cost_usd=response.cost_usd,
+                provider_identity_observation=response.provider_identity_observation,
             )
 
-        execution = self._make_execution(
+        execution = make_model_execution(
+            spec=self._spec,
             task=checked_task,
             request=request,
             output=response.output,
@@ -450,6 +461,7 @@ class FixedModelRunner:
             request_sha256=request_sha256,
             error=None,
             cost_usd=response.cost_usd,
+            provider_identity_observation=response.provider_identity_observation,
         )
         execution_ref = self._persist_execution(execution)
         try:
@@ -489,8 +501,10 @@ class FixedModelRunner:
         error_class: _contracts.ExecutionErrorClass,
         detail: str,
         cost_usd: float | None,
+        provider_identity_observation: _contracts.ProviderIdentityObservation | None = None,
     ) -> _contracts.ModelExecutionRecord:
-        execution = self._make_execution(
+        execution = make_model_execution(
+            spec=self._spec,
             task=task,
             request=request,
             output=None,
@@ -501,6 +515,7 @@ class FixedModelRunner:
             request_sha256=request_sha256,
             error=_contracts.ExecutionError(error_class=error_class, detail=detail),
             cost_usd=cost_usd,
+            provider_identity_observation=provider_identity_observation,
         )
         try:
             execution_ref = self._persist_execution(execution)
@@ -523,37 +538,6 @@ class FixedModelRunner:
             execution=execution,
             execution_ref=execution_ref,
             outcome_ref=outcome_ref,
-        )
-
-    def _make_execution(
-        self,
-        *,
-        task: _contracts.CandidateTask,
-        request: _contracts.ModelRequest,
-        output: str | None,
-        status: _contracts.ExecutionStatus,
-        usage: _contracts.BackendTokenUsage,
-        latency_ms: float,
-        execution_fingerprint: str,
-        request_sha256: str,
-        error: _contracts.ExecutionError | None,
-        cost_usd: float | None,
-    ) -> _contracts.ModelExecution:
-        return _contracts.ModelExecution(
-            task=task,
-            request=request,
-            output=output,
-            status=status,
-            usage=_contracts.ModelUsage(
-                input_tokens=usage.input_tokens,
-                output_tokens=usage.output_tokens,
-                latency_ms=latency_ms,
-                cost_usd=cost_usd,
-            ),
-            spec=self._spec,
-            execution_fingerprint=execution_fingerprint,
-            request_sha256=request_sha256,
-            error=error,
         )
 
     def _persist_execution(self, execution: _contracts.ModelExecution) -> ArtifactRef:

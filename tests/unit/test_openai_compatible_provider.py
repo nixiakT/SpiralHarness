@@ -109,6 +109,8 @@ def test_chat_backend_posts_frozen_chat_completion_payload_and_usage() -> None:
     backend = CapturingBackend(
         {
             "choices": [{"message": {"content": "Reasoning.\n#### 5"}}],
+            "model": "qwen36-35b-a3b-served-revision",
+            "system_fingerprint": "fp_provider_snapshot_123",
             "usage": {"prompt_tokens": 11, "completion_tokens": 7},
         }
     )
@@ -118,6 +120,14 @@ def test_chat_backend_posts_frozen_chat_completion_payload_and_usage() -> None:
     assert response.output == "Reasoning.\n#### 5"
     assert response.usage.input_tokens == 11
     assert response.usage.output_tokens == 7
+    identity = response.provider_identity_observation
+    assert identity is not None
+    assert identity.trust_level == "provider-declared"
+    assert identity.requested_model == "dashscope/qwen36-35b-a3b"
+    assert identity.response_model == "qwen36-35b-a3b-served-revision"
+    assert identity.system_fingerprint == "fp_provider_snapshot_123"
+    assert identity.backend_fingerprint == backend.fingerprint
+    assert identity.fingerprint == canonical_sha256(identity)
     path, payload, timeout = backend.calls[0]
     assert path == "/chat/completions"
     assert timeout == 5.0
@@ -137,6 +147,8 @@ def test_pure_backend_posts_only_one_user_message_and_no_harness_fields() -> Non
     backend = CapturingBackend(
         {
             "choices": [{"message": {"content": "#### 5"}}],
+            "model": None,
+            "system_fingerprint": "fp_pure_provider_snapshot_456",
             "usage": {"prompt_tokens": 4, "completion_tokens": 2},
         }
     )
@@ -149,6 +161,12 @@ def test_pure_backend_posts_only_one_user_message_and_no_harness_fields() -> Non
     response = backend.invoke_pure(spec=spec_for(backend), request=pure_request)
 
     assert response.output == "#### 5"
+    identity = response.provider_identity_observation
+    assert identity is not None
+    assert identity.requested_model == "dashscope/qwen36-35b-a3b"
+    assert identity.response_model is None
+    assert identity.system_fingerprint == "fp_pure_provider_snapshot_456"
+    assert identity.backend_fingerprint == backend.fingerprint
     _, payload, _ = backend.calls[0]
     assert payload["messages"] == [{"role": "user", "content": "What is 2+3?"}]
     assert payload["seed"] == 19
@@ -176,6 +194,72 @@ def test_chat_backend_accepts_openai_responses_style_text_parts() -> None:
     assert response.output == "#### 5"
     assert response.usage.input_tokens == 3
     assert response.usage.output_tokens == 2
+    assert response.provider_identity_observation is None
+
+
+@pytest.mark.parametrize("pure", [False, True])
+@pytest.mark.parametrize(
+    ("field_name", "invalid_value"),
+    [
+        ("model", False),
+        ("model", 7),
+        ("model", ""),
+        ("system_fingerprint", []),
+        ("system_fingerprint", "   "),
+    ],
+)
+def test_chat_and_pure_backends_fail_closed_on_malformed_identity_metadata(
+    pure: bool,
+    field_name: str,
+    invalid_value: object,
+) -> None:
+    backend = CapturingBackend(
+        {
+            "choices": [{"message": {"content": "#### 5"}}],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 2},
+            field_name: invalid_value,
+        }
+    )
+    with pytest.raises(OpenAICompatibleBackendError, match=field_name):
+        if pure:
+            backend.invoke_pure(
+                spec=spec_for(backend),
+                request=materialize_pure_request(
+                    CandidateTask(task_id="gsm8k-example", question="What is 2+3?"),
+                    reference_id="a" * 64,
+                    rollout_seed=19,
+                ),
+            )
+        else:
+            backend.invoke(spec=spec_for(backend), request=request())
+
+
+@pytest.mark.parametrize("pure", [False, True])
+def test_missing_or_null_provider_identity_fields_remain_backward_compatible(
+    pure: bool,
+) -> None:
+    backend = CapturingBackend(
+        {
+            "choices": [{"message": {"content": "#### 5"}}],
+            "model": None,
+            "system_fingerprint": None,
+            "usage": {"prompt_tokens": 3, "completion_tokens": 2},
+        }
+    )
+
+    if pure:
+        provider_response = backend.invoke_pure(
+            spec=spec_for(backend),
+            request=materialize_pure_request(
+                CandidateTask(task_id="gsm8k-example", question="What is 2+3?"),
+                reference_id="a" * 64,
+                rollout_seed=19,
+            ),
+        )
+    else:
+        provider_response = backend.invoke(spec=spec_for(backend), request=request())
+
+    assert provider_response.provider_identity_observation is None
 
 
 def test_chat_backend_rejects_malformed_provider_responses() -> None:

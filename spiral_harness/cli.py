@@ -514,7 +514,16 @@ def penguin_public(
             help="Optional pinned self-evolve-recursive.ts path to verify before the run.",
         ),
     ] = None,
-    runs_per_generation: Annotated[int, typer.Option("--runs-per-generation")] = 5,
+    runs_per_generation: Annotated[
+        int,
+        typer.Option(
+            "--runs-per-generation",
+            help=(
+                "Runs in each generation; 5 is the canonical 17-call public schedule, while "
+                "1-4 are reduced noncanonical exploratory variants."
+            ),
+        ),
+    ] = 5,
     max_output_tokens: Annotated[int, typer.Option("--max-output-tokens")] = 32_000,
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds")] = 120.0,
     base_url_env: Annotated[str, typer.Option("--base-url-env")] = "LITELLM_BASE_URL",
@@ -555,6 +564,14 @@ def penguin_public(
             {
                 "benchmark": result.payload["benchmark"],
                 "model": model,
+                "kind": result.payload["kind"],
+                "protocol_sha256": result.payload["protocol_sha256"],
+                "protocol_class": result.payload["protocol_class"],
+                "reportable_as_canonical": result.payload["reportable_as_canonical"],
+                "runs_per_generation": result.payload["runs_per_generation"],
+                "call_schedule": result.payload["call_schedule"],
+                "worker_harness_ref": result.payload["worker_harness_ref"],
+                "reflection_harness_ref": result.payload["reflection_harness_ref"],
                 "generations": generations,
                 "rounds": result.payload["rounds"],
                 "total_tokens": result.payload["total_tokens"],
