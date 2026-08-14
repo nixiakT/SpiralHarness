@@ -19,6 +19,10 @@ from spiral_harness.benchmark.gsm8k import GSM8KBenchmarkAdapter
 from spiral_harness.benchmark.gsm8k_smoke import default_smoke_output_dir, run_gsm8k_smoke
 from spiral_harness.benchmark.meta_harness_law import run_law_evaluation
 from spiral_harness.benchmark.meta_harness_symptom import run_symptom_evaluation
+from spiral_harness.benchmark.penguin_public import (
+    run_public_self_evolution,
+    verify_penguin_source,
+)
 from spiral_harness.benchmark.skillsbench_smoke import run_dialogue_parser_smoke
 from spiral_harness.core.experiment import ProtocolPartition
 from spiral_harness.evolution.controlled_demo import run_controlled_demo
@@ -444,6 +448,73 @@ def meta_harness_symptom(
         )
     }
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
+@benchmark_app.command("penguin-public")
+def penguin_public(
+    model: Annotated[str, typer.Option("--model")] = "dashscope/qwen3-coder-flash",
+    output: Annotated[Path, typer.Option("--output", "-o")] = Path(
+        "runs/penguin-public/qwen3-coder-flash"
+    ),
+    penguin_source: Annotated[
+        Path | None,
+        typer.Option(
+            "--penguin-source",
+            help="Optional pinned self-evolve-recursive.ts path to verify before the run.",
+        ),
+    ] = None,
+    runs_per_generation: Annotated[int, typer.Option("--runs-per-generation")] = 5,
+    max_output_tokens: Annotated[int, typer.Option("--max-output-tokens")] = 32_000,
+    timeout_seconds: Annotated[float, typer.Option("--timeout-seconds")] = 120.0,
+    base_url_env: Annotated[str, typer.Option("--base-url-env")] = "LITELLM_BASE_URL",
+    api_key_env: Annotated[str, typer.Option("--api-key-env")] = "LITELLM_API_KEY",
+) -> None:
+    """Run Penguin's public recursive demo via Spiral's text-state middleware."""
+
+    base_url, api_key = os.environ.get(base_url_env), os.environ.get(api_key_env)
+    if not base_url or not api_key:
+        raise typer.BadParameter("missing LiteLLM endpoint or API key environment variable")
+    if penguin_source is not None:
+        try:
+            verify_penguin_source(penguin_source)
+        except (OSError, ValueError) as exc:
+            raise typer.BadParameter(str(exc)) from exc
+    backend = OpenAICompatibleChatBackend.from_endpoint(base_url=base_url, api_key=api_key)
+    result = run_public_self_evolution(
+        output=output,
+        backend=backend,
+        model=model,
+        runs_per_generation=runs_per_generation,
+        max_output_tokens=max_output_tokens,
+        timeout_seconds=timeout_seconds,
+    )
+    generations = [
+        {
+            key: generation[key]
+            for key in (
+                "label",
+                "scores",
+                "mean",
+            )
+        }
+        for generation in result.payload["generations"]
+    ]
+    typer.echo(
+        json.dumps(
+            {
+                "benchmark": result.payload["benchmark"],
+                "model": model,
+                "generations": generations,
+                "rounds": result.payload["rounds"],
+                "total_tokens": result.payload["total_tokens"],
+                "artifact_sha256": result.artifact_ref.sha256,
+                "output": str(output.resolve()),
+                "disclaimer": result.payload["disclaimer"],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover

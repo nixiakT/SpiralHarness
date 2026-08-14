@@ -1,4 +1,18 @@
 schema_version: "1"
+benchmarks:
+  - id: penguin-harness-self-evolve-recursive
+    name: "PenguinHarness recursive self-evolution public example"
+    upstream_repository: https://github.com/Prism-Shadow/penguin-harness
+    upstream_commit: d14be6fce255cca1cecea3622805c28ad9a5b45a
+    license:
+      spdx_id: Apache-2.0
+      name: Apache License 2.0
+      url: https://raw.githubusercontent.com/Prism-Shadow/penguin-harness/d14be6fce255cca1cecea3622805c28ad9a5b45a/LICENSE
+    distribution: task, accepted-report examples, and compatible scorer are adapted in the package
+    files:
+      - role: public-self-evolution-example
+        path: examples/self-improving-agent/self-evolve-recursive.ts
+        sha256: dc46ab7735444876c5f0c20ae5aacc75def2e18051ec87f42617901d6694fa2d
 datasets:
   - id: bbh-logical-deduction-seven
     name: "BIG-Bench Hard: Logical Deduction (Seven Objects)"
