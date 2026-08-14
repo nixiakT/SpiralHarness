@@ -43,6 +43,11 @@ are later extensions, not part of the initial claim.
 
 The repository does not track placeholder directories or `.gitkeep` files.
 
+The ICLR 2027 research claim, preregistration, evidence status, and submission
+requirements are tracked in [`docs/iclr-2027/`](docs/iclr-2027/README.md).
+Previously exposed benchmark results remain explicitly exploratory until a new
+study satisfies that frozen protocol.
+
 ## Status
 
 The M0.2 verification and experiment-control kernel includes:
