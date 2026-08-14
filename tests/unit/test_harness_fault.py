@@ -12,6 +12,7 @@ from spiral_harness.benchmark._harness_fault_cases import (
     HarnessFaultAuthorityError,
     PartitionEvaluationGrant,
     PartitionOpening,
+    RepairRuleId,
     RuntimeBranch,
     candidate_rule_ids,
     verify_partition_opening,
@@ -87,10 +88,10 @@ from spiral_harness.execution.schedule import (
 )
 from spiral_harness.storage.artifact_store import ArtifactStore
 
-_EXPLORATION_SALT = b"exploration-authority-salt-v3-0001"
-_GATE_SALT = b"gate-authority-salt-v3-0000000001"
-_SEALED_SALT = b"sealed-authority-salt-v3-00000001"
-_BACKEND_FINGERPRINT = "harness-fault-base-replay@sha256:v3"
+_EXPLORATION_SALT = b"exploration-authority-salt-v4-0001"
+_GATE_SALT = b"gate-authority-salt-v4-0000000001"
+_SEALED_SALT = b"sealed-authority-salt-v4-00000001"
+_BACKEND_FINGERPRINT = "harness-fault-base-replay@sha256:v4"
 
 
 def _authority(store: ArtifactStore, *, suffix: bytes = b"") -> HarnessFaultScenarioAuthority:
@@ -110,7 +111,7 @@ def _spec() -> FrozenModelSpec:
         revision="snapshot-2026-08-14",
         tokenizer="fixture/frozen-tokenizer",
         tokenizer_revision="snapshot-2026-08-14",
-        runtime="python-3.12/harness-fault-middleware-v3",
+        runtime="python-3.12/harness-fault-multi-surface-v4",
         inference=InferenceConfig(
             temperature=0.0,
             top_p=1.0,
@@ -264,15 +265,21 @@ def test_compiler_verifier_rebuilds_prompts_parent_graph_and_matched_controls(tm
     assert revert.prompt_ref == parent.prompt_ref
     assert store.get_bytes(revert.prompt_ref) == store.get_bytes(parent.prompt_ref)
     assert candidate.prompt_ref.size == placebo.prompt_ref.size == verified.matched_prompt_bytes
-    assert store.get_bytes(candidate.prompt_ref).startswith(b"CONTROLLED_MIDDLEWARE_RULE")
-    assert store.get_bytes(placebo.prompt_ref).startswith(b"CONTROLLED_MIDDLEWARE_RULE")
+    assert store.get_bytes(candidate.prompt_ref).startswith(b"HFB4_FROZEN_COMPONENT")
+    assert store.get_bytes(placebo.prompt_ref).startswith(b"HFB4_FROZEN_COMPONENT")
     revert_manifest = store.get_json(revert.harness_ref, HarnessManifest)
     oracle_manifest = store.get_json(oracle.harness_ref, HarnessManifest)
     assert oracle_manifest.parent is None
     assert revert_manifest.parent == candidate.harness_ref
 
+    first_match = verified.matched_component_bytes[0]
     forged_manifest = verified.model_copy(
-        update={"matched_prompt_bytes": verified.matched_prompt_bytes + 1}
+        update={
+            "matched_component_bytes": (
+                first_match.model_copy(update={"byte_count": first_match.byte_count + 1}),
+                *verified.matched_component_bytes[1:],
+            )
+        }
     )
     forged_ref = store.put_json(
         forged_manifest,
@@ -328,7 +335,7 @@ def _schedules(evaluator, compilation) -> tuple[EvaluationBatchSchedule, ...]:
     )
     return tuple(
         EvaluationBatchSchedule(
-            study="harness-fault-v3-one-family-replay",
+            study="harness-fault-v4-multi-surface-replay",
             kind=f"mechanism-{kind.value}",
             phase=phase,
             query=index,
@@ -337,7 +344,7 @@ def _schedules(evaluator, compilation) -> tuple[EvaluationBatchSchedule, ...]:
             candidate_harness_id=candidate_id,
             task_ids=tasks,
             search_runs=(0,),
-            repeat_seeds=(0, 1),
+            repeat_seeds=(0,),
             max_attempts_per_cell=1,
             token_ceiling_per_attempt=64,
         )
@@ -418,7 +425,7 @@ def _run_rule(root, catalog_index: int) -> _LoopResult:
         capacity = schedule.cell_count + 1
         ledger = AttemptLedger(
             store,
-            ledger_id=f"harness-fault-v3-rule-{catalog_index}-batch-{batch_index}",
+            ledger_id=f"harness-fault-v4-rule-{catalog_index}-batch-{batch_index}",
             budget=AttemptBudget(
                 max_attempts=capacity,
                 max_total_tokens=capacity * 64,
@@ -480,46 +487,55 @@ def _run_rule(root, catalog_index: int) -> _LoopResult:
 
 
 @pytest.fixture(scope="module")
-def catalog_results(tmp_path_factory) -> tuple[_LoopResult, ...]:
-    root = tmp_path_factory.mktemp("harness-fault-v3-catalog")
-    return tuple(
-        _run_rule(root / f"rule-{index}", index) for index, _ in enumerate(candidate_rule_ids())
-    )
+def routed_result(tmp_path_factory) -> _LoopResult:
+    root = tmp_path_factory.mktemp("harness-fault-v4-routed")
+    return _run_rule(root / "routed-policy", candidate_rule_ids().index(RepairRuleId.ROUTED_POLICY))
 
 
-def test_catalog_exposes_constant_selector_ceiling_limitation(
-    catalog_results: tuple[_LoopResult, ...],
+def test_catalog_exposes_multi_surface_anti_constant_envelope(
+    routed_result: _LoopResult,
 ) -> None:
-    # Every catalog member is a constant selector and one reaches the oracle.
-    # This is executable evidence that the slice cannot measure optimizer ability.
-    verifications = tuple(item.mechanism.verification for item in catalog_results)
-    assert sorted(item.candidate_behavior_rate for item in verifications) == [0.5, 0.5, 1.0]
-    assert sum(item.mechanism_passed for item in verifications) == 1
-    assert any(item.overactivation_rate == 1.0 for item in verifications)
-    for item in verifications:
-        assert item.evidence_scope == "deterministic-one-family-trust-closure-slice"
-        assert item.base_model_output_drives_behavior is False
-        assert item.supports_optimizer_capability_claim is False
-        assert item.supports_live_model_benchmark_claim is False
+    item = routed_result.mechanism.verification
+    assert item.mechanism_passed
+    assert item.candidate_behavior_rate == item.oracle_behavior_rate == 0.75
+    assert item.best_constant_branch_selector_rate == 11 / 28
+    assert item.best_single_family_patch_rate == 12 / 28
+    assert item.best_constant_output_rate == 1 / 28
+    assert item.oracle_minus_best_constant_branch == 10 / 28
+    assert item.oracle_minus_best_single_family_patch == 9 / 28
+    assert item.evidence_scope == "deterministic-multi-surface-trust-closure-slice"
+    assert item.base_model_output_drives_behavior is False
+    assert item.supports_optimizer_capability_claim is False
+    assert item.supports_llm_solver_claim is False
+    assert item.supports_self_evolution_claim is False
+    assert item.supports_live_model_benchmark_claim is False
 
 
 def test_runtime_branch_is_signed_actual_middleware_event_and_repeats_are_paired(
-    catalog_results: tuple[_LoopResult, ...],
+    routed_result: _LoopResult,
 ) -> None:
-    result = next(item for item in catalog_results if item.mechanism.verification.mechanism_passed)
+    result = routed_result
     verification = result.mechanism.verification
 
-    assert verification.scenario_count == 4
-    assert verification.group_count == 2
-    assert verification.main_candidate_event_count == 8
-    assert verification.activation_target_event_count == 4
-    assert verification.protected_event_count == 4
-    assert verification.parent_pair_count == 8
-    assert verification.revert_pair_count == 8
-    assert verification.placebo_pair_count == 8
-    assert verification.mean_paired_gain_vs_parent == 0.5
-    assert verification.mean_paired_gain_vs_revert == 0.5
-    assert verification.mean_paired_gain_vs_placebo == 0.5
+    assert verification.family_count == 7
+    assert verification.surface_count == 6
+    assert verification.scenario_count == 28
+    assert verification.group_count == 7
+    assert verification.main_candidate_event_count == 28
+    assert verification.repairable_event_count == 7
+    assert verification.null_event_count == 7
+    assert verification.unrepairable_event_count == 7
+    assert verification.shift_hard_negative_event_count == 7
+    assert verification.repairable_behavior_rate == 1.0
+    assert verification.null_behavior_rate == 1.0
+    assert verification.unrepairable_behavior_rate == 0.0
+    assert verification.shift_hard_negative_behavior_rate == 1.0
+    assert verification.parent_pair_count == 28
+    assert verification.revert_pair_count == 28
+    assert verification.placebo_pair_count == 28
+    assert verification.mean_paired_gain_vs_parent == 11 / 28
+    assert verification.mean_paired_gain_vs_revert == 11 / 28
+    assert verification.mean_paired_gain_vs_placebo == 11 / 28
     assert "mechanism_passed" not in type(verification).model_fields
     assert "activation_passed" not in type(verification).model_fields
 
@@ -533,9 +549,9 @@ def test_runtime_branch_is_signed_actual_middleware_event_and_repeats_are_paired
 
 
 def test_mechanism_rejects_cherry_picked_batch_even_with_real_outcomes(
-    catalog_results: tuple[_LoopResult, ...],
+    routed_result: _LoopResult,
 ) -> None:
-    result = next(item for item in catalog_results if item.mechanism.verification.mechanism_passed)
+    result = routed_result
     main = result.store.get_json(result.batch_refs[0], HarnessFaultGradedBatch)
     forged = main.model_copy(update={"outcome_refs": main.outcome_refs[:-2]})
     forged_ref = result.store.put_json(
@@ -554,16 +570,14 @@ def test_mechanism_rejects_cherry_picked_batch_even_with_real_outcomes(
 
 
 def test_mechanism_rejects_tampered_signed_branch_event_inside_complete_batch(
-    catalog_results: tuple[_LoopResult, ...],
+    routed_result: _LoopResult,
 ) -> None:
-    result = next(item for item in catalog_results if item.mechanism.verification.mechanism_passed)
+    result = routed_result
     main = result.store.get_json(result.batch_refs[0], HarnessFaultGradedBatch)
     outcome = result.store.get_json(main.outcome_refs[0], HarnessFaultGradedOutcome)
     event = result.store.get_json(outcome.runtime_event_ref, AttestedRuntimeBranchEvent)
     other_branch = (
-        RuntimeBranch.LITERAL
-        if event.branch is RuntimeBranch.CANONICAL
-        else RuntimeBranch.CANONICAL
+        RuntimeBranch.LEGACY if event.branch is RuntimeBranch.SAFE else RuntimeBranch.SAFE
     )
     forged_event_ref = result.store.put_json(
         event.model_copy(update={"branch": other_branch}),
@@ -602,10 +616,10 @@ def _replace_main_batch(
 
 @pytest.mark.parametrize("tail_kind", ["nonexistent", "foreign", "forged"])
 def test_final_verifier_replays_and_rejects_untrusted_usage_tail(
-    catalog_results: tuple[_LoopResult, ...],
+    routed_result: _LoopResult,
     tail_kind: str,
 ) -> None:
-    result = catalog_results[0]
+    result = routed_result
     main = result.store.get_json(result.batch_refs[0], HarnessFaultGradedBatch)
     if tail_kind == "nonexistent":
         tail = ArtifactRef(
@@ -637,9 +651,9 @@ def test_final_verifier_replays_and_rejects_untrusted_usage_tail(
 
 
 def test_final_verifier_rejects_forged_usage_totals(
-    catalog_results: tuple[_LoopResult, ...],
+    routed_result: _LoopResult,
 ) -> None:
-    result = catalog_results[0]
+    result = routed_result
     main = result.store.get_json(result.batch_refs[0], HarnessFaultGradedBatch)
     forged_usage = main.usage.model_copy(
         update={
@@ -662,9 +676,9 @@ def test_final_verifier_rejects_forged_usage_totals(
 
 
 def test_final_verifier_rejects_receipt_with_wrong_preflight(
-    catalog_results: tuple[_LoopResult, ...],
+    routed_result: _LoopResult,
 ) -> None:
-    result = catalog_results[0]
+    result = routed_result
     main = result.store.get_json(result.batch_refs[0], HarnessFaultGradedBatch)
     other = result.store.get_json(result.batch_refs[1], HarnessFaultGradedBatch)
     receipt = result.store.get_json(main.usage.receipt_refs[0], ExecutionReceipt)
@@ -699,9 +713,9 @@ def test_final_verifier_rejects_receipt_with_wrong_preflight(
 
 
 def test_final_verifier_rejects_disconnected_reservation_chain(
-    catalog_results: tuple[_LoopResult, ...],
+    routed_result: _LoopResult,
 ) -> None:
-    result = catalog_results[0]
+    result = routed_result
     main = result.store.get_json(result.batch_refs[0], HarnessFaultGradedBatch)
     receipts = [result.store.get_json(ref, ExecutionReceipt) for ref in main.usage.receipt_refs]
     selected_index, receipt, reservation = next(
@@ -757,12 +771,12 @@ def test_final_verifier_rejects_disconnected_reservation_chain(
 
 
 def test_final_verifier_rejects_foreign_live_ledger(
-    catalog_results: tuple[_LoopResult, ...],
+    routed_result: _LoopResult,
 ) -> None:
-    result = catalog_results[0]
+    result = routed_result
     foreign = AttemptLedger(
         result.store,
-        ledger_id="harness-fault-v3-foreign-ledger",
+        ledger_id="harness-fault-v4-foreign-ledger",
         budget=result.ledgers[0].budget,
     )
 
@@ -777,7 +791,10 @@ def test_final_verifier_rejects_foreign_live_ledger(
 
 
 def test_final_verifier_rejects_ledger_advance_after_grading(tmp_path) -> None:
-    result = _run_rule(tmp_path / "advanced", 0)
+    result = _run_rule(
+        tmp_path / "advanced",
+        candidate_rule_ids().index(RepairRuleId.ROUTED_POLICY),
+    )
     ledger = result.ledgers[0]
     reservation_ref = ledger.reserve(
         task_fingerprint="1" * 64,
@@ -824,9 +841,16 @@ def test_schedule_rejects_task_subset_before_any_execution(tmp_path) -> None:
         )
 
 
-def test_scope_is_explicitly_one_family_vertical_slice() -> None:
-    assert tuple(FaultFamily) == (FaultFamily.CONDITIONAL_TRIM_CASEFOLD,)
-    assert len(candidate_rule_ids()) == 3
+def test_scope_is_explicitly_multi_surface_but_capability_claims_remain_closed() -> None:
+    assert len(FaultFamily) == 7
+    assert len(candidate_rule_ids()) == 6
     assert (
-        "one-family" in HarnessFaultMechanismVerification.model_fields["verifier_version"].default
+        "multi-surface"
+        in HarnessFaultMechanismVerification.model_fields["verifier_version"].default
+    )
+    assert (
+        HarnessFaultMechanismVerification.model_fields[
+            "supports_optimizer_capability_claim"
+        ].default
+        is False
     )

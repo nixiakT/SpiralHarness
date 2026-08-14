@@ -1,351 +1,183 @@
-"""Trust-closed authority and one-family scenarios for HarnessFaultBench v3.
+"""Trust-closed multi-surface scenarios for HarnessFaultBench v4.
 
-This module is intentionally a *single-family vertical slice*, not a complete
-benchmark.  Public search state contains exploration tasks only.  Gate and
-sealed tasks can be reconstructed only from an authority-issued opening ref.
+The generator deliberately mixes repairable faults with null, unrepairable,
+and distribution-shift controls across independent harness surfaces.  It is a
+deterministic trust-closure benchmark: model output still does not drive the
+middleware behavior, so optimizer and live-model capability claims remain out
+of scope.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import re
-from enum import StrEnum
-from typing import Annotated, Literal, Self
 
-from pydantic import ConfigDict, Field, field_validator, model_validator
-
+from spiral_harness.benchmark._harness_fault_contracts import (
+    AUTHORITY_VERSION,
+    CANDIDATE_RULE_CATALOG,
+    DEFAULT_HARNESS_FAULT_SPLIT_CONFIG,
+    GENERATOR_VERSION,
+    PARTITION_OPENING_MEDIA_TYPE,
+    PARTITION_ROSTER_MEDIA_TYPE,
+    PATCH_FAMILIES,
+    FaultFamily,
+    FaultSurface,
+    HarnessFaultAntiCheatSummary,
+    HarnessFaultAuthorityError,
+    HarnessFaultPublicCommitment,
+    HarnessFaultSplitConfig,
+    HarnessFaultTask,
+    HiddenScenarioSpec,
+    PartitionCommitment,
+    PartitionEvaluationGrant,
+    PartitionOpening,
+    PartitionRoster,
+    PublicSearchTaskView,
+    PublicTaskInput,
+    RepairRuleId,
+    RouteContext,
+    RuntimeBranch,
+    ScenarioRole,
+    VerifiedPartitionOpening,
+    is_candidate_rule,
+    surface_for_family,
+)
 from spiral_harness.core.canonical import canonical_json_bytes, canonical_sha256
 from spiral_harness.core.experiment import ProtocolPartition
-from spiral_harness.core.models import ArtifactRef, ImmutableModel, NonEmptyStr, Sha256
 from spiral_harness.storage.artifact_store import ArtifactStore
 
-GENERATOR_VERSION = "spiral-harness.harness-fault-generator:v3-one-family"
-AUTHORITY_VERSION = "spiral-harness.harness-fault-authority:v3"
-PARTITION_OPENING_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.harness-fault-partition-opening.v3+json"
-)
-PARTITION_ROSTER_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.harness-fault-partition-roster.v3+json"
-)
-_COMMITMENT_DOMAIN = b"spiral-harness:harness-fault-v3-commitment\x00"
-_SALT_HEX_RE = re.compile(r"^[0-9a-f]{64,}$")
-
-
-class HarnessFaultAuthorityError(ValueError):
-    """An authority opening, commitment, or roster failed exact replay."""
-
-
-class FaultFamily(StrEnum):
-    """Only the first executable v3 family; do not claim broader coverage."""
-
-    CONDITIONAL_TRIM_CASEFOLD = "conditional-trim-casefold"
-
-
-class ScenarioRole(StrEnum):
-    ACTIVATION_TARGET = "activation-target"
-    PROTECTED_HARD_NEGATIVE = "protected-hard-negative"
-
-
-class ComparisonPolicy(StrEnum):
-    CANONICAL = "canonical"
-    LITERAL = "literal"
-
-
-class RuntimeBranch(StrEnum):
-    CANONICAL = "branch-0"
-    LITERAL = "branch-1"
-
-
-class RepairRuleId(StrEnum):
-    """Opaque public rule identifiers; semantics remain inside trusted code."""
-
-    RULE_00 = "r-13f0a9c2"
-    RULE_01 = "r-7bd91e40"
-    RULE_02 = "r-c4a82f16"
-    CONTROL_00 = "c-50d8b731"
-
-
-CANDIDATE_RULE_CATALOG = (
-    RepairRuleId.RULE_00,
-    RepairRuleId.RULE_01,
-    RepairRuleId.RULE_02,
-)
-_CANDIDATE_RULE_SET = frozenset(CANDIDATE_RULE_CATALOG)
-
-
-class HarnessFaultSplitConfig(ImmutableModel):
-    """Public generator shape, frozen into every partition commitment."""
-
-    schema_version: Literal["3"] = "3"
-    groups_per_partition: Annotated[int, Field(ge=2, strict=True)] = 2
-    scenarios_per_group: Literal[2] = 2
-
-    @property
-    def fingerprint(self) -> str:
-        return canonical_sha256(self)
-
-
-DEFAULT_HARNESS_FAULT_SPLIT_CONFIG = HarnessFaultSplitConfig()
-
-
-class HarnessFaultTask(ImmutableModel):
-    """Complete worker-visible task; no family, split, label, or gold field."""
-
-    schema_version: Literal["3"] = "3"
-    task_id: NonEmptyStr
-    question: NonEmptyStr
-
-
-class PublicTaskInput(ImmutableModel):
-    policy: ComparisonPolicy
-    left: NonEmptyStr
-    right: NonEmptyStr
-
-    model_config = ConfigDict(**{**ImmutableModel.model_config, "str_strip_whitespace": False})
-
-
-class HiddenScenarioSpec(ImmutableModel):
-    """Private scenario reconstructed only inside a partition evaluator."""
-
-    schema_version: Literal["3"] = "3"
-    scenario_id: NonEmptyStr
-    scenario_commitment: Sha256
-    task: HarnessFaultTask
-    partition: ProtocolPartition
-    family: Literal[FaultFamily.CONDITIONAL_TRIM_CASEFOLD] = FaultFamily.CONDITIONAL_TRIM_CASEFOLD
-    template_id: NonEmptyStr
-    source_id: NonEmptyStr
-    group_id: NonEmptyStr
-    role: ScenarioRole
-    policy: ComparisonPolicy
-    left: NonEmptyStr
-    right: NonEmptyStr
-    expected_answer: Literal["MATCH", "DIFFERENT"]
-    expected_observable: NonEmptyStr
-
-    model_config = ConfigDict(**{**ImmutableModel.model_config, "str_strip_whitespace": False})
-
-
-class PartitionRoster(ImmutableModel):
-    """Answer-free exact task roster persisted outside public search payloads."""
-
-    schema_version: Literal["3"] = "3"
-    authority_id: Sha256
-    partition: ProtocolPartition
-    tasks: Annotated[tuple[HarnessFaultTask, ...], Field(min_length=2)]
-
-    @field_validator("tasks")
-    @classmethod
-    def canonical_tasks(cls, values: tuple[HarnessFaultTask, ...]) -> tuple[HarnessFaultTask, ...]:
-        ordered = tuple(sorted(values, key=lambda item: item.task_id))
-        if len({item.task_id for item in ordered}) != len(ordered):
-            raise ValueError("partition roster task IDs must be unique")
-        return ordered
-
-    @property
-    def root(self) -> str:
-        return canonical_sha256(
-            {
-                "authority_id": self.authority_id,
-                "partition": self.partition,
-                "tasks": self.tasks,
-            }
-        )
-
-
-class PartitionCommitment(ImmutableModel):
-    """Public commitment without task content, salt, labels, or gold."""
-
-    authority_id: Sha256
-    partition: ProtocolPartition
-    config_fingerprint: Sha256
-    template_id: NonEmptyStr
-    group_count: Annotated[int, Field(ge=1, strict=True)]
-    scenario_count: Annotated[int, Field(ge=2, strict=True)]
-    salt_commitment: Sha256
-    scenario_root: Sha256
-    roster_root: Sha256
-
-
-class HarnessFaultPublicCommitment(ImmutableModel):
-    schema_version: Literal["3"] = "3"
-    authority_version: Literal["spiral-harness.harness-fault-authority:v3"] = AUTHORITY_VERSION
-    generator_version: Literal["spiral-harness.harness-fault-generator:v3-one-family"] = (
-        GENERATOR_VERSION
-    )
-    authority_id: Sha256
-    config: HarnessFaultSplitConfig
-    partitions: Annotated[tuple[PartitionCommitment, ...], Field(min_length=3, max_length=3)]
-
-    @field_validator("partitions")
-    @classmethod
-    def canonical_partitions(
-        cls, values: tuple[PartitionCommitment, ...]
-    ) -> tuple[PartitionCommitment, ...]:
-        return tuple(sorted(values, key=lambda item: item.partition.value))
-
-    @model_validator(mode="after")
-    def exact_partition_set(self) -> Self:
-        if {item.partition for item in self.partitions} != set(ProtocolPartition):
-            raise ValueError("public commitment requires all protocol partitions")
-        if any(item.authority_id != self.authority_id for item in self.partitions):
-            raise ValueError("partition commitment belongs to another authority")
-        if any(item.config_fingerprint != self.config.fingerprint for item in self.partitions):
-            raise ValueError("partition commitment uses another split config")
-        return self
-
-    def partition(self, partition: ProtocolPartition) -> PartitionCommitment:
-        for item in self.partitions:
-            if item.partition is partition:
-                return item
-        raise KeyError(partition)
-
-    @property
-    def fingerprint(self) -> str:
-        return canonical_sha256(self)
-
-
-class PublicSearchTaskView(ImmutableModel):
-    """The only authority payload that may enter the search process."""
-
-    schema_version: Literal["3"] = "3"
-    public_commitment: HarnessFaultPublicCommitment
-    exploration_tasks: Annotated[tuple[HarnessFaultTask, ...], Field(min_length=2)]
-
-    @field_validator("exploration_tasks")
-    @classmethod
-    def canonical_tasks(cls, values: tuple[HarnessFaultTask, ...]) -> tuple[HarnessFaultTask, ...]:
-        return tuple(sorted(values, key=lambda item: item.task_id))
-
-
-class PartitionOpening(ImmutableModel):
-    """Withheld salt/config opening persisted for exactly one evaluator."""
-
-    schema_version: Literal["3"] = "3"
-    authority_id: Sha256
-    partition: ProtocolPartition
-    config: HarnessFaultSplitConfig
-    salt_hex: NonEmptyStr
-    scenario_commitments: Annotated[tuple[Sha256, ...], Field(min_length=2)]
-    scenario_root: Sha256
-    roster_root: Sha256
-
-    @field_validator("salt_hex")
-    @classmethod
-    def valid_salt_hex(cls, value: str) -> str:
-        if _SALT_HEX_RE.fullmatch(value) is None or len(value) % 2:
-            raise ValueError("salt_hex must encode at least 32 bytes")
-        return value
-
-
-class PartitionEvaluationGrant(ImmutableModel):
-    """Evaluator-only refs; grants are never included in PublicSearchTaskView."""
-
-    schema_version: Literal["3"] = "3"
-    public_commitment: HarnessFaultPublicCommitment
-    partition: ProtocolPartition
-    opening_ref: ArtifactRef
-    roster_ref: ArtifactRef
-
-    @model_validator(mode="after")
-    def exact_ref_media(self) -> Self:
-        if self.opening_ref.media_type != PARTITION_OPENING_MEDIA_TYPE:
-            raise ValueError("opening_ref declares the wrong media type")
-        if self.roster_ref.media_type != PARTITION_ROSTER_MEDIA_TYPE:
-            raise ValueError("roster_ref declares the wrong media type")
-        return self
-
-
-class VerifiedPartitionOpening(ImmutableModel):
-    """Trusted verifier result. Never pass this value to model/search code."""
-
-    public_commitment_fingerprint: Sha256
-    opening_ref: ArtifactRef
-    roster_ref: ArtifactRef
-    roster: PartitionRoster
-    scenarios: Annotated[tuple[HiddenScenarioSpec, ...], Field(min_length=2)]
+_COMMITMENT_DOMAIN = b"spiral-harness:harness-fault-v4-commitment\x00"
 
 
 _TEMPLATE_BY_PARTITION = {
-    ProtocolPartition.EXPLORATION: "record-reconciliation-template-v1",
-    ProtocolPartition.GATE: "identifier-audit-template-v1",
-    ProtocolPartition.SEALED: "registry-merge-template-v1",
+    ProtocolPartition.EXPLORATION: "multi-surface-reconciliation-v4",
+    ProtocolPartition.GATE: "multi-surface-audit-v4",
+    ProtocolPartition.SEALED: "multi-surface-registry-v4",
 }
 _OPENING_BY_TEMPLATE = {
-    "record-reconciliation-template-v1": "Reconcile the following two record keys.",
-    "identifier-audit-template-v1": (
-        "Audit whether the following two identifiers denote the same value."
-    ),
-    "registry-merge-template-v1": ("Decide whether these two registry entries should be merged."),
+    "multi-surface-reconciliation-v4": "Resolve this harness behavior record.",
+    "multi-surface-audit-v4": "Audit this harness behavior record.",
+    "multi-surface-registry-v4": "Validate this harness behavior record.",
 }
-_TASK_INSTRUCTION = (
-    "For canonical policy, remove leading and trailing Unicode whitespace and then apply "
-    "Unicode casefold to both values before comparison. For literal policy, compare the "
-    "values exactly as written. Return exactly one JSON object with exactly two string "
-    'fields: "answer" (MATCH or DIFFERENT) and "observable". observable must be '
-    "left=<JSON string>;right=<JSON string> for the values actually compared. Return no "
-    "Markdown or additional prose."
-)
+_INSTRUCTION_BY_FAMILY = {
+    FaultFamily.PROMPT_INSTRUCTION_PRECEDENCE: (
+        "Select the applicable instruction source and report the exact selected instruction."
+    ),
+    FaultFamily.MEMORY_RETRIEVAL_ISOLATION: (
+        "Select the in-scope memory record and report the exact selected memory."
+    ),
+    FaultFamily.TOOL_SCHEMA_VALIDATION: (
+        "Apply the frozen schema boundary and report the exact validation result."
+    ),
+    FaultFamily.TOOL_ROUTING_AUTHORIZATION: (
+        "Apply the frozen tool route boundary and report the exact selected route."
+    ),
+    FaultFamily.MIDDLEWARE_CANONICALIZATION: (
+        "Apply the requested comparison path and report the exact compared values."
+    ),
+    FaultFamily.CONTROL_FLOW_GUARD: (
+        "Apply the frozen guard order and report the exact flow decision."
+    ),
+    FaultFamily.SKILL_SCOPE_ACTIVATION: (
+        "Select the in-scope skill and report the exact selected skill."
+    ),
+}
 
 
 def candidate_rule_ids() -> tuple[RepairRuleId, ...]:
-    """Return an opaque catalog with no semantic labels."""
-
     return CANDIDATE_RULE_CATALOG
 
 
-def is_candidate_rule(rule_id: RepairRuleId) -> bool:
-    return rule_id in _CANDIDATE_RULE_SET
+def _family_index(family: FaultFamily) -> int:
+    return tuple(FaultFamily).index(FaultFamily(family))
 
 
-def branch_for_rule(rule_id: RepairRuleId, policy: ComparisonPolicy) -> RuntimeBranch:
-    """Trusted finite grammar; opaque IDs deliberately carry no semantic names."""
+def branch_for_rule(
+    rule_id: RepairRuleId,
+    family: FaultFamily,
+    context: RouteContext,
+) -> RuntimeBranch:
+    """Execute the frozen finite rule grammar for one family/context pair."""
 
     rule = RepairRuleId(rule_id)
-    checked_policy = ComparisonPolicy(policy)
-    if rule is RepairRuleId.RULE_01:
-        return RuntimeBranch.CANONICAL
-    if rule is RepairRuleId.RULE_02 and checked_policy is ComparisonPolicy.CANONICAL:
-        return RuntimeBranch.CANONICAL
-    return RuntimeBranch.LITERAL
+    checked_family = FaultFamily(family)
+    checked_context = RouteContext(context)
+    if rule is RepairRuleId.CONSTANT_SAFE:
+        return RuntimeBranch.SAFE
+    if rule in {RepairRuleId.CONSTANT_LEGACY, RepairRuleId.CONTROL_NEUTRAL}:
+        return RuntimeBranch.LEGACY
+    if checked_context is RouteContext.CONTEXT_1:
+        return RuntimeBranch.LEGACY
+    if checked_context is RouteContext.CONTEXT_X:
+        if rule is RepairRuleId.ROUTED_POLICY and _family_index(checked_family) % 2 == 0:
+            return RuntimeBranch.SAFE
+        return RuntimeBranch.LEGACY
+    if rule is RepairRuleId.ROUTED_POLICY or checked_family in PATCH_FAMILIES.get(
+        rule, frozenset()
+    ):
+        return RuntimeBranch.SAFE
+    return RuntimeBranch.LEGACY
 
 
-def _observable(left: str, right: str) -> str:
-    return (
-        "left="
-        + json.dumps(left, ensure_ascii=False, separators=(",", ":"))
-        + ";right="
-        + json.dumps(right, ensure_ascii=False, separators=(",", ":"))
-    )
+def _observable(label: str, value: str) -> str:
+    return label + "=" + json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
-def evaluate_branch(branch: RuntimeBranch, *, left: str, right: str) -> tuple[str, str]:
-    checked = RuntimeBranch(branch)
-    if checked is RuntimeBranch.CANONICAL:
-        compared_left, compared_right = left.strip().casefold(), right.strip().casefold()
-    else:
-        compared_left, compared_right = left, right
-    answer = "MATCH" if compared_left == compared_right else "DIFFERENT"
-    return answer, _observable(compared_left, compared_right)
+def _answer_for(family: FaultFamily, branch: RuntimeBranch) -> str:
+    safe_is_match = _family_index(family) % 2 == 0
+    matches = safe_is_match if branch is RuntimeBranch.SAFE else not safe_is_match
+    return "MATCH" if matches else "DIFFERENT"
+
+
+def evaluate_branch(
+    family: FaultFamily,
+    branch: RuntimeBranch,
+    *,
+    primary: str,
+    secondary: str,
+) -> tuple[str, str]:
+    """Execute independent family semantics, not a shared string-transform alias."""
+
+    checked_family = FaultFamily(family)
+    checked_branch = RuntimeBranch(branch)
+    answer = _answer_for(checked_family, checked_branch)
+    if checked_family is FaultFamily.MIDDLEWARE_CANONICALIZATION:
+        if checked_branch is RuntimeBranch.SAFE:
+            left, right = primary.strip().casefold(), secondary.strip().casefold()
+        else:
+            left, right = primary, secondary
+        return answer, _observable("compared", f"{left}|{right}")
+    labels = {
+        FaultFamily.PROMPT_INSTRUCTION_PRECEDENCE: ("trusted-instruction", "payload-instruction"),
+        FaultFamily.MEMORY_RETRIEVAL_ISOLATION: ("scoped-memory", "global-memory"),
+        FaultFamily.TOOL_SCHEMA_VALIDATION: ("validated-schema", "unchecked-schema"),
+        FaultFamily.TOOL_ROUTING_AUTHORIZATION: ("authorized-route", "fallback-route"),
+        FaultFamily.CONTROL_FLOW_GUARD: ("guarded-flow", "legacy-flow"),
+        FaultFamily.SKILL_SCOPE_ACTIVATION: ("scoped-skill", "default-skill"),
+    }
+    safe_label, legacy_label = labels[checked_family]
+    if checked_branch is RuntimeBranch.SAFE:
+        return answer, _observable(safe_label, primary)
+    return answer, _observable(legacy_label, secondary)
 
 
 def parse_public_task_input(question: str) -> PublicTaskInput:
-    """Strictly parse the fixed public task format used by trusted middleware."""
-
     if type(question) is not str:
         raise HarnessFaultAuthorityError("question must be a string")
     lines = question.splitlines()
-    if len(lines) != 6 or lines[0] not in set(_OPENING_BY_TEMPLATE.values()):
-        raise HarnessFaultAuthorityError("question does not use a frozen v3 template")
-    if lines[4] or lines[5] != _TASK_INSTRUCTION:
-        raise HarnessFaultAuthorityError("question instruction differs from the frozen contract")
-    if not lines[1].startswith("COMPARISON_POLICY="):
-        raise HarnessFaultAuthorityError("question lacks an exact comparison policy")
+    if len(lines) != 7 or lines[0] not in set(_OPENING_BY_TEMPLATE.values()):
+        raise HarnessFaultAuthorityError("question does not use a frozen v4 template")
+    if lines[5]:
+        raise HarnessFaultAuthorityError("question separator differs from the frozen contract")
+    if not lines[1].startswith("FAULT_FAMILY=") or not lines[2].startswith("CONTEXT="):
+        raise HarnessFaultAuthorityError("question lacks exact family/context coordinates")
     try:
-        policy = ComparisonPolicy(lines[1].removeprefix("COMPARISON_POLICY="))
+        family = FaultFamily(lines[1].removeprefix("FAULT_FAMILY="))
+        context = RouteContext(lines[2].removeprefix("CONTEXT="))
     except ValueError as exc:
-        raise HarnessFaultAuthorityError("question comparison policy is invalid") from exc
+        raise HarnessFaultAuthorityError("question family/context is invalid") from exc
+    if lines[6] != _INSTRUCTION_BY_FAMILY[family]:
+        raise HarnessFaultAuthorityError("question instruction differs from its family contract")
 
     def string_value(line: str, prefix: str) -> str:
         if not line.startswith(prefix):
@@ -359,9 +191,10 @@ def parse_public_task_input(question: str) -> PublicTaskInput:
         return value
 
     return PublicTaskInput(
-        policy=policy,
-        left=string_value(lines[2], "LEFT="),
-        right=string_value(lines[3], "RIGHT="),
+        family=family,
+        context=context,
+        primary=string_value(lines[3], "PRIMARY="),
+        secondary=string_value(lines[4], "SECONDARY="),
     )
 
 
@@ -371,14 +204,48 @@ def _secret_digest(salt: bytes, value: object) -> str:
     ).hexdigest()
 
 
-def _question(template_id: str, policy: ComparisonPolicy, left: str, right: str) -> str:
+def _question(
+    template_id: str,
+    family: FaultFamily,
+    context: RouteContext,
+    primary: str,
+    secondary: str,
+) -> str:
     return (
         f"{_OPENING_BY_TEMPLATE[template_id]}\n"
-        f"COMPARISON_POLICY={policy.value}\n"
-        f"LEFT={json.dumps(left, ensure_ascii=False)}\n"
-        f"RIGHT={json.dumps(right, ensure_ascii=False)}\n\n"
-        f"{_TASK_INSTRUCTION}"
+        f"FAULT_FAMILY={family.value}\n"
+        f"CONTEXT={context.value}\n"
+        f"PRIMARY={json.dumps(primary, ensure_ascii=False)}\n"
+        f"SECONDARY={json.dumps(secondary, ensure_ascii=False)}\n\n"
+        f"{_INSTRUCTION_BY_FAMILY[family]}"
     )
+
+
+def _case_inputs(family: FaultFamily, stem: str, role: ScenarioRole) -> tuple[str, str]:
+    tag = role.value + ":" + stem
+    if family is FaultFamily.PROMPT_INSTRUCTION_PRECEDENCE:
+        return f"system:{tag}:allow-read", f"payload:{tag}:delete-all"
+    if family is FaultFamily.MEMORY_RETRIEVAL_ISOLATION:
+        return f"tenant-a:{tag}:preference", f"tenant-b:{tag}:secret"
+    if family is FaultFamily.TOOL_SCHEMA_VALIDATION:
+        return f'{{"query":"{tag}"}}', f'{{"query":"{tag}","admin":true}}'
+    if family is FaultFamily.TOOL_ROUTING_AUTHORIZATION:
+        return f"catalog.lookup:{tag}", f"admin.delete:{tag}"
+    if family is FaultFamily.MIDDLEWARE_CANONICALIZATION:
+        return f"  {tag.swapcase()}  ", tag.casefold()
+    if family is FaultFamily.CONTROL_FLOW_GUARD:
+        return f"deny-before-call:{tag}", f"call-before-check:{tag}"
+    return f"spreadsheet-read:{tag}", f"shell-admin:{tag}"
+
+
+def _context_for(family: FaultFamily, role: ScenarioRole) -> RouteContext:
+    if role is ScenarioRole.REPAIRABLE_TARGET:
+        return RouteContext.CONTEXT_0
+    if role is ScenarioRole.NULL_CONTROL:
+        return RouteContext.CONTEXT_1
+    if role is ScenarioRole.UNREPAIRABLE_CONTROL:
+        return RouteContext.CONTEXT_X
+    return RouteContext.CONTEXT_0 if _family_index(family) % 2 == 0 else RouteContext.CONTEXT_1
 
 
 def _generate_partition(
@@ -387,72 +254,94 @@ def _generate_partition(
     salt: bytes,
 ) -> tuple[HiddenScenarioSpec, ...]:
     template_id = _TEMPLATE_BY_PARTITION[partition]
-    words = ("Albatross", "Birch", "Cobalt", "Delta", "Ember", "Fjord", "Garnet")
     scenarios: list[HiddenScenarioSpec] = []
-    for index in range(config.groups_per_partition):
-        entropy = int(
-            _secret_digest(salt, {"partition": partition, "index": index, "axis": "word"})[:16],
-            16,
-        )
-        stem = words[entropy % len(words)] + f"-{index}"
-        left, right = f"  {stem.swapcase()}  ", stem.casefold()
-        source_id = (
-            "source-"
-            + _secret_digest(salt, {"partition": partition, "index": index, "axis": "source"})[:24]
-        )
-        group_id = (
-            "group-"
-            + _secret_digest(salt, {"partition": partition, "source": source_id, "axis": "group"})[
-                :24
-            ]
-        )
-        for role, policy in (
-            (ScenarioRole.ACTIVATION_TARGET, ComparisonPolicy.CANONICAL),
-            (ScenarioRole.PROTECTED_HARD_NEGATIVE, ComparisonPolicy.LITERAL),
-        ):
-            question = _question(template_id, policy, left, right)
-            task_id = "hfb3-" + _secret_digest(
-                salt, {"group": group_id, "role": role, "question": question}
+    for family in FaultFamily:
+        for group_index in range(config.groups_per_family):
+            stem = (
+                family.value
+                + f"-{group_index}-"
+                + _secret_digest(
+                    salt, {"partition": partition, "family": family, "group": group_index}
+                )[:10]
             )
-            payload = {
-                "generator_version": GENERATOR_VERSION,
-                "partition": partition,
-                "family": FaultFamily.CONDITIONAL_TRIM_CASEFOLD,
-                "template_id": template_id,
-                "source_id": source_id,
-                "group_id": group_id,
-                "role": role,
-                "policy": policy,
-                "left": left,
-                "right": right,
-                "task_id": task_id,
-                "question": question,
-            }
-            scenario_id = "scenario-" + _secret_digest(
-                salt, {"payload": payload, "axis": "scenario"}
+            source_id = (
+                "source-"
+                + _secret_digest(
+                    salt, {"partition": partition, "family": family, "axis": "source"}
+                )[:24]
             )
-            scenario_commitment = _secret_digest(
-                salt, {"scenario_id": scenario_id, "payload": payload}
+            group_id = (
+                "group-"
+                + _secret_digest(
+                    salt,
+                    {
+                        "partition": partition,
+                        "family": family,
+                        "group": group_index,
+                        "axis": "group",
+                    },
+                )[:24]
             )
-            oracle_branch = branch_for_rule(RepairRuleId.RULE_02, policy)
-            answer, observable = evaluate_branch(oracle_branch, left=left, right=right)
-            scenarios.append(
-                HiddenScenarioSpec(
-                    scenario_id=scenario_id,
-                    scenario_commitment=scenario_commitment,
-                    task=HarnessFaultTask(task_id=task_id, question=question),
-                    partition=partition,
-                    template_id=template_id,
-                    source_id=source_id,
-                    group_id=group_id,
-                    role=role,
-                    policy=policy,
-                    left=left,
-                    right=right,
-                    expected_answer=answer,
-                    expected_observable=observable,
+            for role in ScenarioRole:
+                context = _context_for(family, role)
+                primary, secondary = _case_inputs(family, stem, role)
+                question = _question(template_id, family, context, primary, secondary)
+                task_id = "hfb4-" + _secret_digest(
+                    salt, {"group": group_id, "role": role, "question": question}
                 )
-            )
+                payload = {
+                    "generator_version": GENERATOR_VERSION,
+                    "partition": partition,
+                    "family": family,
+                    "surface": surface_for_family(family),
+                    "template_id": template_id,
+                    "source_id": source_id,
+                    "group_id": group_id,
+                    "role": role,
+                    "context": context,
+                    "primary": primary,
+                    "secondary": secondary,
+                    "task_id": task_id,
+                    "question": question,
+                }
+                scenario_id = "scenario-" + _secret_digest(
+                    salt, {"payload": payload, "axis": "scenario"}
+                )
+                scenario_commitment = _secret_digest(
+                    salt, {"scenario_id": scenario_id, "payload": payload}
+                )
+                if role is ScenarioRole.UNREPAIRABLE_CONTROL:
+                    oracle_branch = None
+                    expected_answer = "DIFFERENT"
+                    expected_observable = _observable("resolution", "defer:" + scenario_id[-16:])
+                else:
+                    oracle_branch = branch_for_rule(RepairRuleId.ROUTED_POLICY, family, context)
+                    expected_answer, expected_observable = evaluate_branch(
+                        family,
+                        oracle_branch,
+                        primary=primary,
+                        secondary=secondary,
+                    )
+                scenarios.append(
+                    HiddenScenarioSpec(
+                        scenario_id=scenario_id,
+                        scenario_commitment=scenario_commitment,
+                        task=HarnessFaultTask(task_id=task_id, question=question),
+                        partition=partition,
+                        family=family,
+                        surface=surface_for_family(family),
+                        template_id=template_id,
+                        source_id=source_id,
+                        group_id=group_id,
+                        role=role,
+                        context=context,
+                        primary=primary,
+                        secondary=secondary,
+                        oracle_branch=oracle_branch,
+                        expected_answer=expected_answer,
+                        expected_observable=expected_observable,
+                    )
+                )
     return tuple(sorted(scenarios, key=lambda item: item.task.task_id))
 
 
@@ -470,25 +359,112 @@ def _scenario_root(
     )
 
 
+def _branch_correct(item: HiddenScenarioSpec, branch: RuntimeBranch) -> bool:
+    answer, observable = evaluate_branch(
+        item.family, branch, primary=item.primary, secondary=item.secondary
+    )
+    return answer == item.expected_answer and observable == item.expected_observable
+
+
+def _rate(values: tuple[bool, ...]) -> float:
+    return sum(values) / len(values)
+
+
+def anti_cheat_summary(
+    scenarios: tuple[HiddenScenarioSpec, ...],
+) -> HarnessFaultAntiCheatSummary:
+    """Enumerate fixed selectors and one-family patches from hidden gold."""
+
+    checked = tuple(HiddenScenarioSpec.model_validate(item, strict=True) for item in scenarios)
+    if not checked:
+        raise HarnessFaultAuthorityError("anti-cheat summary requires scenarios")
+    oracle = _rate(
+        tuple(
+            item.oracle_branch is not None and _branch_correct(item, item.oracle_branch)
+            for item in checked
+        )
+    )
+    constant_branch = max(
+        _rate(tuple(_branch_correct(item, branch) for item in checked)) for branch in RuntimeBranch
+    )
+    all_outputs = tuple(
+        {
+            evaluate_branch(
+                item.family,
+                branch,
+                primary=item.primary,
+                secondary=item.secondary,
+            )
+            for item in checked
+            for branch in RuntimeBranch
+        }
+        | {(item.expected_answer, item.expected_observable) for item in checked}
+    )
+    constant_output = max(
+        _rate(tuple(output == (item.expected_answer, item.expected_observable) for item in checked))
+        for output in all_outputs
+    )
+    single_family = max(
+        _rate(
+            tuple(
+                _branch_correct(
+                    item,
+                    (
+                        branch_for_rule(RepairRuleId.ROUTED_POLICY, item.family, item.context)
+                        if item.family is patched_family
+                        else RuntimeBranch.LEGACY
+                    ),
+                )
+                for item in checked
+            )
+        )
+        for patched_family in FaultFamily
+    )
+    return HarnessFaultAntiCheatSummary(
+        scenario_count=len(checked),
+        oracle_behavior_rate=oracle,
+        best_constant_branch_selector_rate=constant_branch,
+        best_constant_output_rate=constant_output,
+        best_single_family_patch_rate=single_family,
+        oracle_minus_best_constant_branch=oracle - constant_branch,
+        oracle_minus_best_single_family_patch=oracle - single_family,
+    )
+
+
 def _validate_partition(scenarios: tuple[HiddenScenarioSpec, ...]) -> None:
     if not scenarios or len({item.partition for item in scenarios}) != 1:
         raise HarnessFaultAuthorityError("scenario set must cover exactly one partition")
-    groups: dict[str, list[HiddenScenarioSpec]] = {}
+    if {item.family for item in scenarios} != set(FaultFamily):
+        raise HarnessFaultAuthorityError("partition does not cover every frozen family")
+    if {item.surface for item in scenarios} != set(FaultSurface):
+        raise HarnessFaultAuthorityError("partition does not cover every frozen surface")
+    groups: dict[tuple[FaultFamily, str], list[HiddenScenarioSpec]] = {}
     for item in scenarios:
-        groups.setdefault(item.group_id, []).append(item)
+        groups.setdefault((item.family, item.group_id), []).append(item)
     for group in groups.values():
-        if len(group) != 2 or {item.role for item in group} != set(ScenarioRole):
-            raise HarnessFaultAuthorityError("every group requires target and hard negative")
+        if len(group) != len(ScenarioRole) or {item.role for item in group} != set(ScenarioRole):
+            raise HarnessFaultAuthorityError("every family group requires all control roles")
+    if len({(item.expected_answer, item.expected_observable) for item in scenarios}) != len(
+        scenarios
+    ):
+        raise HarnessFaultAuthorityError("gold outputs must be unique across a partition")
     answers = tuple(item.expected_answer for item in scenarios)
     if answers.count("MATCH") != answers.count("DIFFERENT"):
-        raise HarnessFaultAuthorityError("partition labels are not balanced")
+        raise HarnessFaultAuthorityError("partition answer labels are not balanced")
+    summary = anti_cheat_summary(scenarios)
+    if (
+        summary.oracle_minus_best_constant_branch < 0.30
+        or summary.oracle_minus_best_single_family_patch < 0.30
+        or summary.best_constant_output_rate > 0.05
+    ):
+        raise HarnessFaultAuthorityError("partition violates the frozen anti-cheat envelope")
 
 
 def verify_partition_opening(
     store: ArtifactStore,
     grant: PartitionEvaluationGrant,
 ) -> VerifiedPartitionOpening:
-    """Recompute salt/config/scenarios/root/roster and reject any cross-authority mix."""
+    """Recompute every scenario, root, roster, and anti-cheat invariant."""
 
     if type(store) is not ArtifactStore:
         raise TypeError("store must be an exact ArtifactStore")
@@ -518,6 +494,7 @@ def verify_partition_opening(
         tasks=tuple(item.task for item in scenarios),
     )
     root = _scenario_root(opening.authority_id, checked.partition, scenarios)
+    expected_group_count = len(FaultFamily) * opening.config.groups_per_family
     if (
         opening.scenario_commitments != tuple(item.scenario_commitment for item in scenarios)
         or opening.scenario_root != root
@@ -526,7 +503,9 @@ def verify_partition_opening(
         or commitment.roster_root != expected_roster.root
         or roster != expected_roster
         or commitment.scenario_count != len(scenarios)
-        or commitment.group_count != opening.config.groups_per_partition
+        or commitment.group_count != expected_group_count
+        or commitment.family_count != len(FaultFamily)
+        or commitment.surface_count != len(FaultSurface)
         or commitment.config_fingerprint != opening.config.fingerprint
     ):
         raise HarnessFaultAuthorityError("partition opening/root/roster replay mismatch")
@@ -546,8 +525,9 @@ __all__ = [
     "GENERATOR_VERSION",
     "PARTITION_OPENING_MEDIA_TYPE",
     "PARTITION_ROSTER_MEDIA_TYPE",
-    "ComparisonPolicy",
     "FaultFamily",
+    "FaultSurface",
+    "HarnessFaultAntiCheatSummary",
     "HarnessFaultAuthorityError",
     "HarnessFaultPublicCommitment",
     "HarnessFaultSplitConfig",
@@ -560,13 +540,16 @@ __all__ = [
     "PublicSearchTaskView",
     "PublicTaskInput",
     "RepairRuleId",
+    "RouteContext",
     "RuntimeBranch",
     "ScenarioRole",
     "VerifiedPartitionOpening",
+    "anti_cheat_summary",
     "branch_for_rule",
     "candidate_rule_ids",
     "evaluate_branch",
     "is_candidate_rule",
     "parse_public_task_input",
+    "surface_for_family",
     "verify_partition_opening",
 ]

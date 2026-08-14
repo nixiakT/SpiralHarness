@@ -1,4 +1,4 @@
-"""Partition-scoped, full-roster receipt grading for v3 one-family slice."""
+"""Partition-scoped, full-roster receipt grading for the v4 multi-surface slice."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from spiral_harness.benchmark._harness_fault_cases import (
     PARTITION_OPENING_MEDIA_TYPE,
     PARTITION_ROSTER_MEDIA_TYPE,
     FaultFamily,
+    FaultSurface,
     HarnessFaultTask,
     PartitionEvaluationGrant,
     RepairRuleId,
@@ -62,15 +63,15 @@ from spiral_harness.execution.schedule import (
 from spiral_harness.storage.artifact_store import ArtifactStore
 from spiral_harness.verification.models import TrialObservation, TrialStatus
 
-HARNESS_FAULT_EVALUATOR_VERSION = "spiral-harness.harness-fault-evaluator:v3-one-family"
+HARNESS_FAULT_EVALUATOR_VERSION = "spiral-harness.harness-fault-evaluator:v4-multi-surface"
 HARNESS_FAULT_SCHEDULE_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.harness-fault-schedule-closure.v3+json"
+    "application/vnd.spiral-harness.harness-fault-schedule-closure.v4+json"
 )
 HARNESS_FAULT_GRADED_OUTCOME_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.harness-fault-graded-outcome.v3+json"
+    "application/vnd.spiral-harness.harness-fault-graded-outcome.v4+json"
 )
 HARNESS_FAULT_GRADED_BATCH_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.harness-fault-graded-batch.v3+json"
+    "application/vnd.spiral-harness.harness-fault-graded-batch.v4+json"
 )
 
 
@@ -135,7 +136,7 @@ def parse_harness_fault_output(text: str) -> HarnessFaultOutput:
 class HarnessFaultScheduleClosure(ImmutableModel):
     """Persisted full-roster schedule joined to authority and compiler refs."""
 
-    schema_version: Literal["3"] = "3"
+    schema_version: Literal["4"] = "4"
     evaluator_fingerprint: Sha256
     authority_id: Sha256
     partition: ProtocolPartition
@@ -160,13 +161,14 @@ class HarnessFaultScheduleClosure(ImmutableModel):
 class HarnessFaultGradedOutcome(ImmutableModel):
     """One raw-evidence-bound outcome retaining complete cluster/cell coordinates."""
 
-    schema_version: Literal["3"] = "3"
+    schema_version: Literal["4"] = "4"
     observation: TrialObservation
     cell: EvaluationCellKey
     partition: ProtocolPartition
     scenario_id: NonEmptyStr
     scenario_commitment: Sha256
     family: FaultFamily
+    surface: FaultSurface
     template_id: NonEmptyStr
     source_id: NonEmptyStr
     group_id: NonEmptyStr
@@ -197,7 +199,7 @@ class HarnessFaultGradedOutcome(ImmutableModel):
 class HarnessFaultGradedBatch(ImmutableModel):
     """Exact full-roster result of strongest live-ledger receipt replay."""
 
-    schema_version: Literal["3"] = "3"
+    schema_version: Literal["4"] = "4"
     evaluator_fingerprint: Sha256
     partition: ProtocolPartition
     comparison_kind: HarnessFaultComparisonKind
@@ -337,7 +339,7 @@ class _PartitionEvaluator:
             )
         if checked_schedule.max_attempts_per_cell != 1:
             raise HarnessFaultGradingError(
-                "v3 one-family closure requires exactly one attempt per schedule cell"
+                "v4 multi-surface closure requires exactly one attempt per schedule cell"
             )
         self._verify_phase_and_harnesses(checked_schedule, checked_kind, compilation)
         closure = HarnessFaultScheduleClosure(
@@ -537,8 +539,11 @@ class _PartitionEvaluator:
             or event.task_id != execution.task_id
             or event.harness_ref != execution.request.harness_ref
             or event.rule_id is not entry.rule_id
-            or event.raw_left_sha256 != sha256_bytes(scenario.left.encode("utf-8"))
-            or event.raw_right_sha256 != sha256_bytes(scenario.right.encode("utf-8"))
+            or event.family is not scenario.family
+            or event.surface is not scenario.surface
+            or event.context is not scenario.context
+            or event.raw_primary_sha256 != sha256_bytes(scenario.primary.encode("utf-8"))
+            or event.raw_secondary_sha256 != sha256_bytes(scenario.secondary.encode("utf-8"))
             or execution.output is None
             or event.final_output_sha256 != sha256_bytes(execution.output.encode("utf-8"))
         ):
@@ -570,8 +575,9 @@ class _PartitionEvaluator:
             status=status,
             score=score,
             slice_tags=(
-                "benchmark:harness-fault-v3-one-family",
+                "benchmark:harness-fault-v4-multi-surface",
                 f"family:{scenario.family.value}",
+                f"surface:{scenario.surface.value}",
                 f"group:{scenario.group_id}",
                 f"scenario:{scenario.scenario_id}",
                 f"source:{scenario.source_id}",
@@ -592,6 +598,7 @@ class _PartitionEvaluator:
             scenario_id=scenario.scenario_id,
             scenario_commitment=scenario.scenario_commitment,
             family=scenario.family,
+            surface=scenario.surface,
             template_id=scenario.template_id,
             source_id=scenario.source_id,
             group_id=scenario.group_id,

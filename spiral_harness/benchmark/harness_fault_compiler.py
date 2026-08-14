@@ -1,4 +1,4 @@
-"""Opaque finite compiler and exact reconstruction verifier for v3."""
+"""Opaque multi-surface compiler and reconstruction verifier for v4."""
 
 from __future__ import annotations
 
@@ -6,12 +6,9 @@ import json
 from enum import StrEnum
 from typing import Annotated, Any, Literal, Self
 
-from pydantic import Field, ValidationError, model_validator
+from pydantic import Field, ValidationError, field_validator, model_validator
 
-from spiral_harness.benchmark._harness_fault_cases import (
-    RepairRuleId,
-    is_candidate_rule,
-)
+from spiral_harness.benchmark._harness_fault_cases import RepairRuleId, is_candidate_rule
 from spiral_harness.core.canonical import canonical_json_bytes, canonical_sha256, sha256_bytes
 from spiral_harness.core.models import (
     HARNESS_MANIFEST_MEDIA_TYPE,
@@ -20,44 +17,55 @@ from spiral_harness.core.models import (
     HarnessComponentRef,
     HarnessManifest,
     ImmutableModel,
+    NonEmptyStr,
     Sha256,
 )
 from spiral_harness.execution.contracts import FrozenModelSpec
 from spiral_harness.storage.artifact_store import ArtifactStore
 
 HARNESS_FAULT_COMPILATION_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.harness-fault-compilation.v3+json"
+    "application/vnd.spiral-harness.harness-fault-compilation.v4+json"
 )
 HARNESS_FAULT_ACTION_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.harness-fault-repair-action.v3+json"
+    "application/vnd.spiral-harness.harness-fault-repair-action.v4+json"
 )
-COMPILER_VERSION = "spiral-harness.harness-fault-compiler:v3-one-family"
-CONTROL_MATCH_KIND = "exact-utf8-byte-length-v1"
-_SCAFFOLD_PREFIX = "CONTROLLED_MIDDLEWARE_RULE\nPAYLOAD_BEGIN\n"
-_SCAFFOLD_SUFFIX = "\nPAYLOAD_END\nReturn only the task's requested JSON."
+COMPILER_VERSION = "spiral-harness.harness-fault-compiler:v4-multi-surface"
+CONTROL_MATCH_KIND = "per-component-exact-utf8-byte-length-v2"
+_SCAFFOLD_PREFIX = "HFB4_FROZEN_COMPONENT\nPAYLOAD_BEGIN\n"
+_SCAFFOLD_SUFFIX = "\nPAYLOAD_END\n"
 _PAYLOAD_WIDTH = 384
+_COMPONENT_SPECS = (
+    ("system-prompt", ComponentKind.PROMPT),
+    ("retrieval-policy", ComponentKind.MEMORY),
+    ("tool-schema", ComponentKind.TOOL),
+    ("tool-router", ComponentKind.TOOL),
+    ("middleware-policy", ComponentKind.MIDDLEWARE),
+    ("control-flow-policy", ComponentKind.CONTROL_FLOW),
+    ("skill-scope", ComponentKind.SKILL),
+)
 _RULE_PAYLOADS = {
-    RepairRuleId.RULE_00: (
-        "Route every request through branch-1. Preserve exact LEFT and RIGHT bytes for "
-        "comparison and observable construction."
+    RepairRuleId.CONSTANT_LEGACY: (
+        "Use the legacy branch for every family and context; no scoped repair is active."
     ),
-    RepairRuleId.RULE_01: (
-        "Route every request through branch-0. Strip outer Unicode whitespace and casefold "
-        "LEFT and RIGHT before comparison and observable construction."
+    RepairRuleId.CONSTANT_SAFE: (
+        "Use the safe branch for every family and context; ignore null and shift controls."
     ),
-    RepairRuleId.RULE_02: (
-        "Route canonical-policy requests through branch-0 and literal-policy requests through "
-        "branch-1. Apply only the selected branch's transformation."
+    RepairRuleId.ROUTED_POLICY: (
+        "Route each frozen family/context through its registered safe or legacy branch."
     ),
-    RepairRuleId.CONTROL_00: (
-        "Neutral control marker. Preserve the legacy branch-1 route for every request and add "
-        "no canonicalization behavior."
+    RepairRuleId.PROMPT_MEMORY_PATCH: (
+        "Repair prompt precedence and memory isolation only; retain legacy behavior elsewhere."
+    ),
+    RepairRuleId.TOOL_PATCH: (
+        "Repair tool schema and tool routing only; retain legacy behavior elsewhere."
+    ),
+    RepairRuleId.RUNTIME_PATCH: (
+        "Repair middleware, control-flow, and skill scope only; retain legacy elsewhere."
+    ),
+    RepairRuleId.CONTROL_NEUTRAL: (
+        "Length-matched neutral control; preserve the legacy branch for every request."
     ),
 }
-_PARENT_PROMPT = (
-    "LEGACY_MIDDLEWARE_RULE\nAlways route comparison requests through branch-1. Preserve "
-    "LEFT and RIGHT exactly and emit only the requested JSON object."
-)
 
 
 class HarnessFaultCompilationError(ValueError):
@@ -73,9 +81,9 @@ class HarnessRole(StrEnum):
 
 
 class FaultRepairAction(ImmutableModel):
-    """Entire model-authored surface: one opaque allowlisted ID."""
+    """Entire model-authored surface: one opaque allowlisted rule ID."""
 
-    schema_version: Literal["3"] = "3"
+    schema_version: Literal["4"] = "4"
     rule_id: RepairRuleId
 
     @model_validator(mode="after")
@@ -95,7 +103,7 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def parse_fault_repair_action(text: str) -> FaultRepairAction:
-    """Accept exactly ``{"rule_id": <opaque-id>}`` and no prompt text."""
+    """Accept exactly ``{"rule_id": <opaque-id>}`` and no free-form patch."""
 
     if type(text) is not str:
         raise HarnessFaultCompilationError("repair proposal must be a string")
@@ -113,19 +121,19 @@ def parse_fault_repair_action(text: str) -> FaultRepairAction:
         raise HarnessFaultCompilationError(f"invalid opaque rule selection: {exc}") from exc
 
 
-def _scaffold_prompt(rule_id: RepairRuleId) -> str:
-    payload = _RULE_PAYLOADS[rule_id]
+def _component_payload(name: str, rule_id: RepairRuleId) -> bytes:
+    payload = f"COMPONENT={name}\nRULE={rule_id.value}\n{_RULE_PAYLOADS[rule_id]}"
     encoded = payload.encode("ascii")
     if len(encoded) > _PAYLOAD_WIDTH:  # pragma: no cover - frozen constants
-        raise RuntimeError("frozen middleware payload exceeds scaffold width")
+        raise RuntimeError("frozen component payload exceeds scaffold width")
     padded = payload + " " * (_PAYLOAD_WIDTH - len(encoded))
-    return _SCAFFOLD_PREFIX + padded + _SCAFFOLD_SUFFIX
+    return (_SCAFFOLD_PREFIX + padded + _SCAFFOLD_SUFFIX).encode("utf-8")
 
 
 COMPILER_FINGERPRINT = canonical_sha256(
     {
         "version": COMPILER_VERSION,
-        "parent_prompt": _PARENT_PROMPT,
+        "component_specs": tuple((name, kind.value) for name, kind in _COMPONENT_SPECS),
         "scaffold_prefix": _SCAFFOLD_PREFIX,
         "scaffold_suffix": _SCAFFOLD_SUFFIX,
         "payload_width": _PAYLOAD_WIDTH,
@@ -135,26 +143,54 @@ COMPILER_FINGERPRINT = canonical_sha256(
 )
 
 
+class MatchedComponentBytes(ImmutableModel):
+    name: NonEmptyStr
+    kind: ComponentKind
+    byte_count: Annotated[int, Field(ge=1, strict=True)]
+
+
 class CompiledHarnessEntry(ImmutableModel):
     role: HarnessRole
     rule_id: RepairRuleId
     harness_ref: ArtifactRef
-    prompt_ref: ArtifactRef
+    surface_components: Annotated[
+        tuple[HarnessComponentRef, ...],
+        Field(min_length=7, max_length=7),
+    ]
+
+    @field_validator("surface_components")
+    @classmethod
+    def canonical_components(
+        cls, values: tuple[HarnessComponentRef, ...]
+    ) -> tuple[HarnessComponentRef, ...]:
+        return tuple(sorted(values, key=lambda item: item.name))
 
     @model_validator(mode="after")
-    def exact_media(self) -> Self:
+    def exact_media_and_surface_set(self) -> Self:
         if self.harness_ref.media_type != HARNESS_MANIFEST_MEDIA_TYPE:
             raise ValueError("harness_ref declares the wrong media type")
-        if self.prompt_ref.media_type != "text/plain":
-            raise ValueError("prompt_ref must declare exact text/plain")
+        expected = {(name, kind) for name, kind in _COMPONENT_SPECS}
+        actual = {(item.name, item.kind) for item in self.surface_components}
+        if len(self.surface_components) != len(expected) or actual != expected:
+            raise ValueError("entry does not contain the exact multi-surface component set")
+        if any(item.artifact.media_type != "text/plain" for item in self.surface_components):
+            raise ValueError("surface component must declare exact text/plain")
         return self
+
+    def component(self, name: str) -> HarnessComponentRef:
+        for item in self.surface_components:
+            if item.name == name:
+                return item
+        raise KeyError(name)
+
+    @property
+    def prompt_ref(self) -> ArtifactRef:
+        return self.component("system-prompt").artifact
 
 
 class HarnessFaultCompilationManifest(ImmutableModel):
-    """Complete treatment/control graph emitted by the trusted compiler."""
-
-    schema_version: Literal["3"] = "3"
-    compiler_version: Literal["spiral-harness.harness-fault-compiler:v3-one-family"] = (
+    schema_version: Literal["4"] = "4"
+    compiler_version: Literal["spiral-harness.harness-fault-compiler:v4-multi-surface"] = (
         COMPILER_VERSION
     )
     compiler_fingerprint: Literal[COMPILER_FINGERPRINT] = COMPILER_FINGERPRINT
@@ -162,12 +198,15 @@ class HarnessFaultCompilationManifest(ImmutableModel):
     runtime_producer_id: Sha256
     action_ref: ArtifactRef
     selected_rule_id: RepairRuleId
-    control_match_kind: Literal["exact-utf8-byte-length-v1"] = CONTROL_MATCH_KIND
-    matched_prompt_bytes: Annotated[int, Field(ge=1, strict=True)]
+    control_match_kind: Literal["per-component-exact-utf8-byte-length-v2"] = CONTROL_MATCH_KIND
+    matched_component_bytes: Annotated[
+        tuple[MatchedComponentBytes, ...],
+        Field(min_length=7, max_length=7),
+    ]
     entries: Annotated[tuple[CompiledHarnessEntry, ...], Field(min_length=5, max_length=5)]
 
     @model_validator(mode="after")
-    def complete_roles(self) -> Self:
+    def complete_roles_and_components(self) -> Self:
         if self.action_ref.media_type != HARNESS_FAULT_ACTION_MEDIA_TYPE:
             raise ValueError("action_ref declares the wrong media type")
         if len(self.entries) != 5 or {entry.role for entry in self.entries} != set(HarnessRole):
@@ -176,7 +215,18 @@ class HarnessFaultCompilationManifest(ImmutableModel):
             raise ValueError("each role requires a distinct harness manifest")
         if self.entry(HarnessRole.CANDIDATE).rule_id is not self.selected_rule_id:
             raise ValueError("candidate rule differs from selected_rule_id")
+        expected = {(name, kind) for name, kind in _COMPONENT_SPECS}
+        actual = {(item.name, item.kind) for item in self.matched_component_bytes}
+        if actual != expected or len(self.matched_component_bytes) != len(expected):
+            raise ValueError("matched bytes omit a mutable surface component")
         return self
+
+    @property
+    def matched_prompt_bytes(self) -> int:
+        for item in self.matched_component_bytes:
+            if item.name == "system-prompt":
+                return item.byte_count
+        raise KeyError("system-prompt")
 
     def entry(self, role: HarnessRole) -> CompiledHarnessEntry:
         for entry in self.entries:
@@ -210,23 +260,50 @@ def _json_ref(value: object, media_type: str) -> ArtifactRef:
     return _bytes_ref(canonical_json_bytes(value), media_type)
 
 
-def _manifest(
+def _surface_components(rule_id: RepairRuleId) -> tuple[HarnessComponentRef, ...]:
+    return tuple(
+        HarnessComponentRef(
+            name=name,
+            kind=kind,
+            artifact=_bytes_ref(_component_payload(name, rule_id), "text/plain"),
+        )
+        for name, kind in _COMPONENT_SPECS
+    )
+
+
+def _execution_manifest(
     spec: FrozenModelSpec,
-    prompt_ref: ArtifactRef,
+    components: tuple[HarnessComponentRef, ...],
     parent_ref: ArtifactRef | None,
 ) -> HarnessManifest:
+    """Project the benchmark graph to the one prompt the generic runner can inject.
+
+    The complete seven-component graph remains digest-bound in the compilation
+    manifest and is consumed by the trusted benchmark runtime.  The generic
+    runner intentionally supports only prompt/skill materialization.
+    """
+
+    prompt = next(item for item in components if item.name == "system-prompt")
     return HarnessManifest(
         model_fingerprint=spec.model_fingerprint,
         runtime_fingerprint=spec.runtime_fingerprint,
         trusted_plane_version=COMPILER_VERSION,
         parent=parent_ref,
-        components=(
-            HarnessComponentRef(
-                name="system-prompt",
-                kind=ComponentKind.PROMPT,
-                artifact=prompt_ref,
-            ),
-        ),
+        components=(prompt,),
+    )
+
+
+def _entry(
+    role: HarnessRole,
+    rule_id: RepairRuleId,
+    harness_ref: ArtifactRef,
+    components: tuple[HarnessComponentRef, ...],
+) -> CompiledHarnessEntry:
+    return CompiledHarnessEntry(
+        role=role,
+        rule_id=rule_id,
+        harness_ref=harness_ref,
+        surface_components=components,
     )
 
 
@@ -240,76 +317,61 @@ def _expected_compilation(
     dict[ArtifactRef, bytes],
     dict[ArtifactRef, HarnessManifest],
 ]:
-    parent_bytes = _PARENT_PROMPT.encode("utf-8")
-    oracle_bytes = _scaffold_prompt(RepairRuleId.RULE_02).encode("utf-8")
-    candidate_bytes = _scaffold_prompt(action.rule_id).encode("utf-8")
-    placebo_bytes = _scaffold_prompt(RepairRuleId.CONTROL_00).encode("utf-8")
-    if len(candidate_bytes) != len(placebo_bytes):  # pragma: no cover - frozen scaffold
-        raise RuntimeError("candidate/placebo scaffold byte lengths differ")
-    parent_prompt_ref = _bytes_ref(parent_bytes, "text/plain")
-    oracle_prompt_ref = _bytes_ref(oracle_bytes, "text/plain")
-    candidate_prompt_ref = _bytes_ref(candidate_bytes, "text/plain")
-    placebo_prompt_ref = _bytes_ref(placebo_bytes, "text/plain")
-
-    parent_manifest = _manifest(spec, parent_prompt_ref, None)
+    component_sets = {
+        HarnessRole.FAULTY_PARENT: _surface_components(RepairRuleId.CONSTANT_LEGACY),
+        HarnessRole.ORACLE: _surface_components(RepairRuleId.ROUTED_POLICY),
+        HarnessRole.CANDIDATE: _surface_components(action.rule_id),
+        HarnessRole.PLACEBO: _surface_components(RepairRuleId.CONTROL_NEUTRAL),
+    }
+    component_sets[HarnessRole.REVERT] = component_sets[HarnessRole.FAULTY_PARENT]
+    parent_manifest = _execution_manifest(spec, component_sets[HarnessRole.FAULTY_PARENT], None)
     parent_ref = _json_ref(parent_manifest, HARNESS_MANIFEST_MEDIA_TYPE)
-    # The oracle is a fixed standalone upper-bound control, not a mutation selected by
-    # the search policy. Keeping it root-scoped preserves role provenance even when
-    # the candidate selects the oracle's exact rule/prompt bytes.
-    oracle_manifest = _manifest(spec, oracle_prompt_ref, None)
+    oracle_manifest = _execution_manifest(spec, component_sets[HarnessRole.ORACLE], None)
     oracle_ref = _json_ref(oracle_manifest, HARNESS_MANIFEST_MEDIA_TYPE)
-    candidate_manifest = _manifest(spec, candidate_prompt_ref, parent_ref)
+    candidate_manifest = _execution_manifest(
+        spec, component_sets[HarnessRole.CANDIDATE], parent_ref
+    )
     candidate_ref = _json_ref(candidate_manifest, HARNESS_MANIFEST_MEDIA_TYPE)
-    # Revert uses the exact parent prompt artifact bytes and a candidate parent edge.
-    revert_manifest = _manifest(spec, parent_prompt_ref, candidate_ref)
+    revert_manifest = _execution_manifest(spec, component_sets[HarnessRole.REVERT], candidate_ref)
     revert_ref = _json_ref(revert_manifest, HARNESS_MANIFEST_MEDIA_TYPE)
-    placebo_manifest = _manifest(spec, placebo_prompt_ref, parent_ref)
+    placebo_manifest = _execution_manifest(spec, component_sets[HarnessRole.PLACEBO], parent_ref)
     placebo_ref = _json_ref(placebo_manifest, HARNESS_MANIFEST_MEDIA_TYPE)
-    entries = (
-        CompiledHarnessEntry(
-            role=HarnessRole.ORACLE,
-            rule_id=RepairRuleId.RULE_02,
-            harness_ref=oracle_ref,
-            prompt_ref=oracle_prompt_ref,
-        ),
-        CompiledHarnessEntry(
-            role=HarnessRole.FAULTY_PARENT,
-            rule_id=RepairRuleId.RULE_00,
-            harness_ref=parent_ref,
-            prompt_ref=parent_prompt_ref,
-        ),
-        CompiledHarnessEntry(
-            role=HarnessRole.CANDIDATE,
-            rule_id=action.rule_id,
-            harness_ref=candidate_ref,
-            prompt_ref=candidate_prompt_ref,
-        ),
-        CompiledHarnessEntry(
-            role=HarnessRole.REVERT,
-            rule_id=RepairRuleId.RULE_00,
-            harness_ref=revert_ref,
-            prompt_ref=parent_prompt_ref,
-        ),
-        CompiledHarnessEntry(
-            role=HarnessRole.PLACEBO,
-            rule_id=RepairRuleId.CONTROL_00,
-            harness_ref=placebo_ref,
-            prompt_ref=placebo_prompt_ref,
-        ),
+    role_values = {
+        HarnessRole.ORACLE: (RepairRuleId.ROUTED_POLICY, oracle_ref),
+        HarnessRole.FAULTY_PARENT: (RepairRuleId.CONSTANT_LEGACY, parent_ref),
+        HarnessRole.CANDIDATE: (action.rule_id, candidate_ref),
+        HarnessRole.REVERT: (RepairRuleId.CONSTANT_LEGACY, revert_ref),
+        HarnessRole.PLACEBO: (RepairRuleId.CONTROL_NEUTRAL, placebo_ref),
+    }
+    entries = tuple(
+        _entry(role, rule, ref, component_sets[role]) for role, (rule, ref) in role_values.items()
+    )
+    candidate_components = component_sets[HarnessRole.CANDIDATE]
+    placebo_components = component_sets[HarnessRole.PLACEBO]
+    if tuple(item.artifact.size for item in candidate_components) != tuple(
+        item.artifact.size for item in placebo_components
+    ):  # pragma: no cover - frozen scaffold
+        raise RuntimeError("candidate/placebo component byte lengths differ")
+    matched = tuple(
+        MatchedComponentBytes(
+            name=item.name,
+            kind=item.kind,
+            byte_count=item.artifact.size,
+        )
+        for item in candidate_components
     )
     compilation = HarnessFaultCompilationManifest(
         model_spec_fingerprint=spec.fingerprint,
         runtime_producer_id=runtime_producer_id,
         action_ref=action_ref,
         selected_rule_id=action.rule_id,
-        matched_prompt_bytes=len(candidate_bytes),
+        matched_component_bytes=matched,
         entries=tuple(sorted(entries, key=lambda item: item.role.value)),
     )
-    prompts = {
-        parent_prompt_ref: parent_bytes,
-        oracle_prompt_ref: oracle_bytes,
-        candidate_prompt_ref: candidate_bytes,
-        placebo_prompt_ref: placebo_bytes,
+    payloads = {
+        component.artifact: _component_payload(component.name, rule)
+        for role, (rule, _) in role_values.items()
+        for component in component_sets[role]
     }
     manifests = {
         parent_ref: parent_manifest,
@@ -318,7 +380,7 @@ def _expected_compilation(
         revert_ref: revert_manifest,
         placebo_ref: placebo_manifest,
     }
-    return compilation, prompts, manifests
+    return compilation, payloads, manifests
 
 
 def compile_fault_repair(
@@ -328,19 +390,17 @@ def compile_fault_repair(
     *,
     runtime_producer_id: str,
 ) -> HarnessFaultCompilationRecord:
-    """Publish only the deterministic graph reconstructed from one opaque action."""
-
     if type(store) is not ArtifactStore:
         raise TypeError("store must be an exact ArtifactStore")
     checked_spec = FrozenModelSpec.model_validate(spec, strict=True)
     checked_action = FaultRepairAction.model_validate(action, strict=True)
     action_ref = store.put_json(checked_action, media_type=HARNESS_FAULT_ACTION_MEDIA_TYPE)
-    compilation, prompts, manifests = _expected_compilation(
+    compilation, payloads, manifests = _expected_compilation(
         checked_spec, checked_action, action_ref, runtime_producer_id
     )
-    for expected_ref, payload in prompts.items():
+    for expected_ref, payload in payloads.items():
         if store.put_bytes(payload, media_type="text/plain") != expected_ref:
-            raise HarnessFaultCompilationError("prompt publication changed its exact bytes")
+            raise HarnessFaultCompilationError("component publication changed exact bytes")
     for expected_ref, manifest in manifests.items():
         if store.put_json(manifest, media_type=HARNESS_MANIFEST_MEDIA_TYPE) != expected_ref:
             raise HarnessFaultCompilationError("harness publication changed its graph")
@@ -355,7 +415,7 @@ def verify_fault_compilation(
     *,
     expected_runtime_producer_id: str,
 ) -> HarnessFaultCompilationManifest:
-    """Rebuild exact action/prompts/manifests/parent graph; reject self-consistent forgeries."""
+    """Rebuild every action, component, manifest, and parent edge."""
 
     if type(store) is not ArtifactStore:
         raise TypeError("store must be an exact ArtifactStore")
@@ -367,35 +427,34 @@ def verify_fault_compilation(
         action = store.get_json(actual.action_ref, FaultRepairAction)
     except Exception as exc:
         raise HarnessFaultCompilationError("compilation or action cannot be verified") from exc
-    expected, prompts, manifests = _expected_compilation(
-        checked_spec,
-        action,
-        actual.action_ref,
-        expected_runtime_producer_id,
+    expected, payloads, manifests = _expected_compilation(
+        checked_spec, action, actual.action_ref, expected_runtime_producer_id
     )
     if actual != expected or compilation_ref != _json_ref(
         expected, HARNESS_FAULT_COMPILATION_MEDIA_TYPE
     ):
         raise HarnessFaultCompilationError("compilation differs from frozen reconstruction")
     try:
-        for ref, payload in prompts.items():
+        for ref, payload in payloads.items():
             if store.get_bytes(ref) != payload:
-                raise ValueError("prompt bytes differ")
+                raise ValueError("component bytes differ")
         for ref, manifest in manifests.items():
             if store.get_json(ref, HarnessManifest) != manifest:
                 raise ValueError("manifest graph differs")
     except Exception as exc:
         raise HarnessFaultCompilationError(
-            "compiled prompt/manifest graph cannot be replayed"
+            "compiled component/manifest graph cannot be replayed"
         ) from exc
     parent = actual.entry(HarnessRole.FAULTY_PARENT)
     candidate = actual.entry(HarnessRole.CANDIDATE)
     revert = actual.entry(HarnessRole.REVERT)
     placebo = actual.entry(HarnessRole.PLACEBO)
-    if revert.prompt_ref != parent.prompt_ref:
-        raise HarnessFaultCompilationError("revert does not reuse exact parent prompt bytes")
-    if candidate.prompt_ref.size != placebo.prompt_ref.size:
-        raise HarnessFaultCompilationError("placebo is not exact UTF-8-byte-length matched")
+    if revert.surface_components != parent.surface_components:
+        raise HarnessFaultCompilationError("revert does not reuse exact parent components")
+    if tuple(item.artifact.size for item in candidate.surface_components) != tuple(
+        item.artifact.size for item in placebo.surface_components
+    ):
+        raise HarnessFaultCompilationError("placebo is not per-component byte-length matched")
     return actual
 
 
@@ -411,6 +470,7 @@ __all__ = [
     "HarnessFaultCompilationManifest",
     "HarnessFaultCompilationRecord",
     "HarnessRole",
+    "MatchedComponentBytes",
     "compile_fault_repair",
     "parse_fault_repair_action",
     "verify_fault_compilation",

@@ -1,4 +1,4 @@
-"""Full-batch mechanism closure over signed runtime branches and paired cells."""
+"""Full-batch v4 closure over multi-surface branches and paired cells."""
 
 from __future__ import annotations
 
@@ -9,10 +9,13 @@ from typing import Annotated, Literal
 from pydantic import Field, model_validator
 
 from spiral_harness.benchmark._harness_fault_cases import (
+    FaultFamily,
+    FaultSurface,
     HiddenScenarioSpec,
     RepairRuleId,
     RuntimeBranch,
     ScenarioRole,
+    anti_cheat_summary,
     evaluate_branch,
     verify_partition_opening,
 )
@@ -32,6 +35,13 @@ from spiral_harness.benchmark.harness_fault_compiler import (
     HarnessFaultCompilationManifest,
     HarnessRole,
     verify_fault_compilation,
+)
+from spiral_harness.benchmark.harness_fault_errors import HarnessFaultMechanismError
+from spiral_harness.benchmark.harness_fault_ledger import (
+    LedgerKey,
+    index_exact_live_ledgers,
+    replay_exact_batch_usage,
+    reverify_live_ledger_tails,
 )
 from spiral_harness.benchmark.harness_fault_runtime import (
     RUNTIME_EVENT_MEDIA_TYPE,
@@ -53,7 +63,6 @@ from spiral_harness.execution.materialization import HarnessMaterializer
 from spiral_harness.execution.receipts import (
     EXECUTION_RECEIPT_MEDIA_TYPE,
     ExecutionReceipt,
-    replay_trusted_usage,
 )
 from spiral_harness.execution.schedule import (
     SCHEDULE_PREFLIGHT_MEDIA_TYPE,
@@ -64,42 +73,55 @@ from spiral_harness.execution.schedule import (
 from spiral_harness.storage.artifact_store import ArtifactStore
 
 HARNESS_FAULT_MECHANISM_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.harness-fault-mechanism-verification.v3+json"
+    "application/vnd.spiral-harness.harness-fault-mechanism-verification.v4+json"
 )
-MECHANISM_VERIFIER_VERSION = "spiral-harness.harness-fault-mechanism:v3-one-family"
-
-
-class HarnessFaultMechanismError(ValueError):
-    """A full batch, pair, roster, runtime event, or raw artifact failed closure."""
+MECHANISM_VERIFIER_VERSION = "spiral-harness.harness-fault-mechanism:v4-multi-surface"
 
 
 class HarnessFaultMechanismVerification(ImmutableModel):
     """Primitive trust-closure statistics, never an optimizer-capability result."""
 
-    schema_version: Literal["3"] = "3"
-    verifier_version: Literal["spiral-harness.harness-fault-mechanism:v3-one-family"] = (
+    schema_version: Literal["4"] = "4"
+    verifier_version: Literal["spiral-harness.harness-fault-mechanism:v4-multi-surface"] = (
         MECHANISM_VERIFIER_VERSION
     )
-    evidence_scope: Literal["deterministic-one-family-trust-closure-slice"] = (
-        "deterministic-one-family-trust-closure-slice"
+    evidence_scope: Literal["deterministic-multi-surface-trust-closure-slice"] = (
+        "deterministic-multi-surface-trust-closure-slice"
     )
     base_model_output_drives_behavior: Literal[False] = False
     supports_optimizer_capability_claim: Literal[False] = False
+    supports_llm_solver_claim: Literal[False] = False
+    supports_self_evolution_claim: Literal[False] = False
     supports_live_model_benchmark_claim: Literal[False] = False
     compilation_ref: ArtifactRef
     batch_refs: Annotated[tuple[ArtifactRef, ...], Field(min_length=3, max_length=3)]
+    family_count: Annotated[int, Field(ge=2, strict=True)]
+    surface_count: Annotated[int, Field(ge=2, strict=True)]
     group_count: Annotated[int, Field(ge=1, strict=True)]
-    scenario_count: Annotated[int, Field(ge=2, strict=True)]
+    scenario_count: Annotated[int, Field(ge=4, strict=True)]
     main_candidate_event_count: Annotated[int, Field(ge=1, strict=True)]
-    activation_target_event_count: Annotated[int, Field(ge=1, strict=True)]
-    protected_event_count: Annotated[int, Field(ge=1, strict=True)]
+    repairable_event_count: Annotated[int, Field(ge=1, strict=True)]
+    null_event_count: Annotated[int, Field(ge=1, strict=True)]
+    unrepairable_event_count: Annotated[int, Field(ge=1, strict=True)]
+    shift_hard_negative_event_count: Annotated[int, Field(ge=1, strict=True)]
     parent_pair_count: Annotated[int, Field(ge=1, strict=True)]
     revert_pair_count: Annotated[int, Field(ge=1, strict=True)]
     placebo_pair_count: Annotated[int, Field(ge=1, strict=True)]
-    activation_recall: Annotated[float, Field(ge=0.0, le=1.0, strict=True)]
-    overactivation_rate: Annotated[float, Field(ge=0.0, le=1.0, strict=True)]
+    repair_activation_recall: Annotated[float, Field(ge=0.0, le=1.0, strict=True)]
+    null_overactivation_rate: Annotated[float, Field(ge=0.0, le=1.0, strict=True)]
+    shift_route_accuracy: Annotated[float, Field(ge=0.0, le=1.0, strict=True)]
+    repairable_behavior_rate: Annotated[float, Field(ge=0.0, le=1.0, strict=True)]
+    null_behavior_rate: Annotated[float, Field(ge=0.0, le=1.0, strict=True)]
+    unrepairable_behavior_rate: Annotated[float, Field(ge=0.0, le=1.0, strict=True)]
+    shift_hard_negative_behavior_rate: Annotated[float, Field(ge=0.0, le=1.0, strict=True)]
     adherence_rate: Annotated[float, Field(ge=0.0, le=1.0, strict=True)]
     candidate_behavior_rate: Annotated[float, Field(ge=0.0, le=1.0, strict=True)]
+    oracle_behavior_rate: Annotated[float, Field(ge=0.0, le=1.0, strict=True)]
+    best_constant_branch_selector_rate: Annotated[float, Field(ge=0.0, le=1.0, strict=True)]
+    best_constant_output_rate: Annotated[float, Field(ge=0.0, le=1.0, strict=True)]
+    best_single_family_patch_rate: Annotated[float, Field(ge=0.0, le=1.0, strict=True)]
+    oracle_minus_best_constant_branch: Annotated[float, Field(ge=0.0, le=1.0, strict=True)]
+    oracle_minus_best_single_family_patch: Annotated[float, Field(ge=0.0, le=1.0, strict=True)]
     mean_paired_gain_vs_parent: Annotated[float, Field(ge=-1.0, le=1.0, strict=True)]
     mean_paired_gain_vs_revert: Annotated[float, Field(ge=-1.0, le=1.0, strict=True)]
     mean_paired_gain_vs_placebo: Annotated[float, Field(ge=-1.0, le=1.0, strict=True)]
@@ -114,7 +136,12 @@ class HarnessFaultMechanismVerification(ImmutableModel):
 
     @property
     def activation_passed(self) -> bool:
-        return self.activation_recall == 1.0 and self.overactivation_rate == 0.0
+        return (
+            self.repair_activation_recall == 1.0
+            and self.null_overactivation_rate == 0.0
+            and self.shift_route_accuracy == 1.0
+            and self.unrepairable_behavior_rate == 0.0
+        )
 
     @property
     def adherence_passed(self) -> bool:
@@ -122,7 +149,19 @@ class HarnessFaultMechanismVerification(ImmutableModel):
 
     @property
     def behavior_passed(self) -> bool:
-        return self.candidate_behavior_rate == 1.0 and self.mean_paired_gain_vs_parent > 0.0
+        return (
+            self.candidate_behavior_rate == self.oracle_behavior_rate
+            and self.mean_paired_gain_vs_parent > 0.0
+        )
+
+    @property
+    def anti_cheat_passed(self) -> bool:
+        return (
+            self.oracle_minus_best_constant_branch >= 0.30
+            and self.oracle_minus_best_single_family_patch >= 0.30
+            and self.best_constant_output_rate <= 0.05
+            and self.candidate_behavior_rate > self.best_constant_branch_selector_rate
+        )
 
     @property
     def revert_control_passed(self) -> bool:
@@ -139,6 +178,7 @@ class HarnessFaultMechanismVerification(ImmutableModel):
                 self.activation_passed,
                 self.adherence_passed,
                 self.behavior_passed,
+                self.anti_cheat_passed,
                 self.revert_control_passed,
                 self.placebo_control_passed,
             )
@@ -161,6 +201,9 @@ class _DerivedEvent:
     scenario_id: str
     group_id: str
     scenario_role: ScenarioRole
+    family: FaultFamily
+    surface: FaultSurface
+    oracle_branch: RuntimeBranch | None
     schedule_ref: ArtifactRef
     schedule_fingerprint: str
     comparison_kind: HarnessFaultComparisonKind
@@ -245,6 +288,8 @@ def _derive_event(
         or outcome.partition is not batch.partition
         or outcome.scenario_id != scenario.scenario_id
         or outcome.scenario_commitment != scenario.scenario_commitment
+        or outcome.family is not scenario.family
+        or outcome.surface is not scenario.surface
         or outcome.group_id != scenario.group_id
         or outcome.source_id != scenario.source_id
         or outcome.template_id != scenario.template_id
@@ -285,8 +330,11 @@ def _derive_event(
         or event.task_id != execution.task_id
         or event.harness_ref != execution.request.harness_ref
         or event.rule_id is not entry.rule_id
-        or event.raw_left_sha256 != sha256_bytes(scenario.left.encode("utf-8"))
-        or event.raw_right_sha256 != sha256_bytes(scenario.right.encode("utf-8"))
+        or event.family is not scenario.family
+        or event.surface is not scenario.surface
+        or event.context is not scenario.context
+        or event.raw_primary_sha256 != sha256_bytes(scenario.primary.encode("utf-8"))
+        or event.raw_secondary_sha256 != sha256_bytes(scenario.secondary.encode("utf-8"))
         or execution.output is None
         or event.final_output_sha256 != sha256_bytes(execution.output.encode("utf-8"))
     ):
@@ -298,7 +346,10 @@ def _derive_event(
     if parsed != outcome.parsed_output:
         raise HarnessFaultMechanismError("outcome parsed output differs from raw execution")
     branch_answer, branch_observable = evaluate_branch(
-        event.branch, left=scenario.left, right=scenario.right
+        scenario.family,
+        event.branch,
+        primary=scenario.primary,
+        secondary=scenario.secondary,
     )
     adhered = bool(
         parsed is not None
@@ -317,6 +368,9 @@ def _derive_event(
         scenario_id=scenario.scenario_id,
         group_id=scenario.group_id,
         scenario_role=scenario.role,
+        family=scenario.family,
+        surface=scenario.surface,
+        oracle_branch=scenario.oracle_branch,
         schedule_ref=batch.schedule_ref,
         schedule_fingerprint=closure.schedule.fingerprint,
         comparison_kind=batch.comparison_kind,
@@ -367,115 +421,6 @@ def _paired_gains(
     return tuple(gains)
 
 
-type _LedgerKey = tuple[str, str, str]
-
-
-def _index_exact_live_ledgers(
-    store: ArtifactStore,
-    attempt_ledgers: Iterable[AttemptLedger],
-) -> dict[_LedgerKey, AttemptLedger]:
-    if isinstance(attempt_ledgers, str | bytes | bytearray):
-        raise TypeError("attempt_ledgers must be an iterable of exact AttemptLedger values")
-    try:
-        ledgers = tuple(attempt_ledgers)
-    except TypeError as exc:
-        raise TypeError("attempt_ledgers must be iterable") from exc
-    if len(ledgers) != 3 or len({id(ledger) for ledger in ledgers}) != 3:
-        raise HarnessFaultMechanismError("mechanism requires exactly three distinct live ledgers")
-
-    indexed: dict[_LedgerKey, AttemptLedger] = {}
-    for ledger in ledgers:
-        if type(ledger) is not AttemptLedger or ledger.repository is not store:
-            raise HarnessFaultMechanismError(
-                "mechanism requires this store's exact live ledger writers"
-            )
-        try:
-            state = ledger.state()
-        except Exception as exc:
-            raise HarnessFaultMechanismError("live ledger cannot be verified") from exc
-        key = (state.ledger_id, state.writer_epoch_id, state.budget.fingerprint)
-        if key in indexed:
-            raise HarnessFaultMechanismError("live ledger writer identities must be unique")
-        indexed[key] = ledger
-    return indexed
-
-
-def _replay_exact_batch_usage(
-    store: ArtifactStore,
-    *,
-    batch: HarnessFaultGradedBatch,
-    closure: HarnessFaultScheduleClosure,
-    live_ledgers: dict[_LedgerKey, AttemptLedger],
-) -> tuple[_LedgerKey, ArtifactRef]:
-    receipts = tuple(
-        _load(
-            store,
-            receipt_ref,
-            EXECUTION_RECEIPT_MEDIA_TYPE,
-            ExecutionReceipt,
-            "trusted usage receipt",
-        )
-        for receipt_ref in batch.usage.receipt_refs
-    )
-    preflight_refs = {receipt.preflight_ref for receipt in receipts}
-    if len(preflight_refs) != 1:
-        raise HarnessFaultMechanismError(
-            "trusted usage receipt set does not share one exact preflight"
-        )
-    preflight_ref = next(iter(preflight_refs))
-    preflight = _load(
-        store,
-        preflight_ref,
-        SCHEDULE_PREFLIGHT_MEDIA_TYPE,
-        SchedulePreflightCertificate,
-        "trusted usage preflight",
-    )
-    if preflight.ledger_id is None or preflight.writer_epoch_id is None:
-        raise HarnessFaultMechanismError("trusted usage preflight is not ledger-bound")
-    ledger_key = (
-        preflight.ledger_id,
-        preflight.writer_epoch_id,
-        preflight.budget_fingerprint,
-    )
-    ledger = live_ledgers.pop(ledger_key, None)
-    if ledger is None:
-        raise HarnessFaultMechanismError("trusted usage preflight has no exact live ledger writer")
-    try:
-        replayed = replay_trusted_usage(
-            store,
-            schedule=closure.schedule,
-            preflight_ref=preflight_ref,
-            attempt_ledger=ledger,
-            receipt_refs=batch.usage.receipt_refs,
-        )
-    except Exception as exc:
-        raise HarnessFaultMechanismError("final trusted usage replay failed closed") from exc
-    if replayed != batch.usage:
-        raise HarnessFaultMechanismError(
-            "persisted trusted usage differs from final live-ledger replay"
-        )
-    return ledger_key, replayed.ledger_tail_refs[0]
-
-
-def _reverify_live_ledger_tails(
-    ledgers: dict[_LedgerKey, AttemptLedger],
-    expected_tails: dict[_LedgerKey, ArtifactRef],
-) -> None:
-    for key, ledger in ledgers.items():
-        try:
-            state = ledger.state()
-        except Exception as exc:
-            raise HarnessFaultMechanismError("live ledger cannot be reverified") from exc
-        if (
-            (state.ledger_id, state.writer_epoch_id, state.budget.fingerprint) != key
-            or state.tail_ref != expected_tails.get(key)
-            or state.pending_reservation_ref is not None
-        ):
-            raise HarnessFaultMechanismError(
-                "live ledger advanced during final trusted usage verification"
-            )
-
-
 def verify_harness_fault_mechanism(
     store: ArtifactStore,
     evaluator: HarnessFaultExplorationGrader,
@@ -493,9 +438,9 @@ def verify_harness_fault_mechanism(
     refs = tuple(ArtifactRef.model_validate(ref, strict=True) for ref in batch_refs)
     if len(refs) != 3 or len({ref.sha256 for ref in refs}) != 3:
         raise HarnessFaultMechanismError("mechanism requires exactly three distinct batch refs")
-    live_ledgers = _index_exact_live_ledgers(store, attempt_ledgers)
+    live_ledgers = index_exact_live_ledgers(store, attempt_ledgers)
     all_live_ledgers = dict(live_ledgers)
-    expected_live_tails: dict[_LedgerKey, ArtifactRef] = {}
+    expected_live_tails: dict[LedgerKey, ArtifactRef] = {}
     verified_partition = verify_partition_opening(store, evaluator.partition_grant)
     scenarios = {item.task.task_id: item for item in verified_partition.scenarios}
     expected_tasks = tuple(sorted(scenarios))
@@ -536,7 +481,7 @@ def verify_harness_fault_mechanism(
             or batch.usage.schedule_fingerprint != closure.schedule.fingerprint
         ):
             raise HarnessFaultMechanismError("batch does not close exact evaluator roster/schedule")
-        ledger_key, live_tail = _replay_exact_batch_usage(
+        ledger_key, live_tail = replay_exact_batch_usage(
             store,
             batch=batch,
             closure=closure,
@@ -606,7 +551,7 @@ def verify_harness_fault_mechanism(
         raise HarnessFaultMechanismError("main, revert, and placebo batches are all required")
     if live_ledgers or set(expected_live_tails) != set(all_live_ledgers):
         raise HarnessFaultMechanismError("each batch must consume one exact live ledger writer")
-    _reverify_live_ledger_tails(all_live_ledgers, expected_live_tails)
+    reverify_live_ledger_tails(all_live_ledgers, expected_live_tails)
     del closures
     events = tuple(all_events)
     main_candidate = tuple(
@@ -615,13 +560,19 @@ def verify_harness_fault_mechanism(
         if item.comparison_kind is HarnessFaultComparisonKind.MAIN
         and item.cell.side is EvaluationSide.CANDIDATE
     )
-    targets = tuple(
-        item for item in main_candidate if item.scenario_role is ScenarioRole.ACTIVATION_TARGET
+    repairable = tuple(
+        item for item in main_candidate if item.scenario_role is ScenarioRole.REPAIRABLE_TARGET
     )
-    protected = tuple(
+    null_controls = tuple(
+        item for item in main_candidate if item.scenario_role is ScenarioRole.NULL_CONTROL
+    )
+    unrepairable = tuple(
+        item for item in main_candidate if item.scenario_role is ScenarioRole.UNREPAIRABLE_CONTROL
+    )
+    shift_controls = tuple(
         item
         for item in main_candidate
-        if item.scenario_role is ScenarioRole.PROTECTED_HARD_NEGATIVE
+        if item.scenario_role is ScenarioRole.DISTRACTOR_SHIFT_HARD_NEGATIVE
     )
     parent_gains = _paired_gains(
         events,
@@ -638,26 +589,45 @@ def verify_harness_fault_mechanism(
         kind=HarnessFaultComparisonKind.PLACEBO,
         expected_control=HarnessRole.PLACEBO,
     )
+    anti_cheat = anti_cheat_summary(verified_partition.scenarios)
     verification = HarnessFaultMechanismVerification(
         compilation_ref=compilation_ref,
         batch_refs=refs,
+        family_count=len({item.family for item in verified_partition.scenarios}),
+        surface_count=len({item.surface for item in verified_partition.scenarios}),
         group_count=len({item.group_id for item in verified_partition.scenarios}),
         scenario_count=len(verified_partition.scenarios),
         main_candidate_event_count=len(main_candidate),
-        activation_target_event_count=len(targets),
-        protected_event_count=len(protected),
+        repairable_event_count=len(repairable),
+        null_event_count=len(null_controls),
+        unrepairable_event_count=len(unrepairable),
+        shift_hard_negative_event_count=len(shift_controls),
         parent_pair_count=len(parent_gains),
         revert_pair_count=len(revert_gains),
         placebo_pair_count=len(placebo_gains),
-        activation_recall=_mean(item.branch is RuntimeBranch.CANONICAL for item in targets),
-        overactivation_rate=_mean(item.branch is RuntimeBranch.CANONICAL for item in protected),
+        repair_activation_recall=_mean(item.branch is RuntimeBranch.SAFE for item in repairable),
+        null_overactivation_rate=_mean(item.branch is RuntimeBranch.SAFE for item in null_controls),
+        shift_route_accuracy=_mean(
+            item.oracle_branch is not None and item.branch is item.oracle_branch
+            for item in shift_controls
+        ),
+        repairable_behavior_rate=_mean(item.behavior_correct for item in repairable),
+        null_behavior_rate=_mean(item.behavior_correct for item in null_controls),
+        unrepairable_behavior_rate=_mean(item.behavior_correct for item in unrepairable),
+        shift_hard_negative_behavior_rate=_mean(item.behavior_correct for item in shift_controls),
         adherence_rate=_mean(item.adhered for item in main_candidate),
         candidate_behavior_rate=_mean(item.behavior_correct for item in main_candidate),
+        oracle_behavior_rate=anti_cheat.oracle_behavior_rate,
+        best_constant_branch_selector_rate=(anti_cheat.best_constant_branch_selector_rate),
+        best_constant_output_rate=anti_cheat.best_constant_output_rate,
+        best_single_family_patch_rate=anti_cheat.best_single_family_patch_rate,
+        oracle_minus_best_constant_branch=anti_cheat.oracle_minus_best_constant_branch,
+        oracle_minus_best_single_family_patch=(anti_cheat.oracle_minus_best_single_family_patch),
         mean_paired_gain_vs_parent=_mean(parent_gains),
         mean_paired_gain_vs_revert=_mean(revert_gains),
         mean_paired_gain_vs_placebo=_mean(placebo_gains),
     )
-    _reverify_live_ledger_tails(all_live_ledgers, expected_live_tails)
+    reverify_live_ledger_tails(all_live_ledgers, expected_live_tails)
     verification_ref = store.put_json(verification, media_type=HARNESS_FAULT_MECHANISM_MEDIA_TYPE)
     published = _load(
         store,
@@ -666,7 +636,7 @@ def verify_harness_fault_mechanism(
         HarnessFaultMechanismVerification,
         "published mechanism verification",
     )
-    _reverify_live_ledger_tails(all_live_ledgers, expected_live_tails)
+    reverify_live_ledger_tails(all_live_ledgers, expected_live_tails)
     if published != verification:
         raise HarnessFaultMechanismError("published mechanism verification changed content")
     return HarnessFaultMechanismRecord(

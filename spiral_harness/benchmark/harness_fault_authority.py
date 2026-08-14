@@ -1,4 +1,4 @@
-"""Independent release service for HarnessFaultBench v3 partition capabilities."""
+"""Independent release service for HarnessFaultBench v4 partitions."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ from spiral_harness.benchmark._harness_fault_cases import (
     GENERATOR_VERSION,
     PARTITION_OPENING_MEDIA_TYPE,
     PARTITION_ROSTER_MEDIA_TYPE,
+    FaultFamily,
+    FaultSurface,
     HarnessFaultAuthorityError,
     HarnessFaultPublicCommitment,
     HarnessFaultSplitConfig,
@@ -85,7 +87,9 @@ class HarnessFaultScenarioAuthority:
                 partition=partition,
                 config_fingerprint=checked_config.fingerprint,
                 template_id=_TEMPLATE_BY_PARTITION[partition],
-                group_count=checked_config.groups_per_partition,
+                family_count=len(FaultFamily),
+                surface_count=len(FaultSurface),
+                group_count=len(FaultFamily) * checked_config.groups_per_family,
                 scenario_count=len(scenarios[partition]),
                 salt_commitment=salt_commitments[partition],
                 scenario_root=_scenario_root(authority_id, partition, scenarios[partition]),

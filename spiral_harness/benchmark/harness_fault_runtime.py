@@ -1,4 +1,4 @@
-"""Trusted deterministic middleware and signed branch events for v3."""
+"""Trusted deterministic multi-surface runtime and signed branch events for v4."""
 
 from __future__ import annotations
 
@@ -10,11 +10,15 @@ from threading import RLock
 from typing import Literal
 
 from spiral_harness.benchmark._harness_fault_cases import (
+    FaultFamily,
+    FaultSurface,
     RepairRuleId,
+    RouteContext,
     RuntimeBranch,
     branch_for_rule,
     evaluate_branch,
     parse_public_task_input,
+    surface_for_family,
 )
 from spiral_harness.benchmark.harness_fault_compiler import (
     verify_fault_compilation,
@@ -30,11 +34,11 @@ from spiral_harness.execution.model import ModelBackend
 from spiral_harness.storage.artifact_store import ArtifactStore
 
 RUNTIME_EVENT_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.harness-fault-runtime-branch-event.v3+json"
+    "application/vnd.spiral-harness.harness-fault-runtime-branch-event.v4+json"
 )
-RUNTIME_PRODUCER_VERSION = "spiral-harness.harness-fault-middleware-runtime:v3"
-_ATTESTATION_DOMAIN = b"spiral-harness:harness-fault-runtime-event:v3\x00"
-_PRODUCER_DOMAIN = b"spiral-harness:harness-fault-runtime-producer:v3\x00"
+RUNTIME_PRODUCER_VERSION = "spiral-harness.harness-fault-multi-surface-runtime:v4"
+_ATTESTATION_DOMAIN = b"spiral-harness:harness-fault-runtime-event:v4\x00"
+_PRODUCER_DOMAIN = b"spiral-harness:harness-fault-runtime-producer:v4\x00"
 
 
 class HarnessFaultRuntimeError(ValueError):
@@ -44,8 +48,8 @@ class HarnessFaultRuntimeError(ValueError):
 class RuntimeBranchEventContent(ImmutableModel):
     """Raw deterministic branch trace; contains no pass/fail assertion."""
 
-    schema_version: Literal["3"] = "3"
-    producer_version: Literal["spiral-harness.harness-fault-middleware-runtime:v3"] = (
+    schema_version: Literal["4"] = "4"
+    producer_version: Literal["spiral-harness.harness-fault-multi-surface-runtime:v4"] = (
         RUNTIME_PRODUCER_VERSION
     )
     compilation_ref: ArtifactRef
@@ -53,9 +57,12 @@ class RuntimeBranchEventContent(ImmutableModel):
     task_id: str
     harness_ref: ArtifactRef
     rule_id: RepairRuleId
+    family: FaultFamily
+    surface: FaultSurface
+    context: RouteContext
     branch: RuntimeBranch
-    raw_left_sha256: Sha256
-    raw_right_sha256: Sha256
+    raw_primary_sha256: Sha256
+    raw_secondary_sha256: Sha256
     base_output_sha256: Sha256
     final_output_sha256: Sha256
 
@@ -235,14 +242,15 @@ class HarnessFaultMiddlewareBackend:
             raise HarnessFaultRuntimeError("request harness is outside compiler graph") from exc
         rule_id = self._compilation.entry(role).rule_id
         task_input = parse_public_task_input(checked_request.user_prompt)
-        branch = branch_for_rule(rule_id, task_input.policy)
+        branch = branch_for_rule(rule_id, task_input.family, task_input.context)
 
         raw_response = self._underlying.invoke(spec=checked_spec, request=checked_request)
         response = BackendResponse.model_validate(raw_response, strict=True)
         answer, observable = evaluate_branch(
+            task_input.family,
             branch,
-            left=task_input.left,
-            right=task_input.right,
+            primary=task_input.primary,
+            secondary=task_input.secondary,
         )
         final_output = json.dumps(
             {"answer": answer, "observable": observable},
@@ -255,9 +263,12 @@ class HarnessFaultMiddlewareBackend:
             task_id=checked_request.task_id,
             harness_ref=checked_request.harness_ref,
             rule_id=rule_id,
+            family=task_input.family,
+            surface=surface_for_family(task_input.family),
+            context=task_input.context,
             branch=branch,
-            raw_left_sha256=sha256_bytes(task_input.left.encode("utf-8")),
-            raw_right_sha256=sha256_bytes(task_input.right.encode("utf-8")),
+            raw_primary_sha256=sha256_bytes(task_input.primary.encode("utf-8")),
+            raw_secondary_sha256=sha256_bytes(task_input.secondary.encode("utf-8")),
             base_output_sha256=sha256_bytes(response.output.encode("utf-8")),
             final_output_sha256=sha256_bytes(final_output.encode("utf-8")),
         )
