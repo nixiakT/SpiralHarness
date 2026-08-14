@@ -30,10 +30,9 @@ jobs:
       - run: uv run ruff format --check .
       - name: Run pytest with a public failure summary
         id: pytest
-        continue-on-error: true
         run: uv run pytest --cov --junitxml=pytest-results.xml
       - name: Publish pytest failure annotations
-        if: steps.pytest.outcome == 'failure'
+        if: failure() && steps.pytest.outcome == 'failure'
         run: uv run python tools/report_junit_failures.py pytest-results.xml
       - run: uv build
       - run: uv run python tools/verify_wheel.py dist

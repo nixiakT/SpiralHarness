@@ -33,7 +33,9 @@ def test_git_blob_rejects_missing_revision(tmp_path: Path) -> None:
 
 
 def test_dialogue_parser_candidate_skill_is_task_general_and_verifier_free() -> None:
-    text = (ROOT / "benchmarks/skillsbench/dialogue-parser-v1.skill.txt").read_text()
+    text = (ROOT / "benchmarks/skillsbench/dialogue-parser-v1.skill.txt").read_text(
+        encoding="utf-8"
+    )
 
     assert "Never create an extra node" in text
     assert "parse_script(text)" in text

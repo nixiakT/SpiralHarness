@@ -20,7 +20,8 @@ def _artifact(path: Path, *, arm: str, accuracy: float, split: str = "val") -> P
                 "accuracy": accuracy,
                 "total_tokens": 100,
             }
-        )
+        ),
+        encoding="utf-8",
     )
     return path
 

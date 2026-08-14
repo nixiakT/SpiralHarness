@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 from tools.report_junit_failures import annotations_from_junit
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_junit_reporter_emits_test_identity_and_escaped_traceback(tmp_path: Path) -> None:
@@ -28,3 +31,31 @@ def test_junit_reporter_fails_closed_when_report_is_missing(tmp_path: Path) -> N
 
     assert len(annotations) == 1
     assert annotations[0].startswith("::error title=pytest JUnit unavailable::")
+
+
+def test_workflow_runs_reporter_only_after_a_real_pytest_failure() -> None:
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "continue-on-error: true" not in workflow
+    assert "if: failure() && steps.pytest.outcome == 'failure'" in workflow
+    assert workflow.index("id: pytest") < workflow.index(
+        "if: failure() && steps.pytest.outcome == 'failure'"
+    )
+
+
+def test_repository_python_text_io_declares_utf8_explicitly() -> None:
+    missing_encoding: list[str] = []
+    for relative_root in ("spiral_harness", "tests", "tools", "benchmarks"):
+        for path in sorted((ROOT / relative_root).rglob("*.py")):
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                    continue
+                if node.func.attr not in {"read_text", "write_text"}:
+                    continue
+                if not any(keyword.arg == "encoding" for keyword in node.keywords):
+                    relative = path.relative_to(ROOT)
+                    missing_encoding.append(f"{relative}:{node.lineno}:{node.func.attr}")
+
+    assert missing_encoding == []

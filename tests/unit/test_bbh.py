@@ -55,7 +55,7 @@ def test_extract_bbh_answer_requires_a_standalone_final_marker(
 
 def test_bbh_adapter_rejects_invalid_targets(tmp_path: Path) -> None:
     path = write_bbh(tmp_path / "data.json")
-    value = json.loads(path.read_text())
+    value = json.loads(path.read_text(encoding="utf-8"))
     value["examples"][0]["target"] = "B"
     path.write_text(json.dumps(value), encoding="utf-8")
 

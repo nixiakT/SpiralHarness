@@ -11,7 +11,10 @@ import spiral_harness.benchmark.meta_harness_symptom as subject
 
 def _split(tmp_path: Path, examples: list[dict[str, str]]) -> Path:
     path = tmp_path / "split.jsonl"
-    path.write_text("".join(json.dumps(item) + "\n" for item in examples))
+    path.write_text(
+        "".join(json.dumps(item) + "\n" for item in examples),
+        encoding="utf-8",
+    )
     return path
 
 
@@ -20,7 +23,7 @@ def test_load_split_requires_exact_pinned_hash(tmp_path: Path, monkeypatch) -> N
     monkeypatch.setitem(subject.SPLIT_SHA256, "val", hashlib.sha256(path.read_bytes()).hexdigest())
 
     assert subject.load_split(path, "val")[0].answer == "allergy"
-    path.write_text(path.read_text() + "\n")
+    path.write_text(path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
     with pytest.raises(ValueError, match="hash mismatch"):
         subject.load_split(path, "val")
 
