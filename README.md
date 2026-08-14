@@ -326,8 +326,11 @@ from plumbing-only demos:
 
 - [PenguinHarness public recursive self-evolution](docs/penguin-public-self-evolution-results.md):
   `dashscope/qwen3-coder-flash`, Penguin 4.0/10 versus Spiral N+2 9.6/10;
-- [Meta-Harness Symptom2Disease and LawBench](docs/same-model-self-evolution-results.md):
-  pure, fixed-harness, and validation-evolved arms under one model per study.
+- [Native Meta-Harness comparison](docs/meta-harness-native-comparison.md): upstream
+  `MemorySystem`, loader, runner, and grader with pure, few-shot, paper-reconstruction, and Spiral
+  arms under `dashscope/qwen3-coder-flash`;
+- [Earlier Meta-Harness data compatibility port](docs/same-model-self-evolution-results.md):
+  Spiral-native prompts and adapters, retained with an explicit non-native protocol warning.
 
 Each report states its claim boundary.  In particular, Penguin's advertised
 15-task data-analysis and 40-task coding suite is not public at the pinned

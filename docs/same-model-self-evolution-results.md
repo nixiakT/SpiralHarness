@@ -1,5 +1,12 @@
 # Same-Model Self-Evolution Results
 
+> **Protocol boundary correction (2026-08-14):** this earlier study pins Meta-Harness data
+> files and grading semantics, but runs Spiral's own short prompts and benchmark adapters. It
+> does **not** execute upstream Meta-Harness `MemorySystem`, loader, prompt wrapper, or native
+> `inner_loop.py`. In particular, its 3% LawBench pure score must not be compared with the 40%
+> native pure score. See the
+> [native same-runtime comparison](meta-harness-native-comparison.md) for the direct head-to-head.
+
 This study compares three arms with the same hosted model
 `dashscope/qwen3-coder-flash`, temperature 0, and a 128-token output ceiling:
 
@@ -7,7 +14,7 @@ This study compares three arms with the same hosted model
 2. **Baseline harness**: a fixed prefix of labeled training examples.
 3. **Self-evolved harness**: query-aware TF-IDF retrieval selected using validation results.
 
-The datasets and split hashes are pinned to Meta-Harness commit
+The dataset compatibility port and split hashes are pinned to Meta-Harness commit
 `44b9942127847f7421db70d8c7e48407f09a3c70`. Candidate selection accepts validation artifacts
 only and fails closed on test artifacts. The frozen candidates were evaluated on complete test
 splits without using test errors for further evolution.
@@ -57,8 +64,9 @@ in the run handoff. API credentials are absent from prompts, artifacts, logs, an
 
 ## Interpretation
 
-These are controlled same-model comparisons: the gain cannot be attributed to switching to a
-stronger solver model. The evolved mechanism is currently deterministic retrieval/memory evolution
+These are controlled same-model comparisons **within the Spiral compatibility protocol**: the gain
+cannot be attributed to switching to a stronger solver model, but the absolute scores are not a
+native Meta-Harness comparison. The evolved mechanism is deterministic retrieval/memory evolution
 over a frozen candidate family, followed by validation-only champion selection. It demonstrates
 automatic evidence-based candidate acceptance and rejection; it is not yet open-ended LLM code
 generation of arbitrary harness programs.

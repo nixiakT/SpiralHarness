@@ -1,0 +1,115 @@
+{
+  "schema_version": "1",
+  "study": "Meta-Harness native same-model comparison",
+  "date": "2026-08-14",
+  "model": "dashscope/qwen3-coder-flash",
+  "temperature": 0,
+  "provider_output_token_ceiling": 4096,
+  "upstream": {
+    "repository": "https://github.com/stanford-iris-lab/meta-harness",
+    "revision": "44b9942127847f7421db70d8c7e48407f09a3c70",
+    "paper": "https://arxiv.org/abs/2603.28052",
+    "paper_pdf_sha256": "7d9b90f53a9f4801a090f1a4acb843340cde81e4f865f97d53fff2a6a570eb73"
+  },
+  "source_boundary": {
+    "native_upstream_components": [
+      "data loaders and splits",
+      "task prompts",
+      "inner_loop.py lifecycle",
+      "MemorySystem interface",
+      "graders",
+      "no_memory and fewshot_all baselines"
+    ],
+    "paper_reconstruction": "Label-Primed Query algorithm from Appendix B.1",
+    "missing_official_files": [
+      "label_primed_query_anchored.py",
+      "draft_verification.py"
+    ],
+    "claim": "paper algorithm reconstruction, not official final harness source reproduction"
+  },
+  "split_sizes": {
+    "Symptom2Disease": {"train": 200, "validation": 50, "test": 212},
+    "LawBench": {"train": 200, "validation": 50, "test": 100},
+    "USPTO": {"train": 50, "validation": 30, "test": 100}
+  },
+  "validation_accuracy": {
+    "Symptom2Disease": {
+      "pure": 0.58,
+      "fewshot_all": 0.58,
+      "paper_reconstruction": 0.76,
+      "first_frozen_spiral": 0.88
+    },
+    "LawBench": {
+      "pure": 0.32,
+      "fewshot_all": 0.14,
+      "paper_reconstruction": 0.42,
+      "first_frozen_spiral": 0.54,
+      "adaptive_spiral": 0.56
+    },
+    "USPTO": {
+      "pure": 0.03333333333333333,
+      "fewshot_all": 0.03333333333333333,
+      "paper_reconstruction": 0.03333333333333333,
+      "spiral_advanced_to_test": false
+    }
+  },
+  "test_results": {
+    "Symptom2Disease": {
+      "pure": {"correct": 132, "total": 212, "accuracy": 0.6226415094339622},
+      "fewshot_all": {"correct": 148, "total": 212, "accuracy": 0.6981132075471698},
+      "paper_reconstruction": {
+        "correct": 179,
+        "total": 212,
+        "accuracy": 0.8443396226415094
+      },
+      "first_frozen_spiral": {
+        "correct": 172,
+        "total": 212,
+        "accuracy": 0.8113207547169812
+      },
+      "adaptive_best_seen": {
+        "correct": 188,
+        "total": 212,
+        "accuracy": 0.8867924528301887,
+        "confirmatory": false,
+        "reason": "selected after the public test was exposed"
+      }
+    },
+    "LawBench": {
+      "pure": {"correct": 40, "total": 100, "accuracy": 0.4},
+      "fewshot_all": {"correct": 17, "total": 100, "accuracy": 0.17},
+      "paper_reconstruction": {"correct": 45, "total": 100, "accuracy": 0.45},
+      "first_frozen_spiral": {"correct": 55, "total": 100, "accuracy": 0.55},
+      "adaptive_best_seen": {"correct": 55, "total": 100, "accuracy": 0.55}
+    }
+  },
+  "paired_bootstrap_95_percent": {
+    "resamples": 20000,
+    "seed": 42,
+    "S2D_adaptive_minus_pure": [0.19811320754716982, 0.330188679245283],
+    "S2D_adaptive_minus_paper_reconstruction_descriptive_only": [
+      0.0047169811320754715,
+      0.08490566037735849
+    ],
+    "Law_frozen_minus_pure": [0.08, 0.23],
+    "Law_frozen_minus_paper_reconstruction": [0.05, 0.16]
+  },
+  "artifact_sha256": {
+    "S2D_pure_test": "6eacffdb72d9ae1c55c67993864284b579fcfb55bc801bdaefedb114175b9b9b",
+    "S2D_fewshot_all_test": "3bb2d98773c439da4c976bbc54393e30cc837ab137eed5191048a8c642eb4e22",
+    "S2D_paper_reconstruction_test": "98eafa811d00211c5f29b70e0af588b2b78df19a46600543daeb917229a078af",
+    "S2D_first_frozen_test": "0dc46c247cd0e1dcd33d99f448015804786ce2749b517a4c8cafa0804d2fbd05",
+    "S2D_adaptive_local_test": "0b407dbab544c73e4cde02878d50708cab2e59319cfe56c76ac4765a7f28bf59",
+    "Law_pure_test": "3206c5993233c3a43d2a2d11c7a855869fc4eb1edf382e29829354e4f7507ef7",
+    "Law_fewshot_all_test": "94f2852bf2ea1a718955274e44c24be6b78f7eff194cb9e9b7d85436a9ed34fd",
+    "Law_paper_reconstruction_test": "b922f039a3c5dcc74a241e3ca26b3470f84fe98e0674a6e956df5d1ceac96fc7",
+    "Law_first_frozen_test": "820d48c9383013f54affe548f33e66aabb8e252965047644a50e85449b79454e"
+  },
+  "claim_boundary": [
+    "The same-model adaptive S2D and frozen Law configurations exceed the pure model by more than 10 percentage points.",
+    "Spiral exceeds the paper reconstruction point estimate on both completed test sets.",
+    "Spiral does not exceed the paper reconstruction by more than 10 percentage points on both completed test sets.",
+    "The adaptive S2D result is engineering evidence, not an untouched-test estimate.",
+    "USPTO test was not opened because no validation candidate beat the baselines."
+  ]
+}

@@ -1,5 +1,9 @@
 # Meta-Harness Symptom2Disease Result
 
+> **Protocol note:** this earlier result uses Meta-Harness data and label semantics through a
+> Spiral benchmark adapter; it does not run the upstream `MemorySystem` prompt wrapper or native
+> `inner_loop.py`. See the [native same-runtime comparison](meta-harness-native-comparison.md).
+
 This experiment reproduces the public Meta-Harness text-classification task at commit
 `44b9942127847f7421db70d8c7e48407f09a3c70`. It uses the same complete
 Symptom2Disease test split and exact-match label semantics, with a training-free retrieval
