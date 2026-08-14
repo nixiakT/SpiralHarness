@@ -23,6 +23,28 @@ the closest conceptual baselines and rule out broad novelty claims such as
 budget-matched \fullarm/\scorearm{} contrast isolates whether intervention-linked
 mechanism evidence changes promotion quality.
 
+Harness Updating Is Not Harness Benefit explicitly separates the ability to
+author an update from the solver's ability to activate and follow it
+\citep{lin2026updating}; activation and adherence are therefore not novel
+constructs here.  HarnessBank combines a separate evolver, semantic diversity
+archive, and gated screening \citep{luo2026harnessbank}.  HarnessOpt-Bench
+standardizes optimizer evaluation with fixed budgets, held-out normalized
+gain, and a trusted execution environment \citep{ursekar2026harnessopt}.
+\systemname{} instead treats promotion evidence as the intervention: it holds
+the optimizer and search budget fixed between score-only and mechanism-visible
+conditions, and requires child--revert--placebo attribution before benefit can
+authorize an update.  This difference is empirical and remains
+\evidenceblocked{the matched sealed contrast has not been run}.
+
+SEAL shows that at least one acceptance signal must remain outside an agent
+that rewrites its own verifier \citep{guo2026seal}; thus we do not claim the
+first exogenous acceptor.  Our narrower question is what source-linked evidence
+that acceptor should require under repeated adaptive nominations.  RHO removes
+the need for labeled deployment feedback through retrospective
+self-consistency and self-preference \citep{pan2026rho}.  That signal regime is
+complementary, but our confirmatory study intentionally retains trusted task
+outcomes so that false promotion and causal attribution are identifiable.
+
 \paragraph{Adaptive validity.}
 Reusable evaluation can overfit even when each query appears held out
 \citep{dwork2015reusable}.  Confidence sequences provide time-uniform inference
