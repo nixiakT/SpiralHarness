@@ -128,6 +128,26 @@ def test_invariant_compiler_rejects_insufficient_or_unshared_evidence() -> None:
         subject.compile_fixed_line_invariants(("one", "two"))
 
 
+def test_evidence_contract_normalizes_only_compiled_fixed_lines() -> None:
+    first = "HEADER-X\nTitle: Alpha\nMode: SAFE\nbody one\nFOOTER-Y"
+    second = "HEADER-X\nTitle: Beta\nMode: SAFE\nbody two\nFOOTER-Y"
+    generated = "WRONG-HEADER\nTitle: Gamma\nMode: RISKY\nnew body\nWRONG-FOOTER"
+
+    normalized = subject.normalize_evidence_fixed_lines(generated, (first, second))
+
+    assert normalized == "HEADER-X\nTitle: Gamma\nMode: SAFE\nnew body\nFOOTER-Y"
+
+
+def test_evidence_contract_keeps_shared_footer_final_when_body_length_varies() -> None:
+    first = "HEADER\nTitle: Alpha\nbody\nFOOTER"
+    second = "HEADER\nTitle: Beta\nother body\nFOOTER"
+    generated = "wrong\nTitle: Gamma\nline one\nline two\nwrong footer\n"
+
+    normalized = subject.normalize_evidence_fixed_lines(generated, (first, second))
+
+    assert normalized == "HEADER\nTitle: Gamma\nline one\nline two\nFOOTER\n"
+
+
 def test_verify_penguin_source_is_byte_exact(tmp_path: Path, monkeypatch) -> None:
     source = tmp_path / "self-evolve-recursive.ts"
     source.write_bytes(b"pinned source")
@@ -164,6 +184,10 @@ def test_live_runner_mirrors_call_schedule_and_persists_states(tmp_path: Path) -
     assert [round_["promoted"] for round_ in result.payload["rounds"]] == [True, True]
     assert result.payload["reflection_information"].endswith("no scorer")
     assert result.payload["invariant_compiler"] == "position-stable-non-empty-lines-v1"
+    assert [
+        generation["evidence_fixed_line_contract"]
+        for generation in result.payload["generations"]
+    ] == [False, False, True]
     assert result.payload["official_15_40_suite_public"] is False
     assert result.payload["total_tokens"] == 17 * 15
     assert result.artifact_ref.media_type == subject.PENGUIN_PUBLIC_RESULT_MEDIA_TYPE

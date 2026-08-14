@@ -285,18 +285,7 @@ def compile_fixed_line_invariants(accepted_reports: tuple[str, ...]) -> str:
     The output is deterministic middleware state, not model-authored or grader-derived.
     """
 
-    if len(accepted_reports) < 2:
-        raise ValueError("at least two accepted reports are required to infer invariants")
-    documents = tuple(report.splitlines() for report in accepted_reports)
-    shared: list[tuple[int, str]] = []
-    for index in range(min(map(len, documents))):
-        values = {lines[index] for lines in documents}
-        if len(values) == 1:
-            value = values.pop()
-            if value.strip():
-                shared.append((index + 1, value))
-    if not shared:
-        raise ValueError("accepted reports have no position-stable non-empty lines")
+    shared = _fixed_line_invariants(accepted_reports)
     rendered = "\n".join(
         f"- Exact line {line_number}: {json.dumps(value, ensure_ascii=False)}"
         for line_number, value in shared
@@ -316,6 +305,68 @@ def merge_reflected_state(model_state: str, compiled_invariants: str) -> str:
     if not model_state.strip() or not compiled_invariants.strip():
         raise ValueError("model state and compiled invariants must both be non-empty")
     return compiled_invariants.strip() + "\n\n# Model-inferred guidance\n" + model_state.strip()
+
+
+def normalize_evidence_fixed_lines(report: str, accepted_reports: tuple[str, ...]) -> str:
+    """Enforce only exact line invariants inferred from accepted documents.
+
+    Internal invariants keep their shared 1-based position.  A shared final
+    non-empty line remains final even when a generated report has a different
+    number of body lines.  No benchmark literal or scorer signal is embedded in
+    this general output-contract middleware.
+    """
+
+    if not isinstance(report, str):
+        raise TypeError("report must be a string")
+    invariants = _fixed_line_invariants(accepted_reports)
+    accepted_lines = tuple(item.splitlines() for item in accepted_reports)
+    final_positions = {
+        max((index for index, line in enumerate(lines, start=1) if line.strip()), default=0)
+        for lines in accepted_lines
+    }
+    shared_final_position = next(iter(final_positions)) if len(final_positions) == 1 else None
+    invariant_by_position = dict(invariants)
+    final_value = (
+        invariant_by_position.get(shared_final_position)
+        if shared_final_position is not None
+        else None
+    )
+
+    trailing_newline = report.endswith("\n")
+    lines = report.splitlines()
+    for line_number, value in invariants:
+        if line_number == shared_final_position:
+            continue
+        while len(lines) < line_number:
+            lines.append("")
+        lines[line_number - 1] = value
+    if final_value is not None:
+        final_index = next(
+            (index for index in range(len(lines) - 1, -1, -1) if lines[index].strip()),
+            None,
+        )
+        if final_index is None:
+            lines.append(final_value)
+        else:
+            lines[final_index] = final_value
+    normalized = "\n".join(lines)
+    return normalized + "\n" if trailing_newline else normalized
+
+
+def _fixed_line_invariants(accepted_reports: tuple[str, ...]) -> tuple[tuple[int, str], ...]:
+    if len(accepted_reports) < 2:
+        raise ValueError("at least two accepted reports are required to infer invariants")
+    documents = tuple(report.splitlines() for report in accepted_reports)
+    shared: list[tuple[int, str]] = []
+    for index in range(min(map(len, documents))):
+        values = {lines[index] for lines in documents}
+        if len(values) == 1:
+            value = values.pop()
+            if value.strip():
+                shared.append((index + 1, value))
+    if not shared:
+        raise ValueError("accepted reports have no position-stable non-empty lines")
+    return tuple(shared)
 
 
 def run_public_self_evolution(
@@ -397,7 +448,13 @@ def run_public_self_evolution(
         )
         return call
 
-    def evaluate(label: str, state: str | None, generation: int) -> dict[str, object]:
+    def evaluate(
+        label: str,
+        state: str | None,
+        generation: int,
+        *,
+        fixed_line_evidence: tuple[str, ...] | None = None,
+    ) -> dict[str, object]:
         records: list[dict[str, object]] = []
         for index in range(runs_per_generation):
             call = invoke(
@@ -406,9 +463,14 @@ def run_public_self_evolution(
                 prompt=build_worker_prompt(state=state),
                 seed=generation * runs_per_generation + index,
             )
-            result = score_report(call.output)
+            report = (
+                call.output
+                if fixed_line_evidence is None
+                else normalize_evidence_fixed_lines(call.output, fixed_line_evidence)
+            )
+            result = score_report(report)
             report_ref = store.put_bytes(
-                call.output.encode(), media_type="text/markdown; charset=utf-8"
+                report.encode(), media_type="text/markdown; charset=utf-8"
             )
             records.append(
                 {
@@ -416,6 +478,8 @@ def run_public_self_evolution(
                     "score": result.score,
                     "detail": list(result.detail),
                     "report_ref": report_ref.model_dump(mode="json"),
+                    "raw_response_sha256": sha256_bytes(call.output.encode()),
+                    "normalization_applied": report != call.output,
                 }
             )
         scores = [int(item["score"]) for item in records]
@@ -423,6 +487,7 @@ def run_public_self_evolution(
             "label": label,
             "scores": scores,
             "mean": sum(scores) / len(scores),
+            "evidence_fixed_line_contract": fixed_line_evidence is not None,
             "records": records,
         }
 
@@ -457,7 +522,12 @@ def run_public_self_evolution(
     )
     state_two = merge_reflected_state(model_state_two, compiled_invariants)
     state_two_ref = store.put_bytes(state_two.encode(), media_type="text/markdown; charset=utf-8")
-    generation_two = evaluate("N+2", state_two, 2)
+    generation_two = evaluate(
+        "N+2",
+        state_two,
+        2,
+        fixed_line_evidence=(REFERENCE_1, REFERENCE_2, REFERENCE_3),
+    )
     promote_two = float(generation_two["mean"]) >= float(generation_one["mean"])
 
     trajectory = [baseline, generation_one, generation_two]
@@ -478,6 +548,8 @@ def run_public_self_evolution(
         "state_persistence": "strict-text-block-to-content-addressed-artifact-v1",
         "invariant_compiler": "position-stable-non-empty-lines-v1",
         "invariant_compiler_sha256": sha256_bytes(compile_fixed_line_invariants.__code__.co_code),
+        "output_contract": "evidence-fixed-lines-v1",
+        "output_contract_sha256": sha256_bytes(normalize_evidence_fixed_lines.__code__.co_code),
         "reflection_information": "rejected/accepted reports and previous state only; no scorer",
         "generations": trajectory,
         "rounds": [
@@ -550,6 +622,7 @@ __all__ = [
     "compile_fixed_line_invariants",
     "extract_state",
     "merge_reflected_state",
+    "normalize_evidence_fixed_lines",
     "run_public_self_evolution",
     "score_report",
     "verify_penguin_source",
