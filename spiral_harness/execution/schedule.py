@@ -35,6 +35,9 @@ _PAIRED_CELL_SCHEMA = "spiral-harness/paired-evaluation-cell/v2"
 SCHEDULE_PREFLIGHT_MEDIA_TYPE = (
     "application/vnd.spiral-harness.schedule-preflight-certificate.v3+json"
 )
+EVALUATION_BATCH_SCHEDULE_MEDIA_TYPE = (
+    "application/vnd.spiral-harness.evaluation-batch-schedule.v2+json"
+)
 
 
 class EvaluationSide(StrEnum):
@@ -529,7 +532,36 @@ def publish_schedule_preflight(
     return ref
 
 
+def publish_evaluation_schedule(
+    repository: ArtifactRepository,
+    schedule: EvaluationBatchSchedule,
+) -> ArtifactRef:
+    """Persist one canonical schedule whose content digest is its fingerprint."""
+
+    if not isinstance(repository, ArtifactRepository):
+        raise TypeError("repository must implement ArtifactRepository")
+    checked = EvaluationBatchSchedule.model_validate(schedule, strict=True)
+    raw_ref = repository.put_json(
+        checked,
+        media_type=EVALUATION_BATCH_SCHEDULE_MEDIA_TYPE,
+    )
+    try:
+        ref = ArtifactRef.model_validate(raw_ref, strict=True)
+        loaded = repository.get_json(ref, EvaluationBatchSchedule)
+        published = EvaluationBatchSchedule.model_validate(loaded, strict=True)
+    except Exception as exc:
+        raise RuntimeError("published evaluation schedule cannot be verified") from exc
+    if (
+        ref.media_type != EVALUATION_BATCH_SCHEDULE_MEDIA_TYPE
+        or ref.sha256 != checked.fingerprint
+        or published != checked
+    ):
+        raise RuntimeError("published evaluation schedule changed canonical content")
+    return ref
+
+
 __all__ = [
+    "EVALUATION_BATCH_SCHEDULE_MEDIA_TYPE",
     "SCHEDULE_PREFLIGHT_MEDIA_TYPE",
     "EvaluationBatchSchedule",
     "EvaluationCellKey",
@@ -540,5 +572,6 @@ __all__ = [
     "SchedulePreflightCertificate",
     "derive_seed_v2",
     "preflight_attempt_budget",
+    "publish_evaluation_schedule",
     "publish_schedule_preflight",
 ]

@@ -51,6 +51,15 @@ from spiral_harness.evolution.models import (
     SearchRunManifest,
     StrategyFeedbackView,
 )
+from spiral_harness.evolution.objective_evidence import (
+    TRUSTED_OBJECTIVE_AGGREGATE_MEDIA_TYPE,
+    ObjectiveAggregateVerificationCapability,
+    ObjectiveAggregateVerificationError,
+    TrustedObjectiveAggregate,
+    TrustedObjectiveAggregateContent,
+    TrustedObjectiveAggregateService,
+    TrustedObjectiveIntervalEvidence,
+)
 from spiral_harness.evolution.orchestrator import (
     DIAGNOSTIC_CLUSTER_MEDIA_TYPE,
     DIAGNOSTIC_TRAJECTORY_MEDIA_TYPE,
@@ -63,7 +72,6 @@ from spiral_harness.evolution.orchestrator import (
     SAFE_BENCHMARK_METADATA_MEDIA_TYPE,
     SEARCH_ANALYSIS_PLAN_MEDIA_TYPE,
     SEARCH_BENCHMARK_BINDING_MEDIA_TYPE,
-    TRUSTED_OBJECTIVE_AGGREGATE_MEDIA_TYPE,
     TRUSTED_SCREEN_EVALUATION_MEDIA_TYPE,
     TRUSTED_STRATEGY_FEEDBACK_MEDIA_TYPE,
     AutomaticSearchLoop,
@@ -71,7 +79,6 @@ from spiral_harness.evolution.orchestrator import (
     AutomaticSearchLoopResult,
     CandidateMaterialization,
     ExplorationTrajectoryIndex,
-    ObjectiveAggregateVerificationCapability,
     SafeBenchmarkMetadata,
     SearchAnalysisPlan,
     SearchBenchmarkBinding,
@@ -81,9 +88,6 @@ from spiral_harness.evolution.orchestrator import (
     StrategyArtifactOperation,
     StrategyArtifactView,
     StrategyFeedbackVerificationCapability,
-    TrustedObjectiveAggregate,
-    TrustedObjectiveAggregateContent,
-    TrustedObjectiveAggregateService,
     TrustedScreenEvaluation,
     TrustedStrategyFeedback,
     TrustedStrategyFeedbackContent,
@@ -288,7 +292,15 @@ def objective_content(store: ArtifactStore) -> TrustedObjectiveAggregateContent:
         receipt_refs=(put_json(store, "receipt", media_type=EXECUTION_RECEIPT_MEDIA_TYPE),),
         primary_score=0.8,
         mean_delta=0.1,
-        confidence_lower=0.02,
+        confidence_interval=TrustedObjectiveIntervalEvidence(
+            confidence_level=0.95,
+            lower=0.02,
+            upper=0.18,
+            bootstrap_samples=10_000,
+            bootstrap_seed=0,
+            n_tasks=1,
+            n_valid_pairs=1,
+        ),
         regression_rate=0.0,
         tokens_ratio=1.0,
         latency_ratio=1.0,
@@ -757,7 +769,22 @@ def build_receipt_backed_screen(tmp_path: Path) -> SimpleNamespace:
             grader_fingerprint=env.protocol.grader_fingerprint,
             schedule_fingerprint=schedule.fingerprint,
             receipt_refs=usage.receipt_refs,
-            **metrics,
+            primary_score=metrics["primary_score"],
+            mean_delta=metrics["mean_delta"],
+            confidence_interval=TrustedObjectiveIntervalEvidence(
+                confidence_level=0.95,
+                lower=metrics["confidence_lower"],
+                upper=0.18,
+                bootstrap_samples=10_000,
+                bootstrap_seed=0,
+                n_tasks=len(schedule.task_ids),
+                n_valid_pairs=(
+                    len(schedule.task_ids) * len(schedule.search_runs) * len(schedule.repeat_seeds)
+                ),
+            ),
+            regression_rate=metrics["regression_rate"],
+            tokens_ratio=metrics["tokens_ratio"],
+            latency_ratio=metrics["latency_ratio"],
         )
     )
     evaluation = TrustedScreenEvaluation(
@@ -858,7 +885,7 @@ def test_objective_aggregate_requires_independent_exact_capability(tmp_path: Pat
             pass
 
 
-def test_objective_aggregate_v3_binds_receipts_attestor_and_hmac_domain(
+def test_objective_aggregate_v4_binds_interval_receipts_attestor_and_hmac_domain(
     tmp_path: Path,
 ) -> None:
     store = ArtifactStore(tmp_path)
@@ -868,14 +895,14 @@ def test_objective_aggregate_v3_binds_receipts_attestor_and_hmac_domain(
     aggregate_ref = service.attest(content)
     envelope = store.get_json(aggregate_ref, TrustedObjectiveAggregate)
 
-    assert TRUSTED_OBJECTIVE_AGGREGATE_MEDIA_TYPE.endswith(".v3+json")
+    assert TRUSTED_OBJECTIVE_AGGREGATE_MEDIA_TYPE.endswith(".v4+json")
     assert aggregate_ref.media_type == TRUSTED_OBJECTIVE_AGGREGATE_MEDIA_TYPE
-    assert content.schema_version == "3"
-    assert envelope.schema_version == "3"
+    assert content.schema_version == "4"
+    assert envelope.schema_version == "4"
     assert service.verification_capability.attestor_id == sha256_bytes(
-        b"spiral-harness/objective-aggregate-attestor/v3\x00" + secret
+        b"spiral-harness/objective-aggregate-attestor/v4\x00" + secret
     )
-    expected = hmac.new(secret, b"spiral-harness/objective-aggregate/v3\x00", sha256)
+    expected = hmac.new(secret, b"spiral-harness/objective-aggregate/v4\x00", sha256)
     expected.update(envelope.attestor_id.encode("ascii") + b"\x00")
     expected.update(canonical_json_bytes(envelope.content))
     assert envelope.authentication_tag == expected.hexdigest()
@@ -1610,11 +1637,11 @@ def test_objective_aggregate_tamper_and_foreign_attestor_fail_closed(
         media_type=aggregate_ref.media_type,
     )
 
-    with pytest.raises(AutomaticSearchLoopError, match="authentication failed"):
+    with pytest.raises(ObjectiveAggregateVerificationError, match="authentication failed"):
         service.verification_capability.verify(forged_ref)
 
     foreign = TrustedObjectiveAggregateService(store, secret=b"b" * 32)
-    with pytest.raises(AutomaticSearchLoopError, match="another attestor"):
+    with pytest.raises(ObjectiveAggregateVerificationError, match="another attestor"):
         foreign.verification_capability.verify(aggregate_ref)
 
 

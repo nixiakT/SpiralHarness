@@ -40,6 +40,7 @@ from spiral_harness.evolution.models import (
     STRATEGY_PLUGIN_MANIFEST_MEDIA_TYPE,
     SearchRunManifest,
 )
+from spiral_harness.evolution.objective_evidence import TrustedObjectiveAggregateService
 from spiral_harness.evolution.orchestrator import (
     DIAGNOSTIC_CLUSTER_MEDIA_TYPE,
     DIAGNOSTIC_TRAJECTORY_MEDIA_TYPE,
@@ -57,7 +58,6 @@ from spiral_harness.evolution.orchestrator import (
     SafeBenchmarkMetadata,
     SearchAnalysisPlan,
     SearchBenchmarkBinding,
-    TrustedObjectiveAggregateService,
     TrustedStrategyFeedbackService,
 )
 from spiral_harness.evolution.seeds import derive_strategy_seed

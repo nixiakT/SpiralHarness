@@ -17,6 +17,9 @@ STRATEGY_SEED_DOMAIN = "spiral-harness/evolution/strategy-seed/v1"
 UNBOUND_PAIRED_PROPOSER_SEED_DOMAIN = (
     "spiral-harness/evolution/unbound-paired-proposer-seed-helper/v2"
 )
+MANIFEST_BOUND_PAIRED_PROPOSER_SEED_DOMAIN = (
+    "spiral-harness/evolution/manifest-bound-paired-proposer-seed/v1"
+)
 RANDOM_VALID_SAMPLE_DOMAIN = "spiral-harness/evolution/random-valid-sample/v1"
 UNIFORM_SHUFFLE_ALGORITHM = "sha256-counter-fisher-yates-rejection-v1"
 
@@ -100,6 +103,45 @@ def derive_unbound_paired_proposer_seed(
             "pair": "score-full",
             "proposal_master_seed": master,
             "search_run_seed": run,
+        },
+    )
+    return int.from_bytes(digest, byteorder="big", signed=False)
+
+
+def derive_manifest_bound_paired_proposer_seed(
+    *,
+    proposal_master_seed: int,
+    search_run_seed: int,
+    baseline_kind: BaselineKind,
+    shared_coordinate_fingerprint: str,
+) -> int:
+    """Bind the paired proposer stream to one complete matched-run context.
+
+    The design-time helper is deliberately recomputed rather than accepted as
+    input.  SCORE and FULL therefore obtain the same seed only when their
+    proposal master seed, independent search seed, and complete shared
+    coordinate fingerprint are identical.  Runtime admission must recompute
+    this value from the persisted manifest; the value alone is not proof that
+    a proposer actually consumed it.
+    """
+
+    unbound_seed = derive_unbound_paired_proposer_seed(
+        proposal_master_seed=proposal_master_seed,
+        search_run_seed=search_run_seed,
+        baseline_kind=baseline_kind,
+    )
+    if not isinstance(shared_coordinate_fingerprint, str) or len(
+        shared_coordinate_fingerprint
+    ) != 64:
+        raise ValueError("shared_coordinate_fingerprint must be a lowercase SHA-256 digest")
+    if any(character not in "0123456789abcdef" for character in shared_coordinate_fingerprint):
+        raise ValueError("shared_coordinate_fingerprint must be a lowercase SHA-256 digest")
+    digest = _digest_payload(
+        domain=MANIFEST_BOUND_PAIRED_PROPOSER_SEED_DOMAIN,
+        payload={
+            "pair": "score-full",
+            "shared_coordinate_fingerprint": shared_coordinate_fingerprint,
+            "unbound_paired_proposer_seed": unbound_seed,
         },
     )
     return int.from_bytes(digest, byteorder="big", signed=False)
@@ -191,10 +233,12 @@ def uniform_without_replacement_indices(
 
 
 __all__ = [
+    "MANIFEST_BOUND_PAIRED_PROPOSER_SEED_DOMAIN",
     "RANDOM_VALID_SAMPLE_DOMAIN",
     "STRATEGY_SEED_DOMAIN",
     "UNBOUND_PAIRED_PROPOSER_SEED_DOMAIN",
     "UNIFORM_SHUFFLE_ALGORITHM",
+    "derive_manifest_bound_paired_proposer_seed",
     "derive_random_valid_sample_seed",
     "derive_strategy_seed",
     "derive_unbound_paired_proposer_seed",
