@@ -13,6 +13,52 @@ benchmarks:
       - role: public-self-evolution-example
         path: examples/self-improving-agent/self-evolve-recursive.ts
         sha256: dc46ab7735444876c5f0c20ae5aacc75def2e18051ec87f42617901d6694fa2d
+  - id: meta-harness-text-classification-runtime
+    name: "Meta-Harness text-classification reference runtime"
+    upstream_repository: https://github.com/stanford-iris-lab/meta-harness
+    upstream_commit: 44b9942127847f7421db70d8c7e48407f09a3c70
+    license:
+      status: verified
+      spdx_id: MIT
+      name: MIT License
+      copyright: Copyright (c) 2026 Yoonho Lee
+      url: https://raw.githubusercontent.com/stanford-iris-lab/meta-harness/44b9942127847f7421db70d8c7e48407f09a3c70/LICENSE
+    distribution: >-
+      upstream source is not vendored in SpiralHarness; native comparisons use a separately
+      obtained pinned checkout and a first-party adapter
+    local_runtime_modifications:
+      distribution: not distributed by SpiralHarness
+      notes:
+        - pass LITELLM_API_KEY from the process environment to the upstream LLM constructor
+        - retain item-level predictions in the external run result for audit recomputation
+    files:
+      - role: orchestration
+        path: reference_examples/text_classification/benchmark.py
+        sha256: 9f1f924c331f7aeee7f8a7d99b8e38b1773b4cf99e497a80b2c7ccd3e3cdbdb6
+      - role: evaluation-loop
+        path: reference_examples/text_classification/inner_loop.py
+        sha256: 0c121c567180cdbf63639c18327dc7877de4570415385672d60b2cc833fe4216
+      - role: model-client
+        path: reference_examples/text_classification/llm.py
+        sha256: 7d2d4e46771b5b7f6d99a124a38658815bd589ae8be56df7a4daedd995212c2f
+      - role: memory-interface
+        path: reference_examples/text_classification/memory_system.py
+        sha256: 0128a4f1eb20352bcdb932f93e8c541dc16c6dd8e0de08e4abf489f44f21a0b7
+      - role: model-only-baseline
+        path: reference_examples/text_classification/agents/no_memory.py
+        sha256: 720c8b09691541102549749e17decc85ce779fcf190915c07a511e5958e8e562
+      - role: few-shot-all-baseline
+        path: reference_examples/text_classification/agents/fewshot_all.py
+        sha256: 3369cf4571f8719b0748b9740688f8b050d96d68c10048432bb54249e6051cb3
+      - role: dataset-registry
+        path: reference_examples/text_classification/data/constants.py
+        sha256: 79ae1bd45dc33a473d6d1a5849a1182afd5b219fd6005a88a8668ff302b5cf87
+      - role: dataset-loaders
+        path: reference_examples/text_classification/data/loaders.py
+        sha256: 96f88a636c88d3983e9604467dc173acaef9d095fadafa152d7811801f0ae768
+      - role: dataset-graders
+        path: reference_examples/text_classification/data/evaluators.py
+        sha256: e4f20042e4cc526da5f7d12ee8f74d0c09bdbaa99243aef2b904cfca0a7215aa
 datasets:
   - id: bbh-logical-deduction-seven
     name: "BIG-Bench Hard: Logical Deduction (Seven Objects)"
@@ -48,3 +94,115 @@ datasets:
         url: https://raw.githubusercontent.com/openai/grade-school-math/3101c7d5072418e28b9008a6636bde82a006892c/grade_school_math/data/test.jsonl
         size: 749738
         sha256: 3730d312f6e3440559ace48831e51066acaca737f6eabec99bccb9e4b3c39d14
+  - id: meta-harness-symptom2disease
+    name: "Meta-Harness Symptom2Disease split"
+    upstream_repository: https://github.com/stanford-iris-lab/meta-harness
+    upstream_commit: 44b9942127847f7421db70d8c7e48407f09a3c70
+    provenance:
+      meta_harness_import_commit: 95175f70c758dd1145b395edfe8b67e6f9d80fbd
+      intermediate_repository: https://github.com/metaevo-ai/mce-artifact
+      intermediate_commit: 0ff558d0f64ffe61b9af6fc62ec3fa8b5a1440c1
+      original_repository: https://huggingface.co/datasets/gretelai/symptom_to_diagnosis
+      original_revision: 722cfb0e11f8ae37339c7f573b5e10429b94df49
+      verification: >-
+        test is the complete original test split with question/answer field renaming; all 250
+        train and validation records are exact renamed members of the original training split
+    license:
+      status: verified-at-original-source
+      spdx_id: Apache-2.0
+      name: Apache License 2.0
+      url: https://huggingface.co/datasets/gretelai/symptom_to_diagnosis/blob/722cfb0e11f8ae37339c7f573b5e10429b94df49/README.md
+    redistribution_status: allowed-with-apache-2.0-conditions
+    distribution: >-
+      not included in SpiralHarness source distributions or wheels; obtain on demand from the
+      pinned upstream and preserve the Apache-2.0 attribution and modification notice
+    files:
+      - role: train
+        url: https://raw.githubusercontent.com/stanford-iris-lab/meta-harness/44b9942127847f7421db70d8c7e48407f09a3c70/reference_examples/text_classification/data/symptom_diagnosis/train.jsonl
+        size: 38578
+        sha256: b41e494b40bf971a1eadd79ed4dda527640916abe0a2dc94e047e13ef293ee4c
+      - role: validation
+        url: https://raw.githubusercontent.com/stanford-iris-lab/meta-harness/44b9942127847f7421db70d8c7e48407f09a3c70/reference_examples/text_classification/data/symptom_diagnosis/val.jsonl
+        size: 9746
+        sha256: f6ad74bea9fb59f4a3abf930668042c33fbb7519bc9e2568a9758c2a0b1277e8
+      - role: test
+        url: https://raw.githubusercontent.com/stanford-iris-lab/meta-harness/44b9942127847f7421db70d8c7e48407f09a3c70/reference_examples/text_classification/data/symptom_diagnosis/test.jsonl
+        size: 41018
+        sha256: 6a6b224665715f40d42a46eed82498698d39fa7689241eaae2cc2276e444671d
+  - id: meta-harness-lawbench-charge-prediction
+    name: "Meta-Harness LawBench 3-3 charge-prediction subset"
+    upstream_repository: https://github.com/stanford-iris-lab/meta-harness
+    upstream_commit: 44b9942127847f7421db70d8c7e48407f09a3c70
+    provenance:
+      meta_harness_import_commit: 95175f70c758dd1145b395edfe8b67e6f9d80fbd
+      intermediate_repository: https://github.com/metaevo-ai/mce-artifact
+      intermediate_commit: 0ff558d0f64ffe61b9af6fc62ec3fa8b5a1440c1
+      original_repository: https://github.com/open-compass/LawBench
+      original_commit: e30981bb3ff54c41571f222e0b23e92d27375388
+      original_path: data/zero_shot/3-3.json
+      original_file_introduced_commit: 8053ec8dc45ffb894d21dab34e9821f688e90359
+      verification: >-
+        the 350 train, validation and test objects are unique exact members of the 500-object
+        LawBench zero-shot 3-3 file; the subset-selection algorithm is not published
+    license:
+      status: repository-level-license-verified
+      spdx_id: Apache-2.0
+      name: Apache License 2.0
+      url: https://raw.githubusercontent.com/open-compass/LawBench/e30981bb3ff54c41571f222e0b23e92d27375388/LICENSE
+      caveat: >-
+        LawBench identifies task 3-3 as derived from CAIL2018, but its README does not supply a
+        pinned CAIL2018 source or nested data-license terms
+    redistribution_status: prohibited-pending-nested-source-review
+    distribution: >-
+      not included in SpiralHarness source distributions or wheels; obtain on demand only and do
+      not mirror or publish the transformed split until CAIL2018 terms are verified
+    files:
+      - role: train
+        url: https://raw.githubusercontent.com/stanford-iris-lab/meta-harness/44b9942127847f7421db70d8c7e48407f09a3c70/reference_examples/text_classification/data/crime_prediction/train.jsonl
+        size: 337500
+        sha256: 36ead48b5e88e02f6bf5944d1c00c561f6592e5573f9ecf05c23affc111c386c
+      - role: validation
+        url: https://raw.githubusercontent.com/stanford-iris-lab/meta-harness/44b9942127847f7421db70d8c7e48407f09a3c70/reference_examples/text_classification/data/crime_prediction/val.jsonl
+        size: 88714
+        sha256: c5d900d64a7be5359579e4c2fc0b499f18ebbe9a96fee1ff43879d511bc992ea
+      - role: test
+        url: https://raw.githubusercontent.com/stanford-iris-lab/meta-harness/44b9942127847f7421db70d8c7e48407f09a3c70/reference_examples/text_classification/data/crime_prediction/test.jsonl
+        size: 176343
+        sha256: a08a9aba4da6814fc0efdfc713814a2562f4ce1d174981d8d5823a126b99f6dc
+  - id: meta-harness-uspto-retrosynthesis
+    name: "Meta-Harness USPTO retrosynthesis subset"
+    upstream_repository: https://github.com/stanford-iris-lab/meta-harness
+    upstream_commit: 44b9942127847f7421db70d8c7e48407f09a3c70
+    provenance:
+      meta_harness_import_commit: 95175f70c758dd1145b395edfe8b67e6f9d80fbd
+      intermediate_repository: https://github.com/metaevo-ai/mce-artifact
+      intermediate_commit: 0ff558d0f64ffe61b9af6fc62ec3fa8b5a1440c1
+      claimed_dataset_name: USPTO-50k
+      original_repository: unknown
+      verification: >-
+        Meta-Harness files are byte-identical to the MCE artifact files, but neither repository
+        identifies the exact original dataset release or the subset-construction procedure
+    license:
+      status: unknown
+      spdx_id: null
+      reason: >-
+        mce-artifact has no LICENSE file and no dataset-specific USPTO README; its README and
+        pyproject metadata say MIT, but that is not a verifiable license grant for the upstream
+        USPTO-50k data, and Meta-Harness cannot cure missing third-party rights
+    redistribution_status: prohibited
+    distribution: >-
+      not included in SpiralHarness source distributions or wheels; obtain on demand only from
+      the pinned upstream for authorized research use, and do not mirror or publish these bytes
+    files:
+      - role: train
+        url: https://raw.githubusercontent.com/stanford-iris-lab/meta-harness/44b9942127847f7421db70d8c7e48407f09a3c70/reference_examples/text_classification/data/uspto/train.jsonl
+        size: 9867
+        sha256: 5049890cd908a5bbed4f635a2a68c51a8756d50fc09e7648ad4ebc36a295f6d6
+      - role: validation
+        url: https://raw.githubusercontent.com/stanford-iris-lab/meta-harness/44b9942127847f7421db70d8c7e48407f09a3c70/reference_examples/text_classification/data/uspto/val.jsonl
+        size: 5663
+        sha256: 824579221c59d1e71895620f539a05f978d8832e067a7956562612eebcdef2ed
+      - role: test
+        url: https://raw.githubusercontent.com/stanford-iris-lab/meta-harness/44b9942127847f7421db70d8c7e48407f09a3c70/reference_examples/text_classification/data/uspto/test.jsonl
+        size: 19046
+        sha256: e2730f05f215363687ec0c6a1f75ce808ed697749b181becdae62cd7991c67e4

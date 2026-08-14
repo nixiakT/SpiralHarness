@@ -7,9 +7,10 @@ This audit answers two separate questions:
    model and a reconstruction of Meta-Harness's published classifier?
 
 The comparison pins upstream commit `44b9942127847f7421db70d8c7e48407f09a3c70` and uses its
-native data loaders, task prompts, `inner_loop.py`, `MemorySystem` lifecycle, and graders. The only
-upstream runtime edit passed `LITELLM_API_KEY` into its existing `LLM` constructor; it did not alter
-prompts, examples, predictions, or grading.
+native data loaders, task prompts, `inner_loop.py`, `MemorySystem` lifecycle, and graders. Local
+runtime edits passed `LITELLM_API_KEY` into its existing `LLM` constructor and retained the
+already-computed item predictions in external result payloads; they did not alter prompts,
+examples, predicted values, or grading.
 
 ## What Meta-Harness is
 
