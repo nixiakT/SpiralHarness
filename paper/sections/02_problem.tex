@@ -65,17 +65,3 @@ network, and grader state.  The current implementation establishes typed
 logical, in-process boundaries only; it is not yet a hostile-code security
 boundary.  Consequently, process independence and sealed-service security are
 design requirements, not completed empirical or security claims.
-
-\begin{figure}[t]
-  \centering
-  \input{figures/mechanism_boundary.tex}
-  \caption{Target mechanism and authority boundary.  The mutable optimizer can edit
-  only declared harness surfaces.  Promotion belongs to a separate authority
-  that executes matched interventions and fails closed along the mechanism
-  chain.  Sealed tasks are released once, only after all search cells close.
-  Solid arrows carry typed artifacts; the dashed arrow carries a redacted
-  decision, never sealed item feedback.  Shape and labels preserve the meaning
-  in grayscale.  In the target deployment, after closure, the sealed authority audits the frozen commit
-  registry and champions once.}
-  \label{fig:mechanism-boundary}
-\end{figure}

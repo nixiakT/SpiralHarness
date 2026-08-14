@@ -33,6 +33,21 @@ For each gate nomination, the verifier constructs a matched quartet:
   \item \textbf{placebo}: a format- and budget-matched neutral mutation that
   should not encode the proposed mechanism.
 \end{enumerate}
+
+\begin{figure}[ht]
+  \centering
+  \input{figures/mechanism_boundary.tex}
+  \caption{Target mechanism and authority boundary.  The mutable optimizer can edit
+  only declared harness surfaces.  Promotion belongs to a separate authority
+  that executes matched interventions and fails closed along the mechanism
+  chain.  Sealed tasks are released once, only after all search cells close.
+  Solid arrows carry typed artifacts; the dashed arrow carries a redacted
+  decision, never sealed item feedback.  Shape and labels preserve the meaning
+  in grayscale.  In the target deployment, after closure, the sealed authority audits the frozen commit
+  registry and champions once.}
+  \label{fig:mechanism-boundary}
+\end{figure}
+
 Task identity, rollout seed, model settings, runtime image, and resource ceiling
 are paired.  Arm order is randomized by a verifier-owned schedule.  Revert
 tests whether the declared edit matters; placebo tests whether merely adding a

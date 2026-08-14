@@ -3,8 +3,9 @@ control flow.  The unresolved decision is not whether an edit can be generated,
 but \emph{when an adaptively selected edit can be committed credibly}.  A score
 increase may reflect selection noise, an inactive instruction, a grader
 shortcut, or a hidden regression; repeated promotion tests can also overfit the
-gate itself.  We introduce \systemname, a training-free protocol that treats
-commit authorization as a separate statistical decision.  The protocol requires
+gate itself.  We introduce the Mechanism-Gated Verification harness
+(\systemname), a training-free protocol that treats commit authorization as a
+separate statistical decision.  The protocol requires
 an authority outside the mutable harness to evaluate typed edits through matched
 child, parent, exact-revert, and neutral-placebo interventions, then check
 activation, adherence, intended behavior, utility, protected behavior, and cost
