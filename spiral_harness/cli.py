@@ -24,6 +24,7 @@ from spiral_harness.benchmark.penguin_public import (
     verify_penguin_source,
 )
 from spiral_harness.benchmark.skillsbench_smoke import run_dialogue_parser_smoke
+from spiral_harness.cli_development_four_arm import dev_four_arm
 from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.experiment import ProtocolPartition
 from spiral_harness.evolution.controlled_demo import run_controlled_demo
@@ -39,6 +40,7 @@ benchmark_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(benchmark_app, name="benchmark")
+benchmark_app.command("dev-four-arm")(dev_four_arm)
 
 
 def _version_callback(value: bool) -> None:

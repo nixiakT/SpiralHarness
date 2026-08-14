@@ -16,6 +16,7 @@ from spiral_harness.benchmark.pure_reference import (
 from spiral_harness.core.experiment import ProtocolPartition
 from spiral_harness.execution.accounted_execution import load_accounted_execution
 from spiral_harness.execution.attempts import AttemptLedger
+from spiral_harness.execution.backend_errors import BackendResponseRejectedError
 from spiral_harness.execution.contracts import (
     AttemptBudget,
     AttemptDisposition,
@@ -426,6 +427,39 @@ def test_pure_failures_burn_the_full_unknown_usage_reservation(
     assert outcome.disposition is AttemptDisposition.BURNED
     assert outcome.reported_tokens == 0
     assert outcome.charged_tokens == 16
+
+
+def test_pure_typed_rejection_preserves_usage_and_poisoning(tmp_path: Path) -> None:
+    store = ArtifactStore(tmp_path / "artifacts")
+    budget = _budget(per_attempt=16)
+    ledger = AttemptLedger(store, ledger_id="pure-reference-fixture", budget=budget)
+    runner = PureModelRunner(
+        spec=_spec(),
+        backend=_TerminalPureBackend(
+            BackendResponseRejectedError(
+                "safe malformed metadata",
+                usage=BackendTokenUsage(input_tokens=18, output_tokens=1),
+                cost_usd=0.01,
+            )
+        ),
+        attempt_ledger=ledger,
+    )
+
+    record = runner.execute_record(
+        CandidateTask(task_id="task", question="payload"),
+        reference_id="b" * 64,
+        rollout_seed=17,
+        reservation_token_ceiling=16,
+    )
+    outcome = store.get_json(record.outcome_ref, AttemptOutcome)
+
+    assert record.execution.error is not None
+    assert record.execution.error.error_class is ExecutionErrorClass.INVALID_BACKEND_RESPONSE
+    assert record.execution.usage.total_tokens == 19
+    assert record.execution.cost_usd == 0.01
+    assert "malformed metadata" not in record.execution.error.detail
+    assert outcome.disposition is AttemptDisposition.POISONED
+    assert outcome.reported_tokens == outcome.charged_tokens == 19
 
 
 def test_pure_known_usage_overrun_is_persisted_and_poisons_ledger(tmp_path: Path) -> None:

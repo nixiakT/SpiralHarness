@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from spiral_harness.core.canonical import canonical_sha256
+from spiral_harness.execution.backend_errors import BackendResponseRejectedError
 from spiral_harness.execution.contracts import (
     BackendResponse,
     BackendTokenUsage,
@@ -27,6 +28,13 @@ from spiral_harness.execution.pure_contracts import PureReferenceRequest
 
 class OpenAICompatibleBackendError(RuntimeError):
     """Raised when an OpenAI-compatible gateway response is unusable."""
+
+
+class OpenAICompatibleInvalidResponseError(
+    BackendResponseRejectedError,
+    OpenAICompatibleBackendError,
+):
+    """Typed malformed response retaining only already-validated accounting."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,19 +100,10 @@ class OpenAICompatibleChatBackend:
             payload,
             timeout_seconds=checked_spec.inference.timeout_seconds,
         )
-        _require_complete_chat_choice(response)
-        output = _extract_chat_output(response)
-        usage = _extract_usage(response)
-        identity = _extract_provider_identity_observation(
+        return _parse_chat_response(
             response,
             requested_model=checked_spec.model,
             backend_fingerprint=checked_spec.backend_fingerprint,
-        )
-        return BackendResponse(
-            output=output,
-            usage=usage,
-            cost_usd=None,
-            provider_identity_observation=identity,
         )
 
     def invoke_pure(
@@ -141,16 +140,10 @@ class OpenAICompatibleChatBackend:
             payload,
             timeout_seconds=checked_spec.inference.timeout_seconds,
         )
-        _require_complete_chat_choice(response)
-        return BackendResponse(
-            output=_extract_chat_output(response),
-            usage=_extract_usage(response),
-            cost_usd=None,
-            provider_identity_observation=_extract_provider_identity_observation(
-                response,
-                requested_model=checked_spec.model,
-                backend_fingerprint=checked_spec.backend_fingerprint,
-            ),
+        return _parse_chat_response(
+            response,
+            requested_model=checked_spec.model,
+            backend_fingerprint=checked_spec.backend_fingerprint,
         )
 
     def list_models(self, *, timeout_seconds: float = 15.0) -> tuple[str, ...]:
@@ -253,6 +246,43 @@ def normalize_openai_base_url(base_url: str) -> str:
     return value.rstrip("/")
 
 
+def _parse_chat_response(
+    response: dict[str, Any],
+    *,
+    requested_model: str,
+    backend_fingerprint: str,
+) -> BackendResponse:
+    """Fail closed while retaining usage parsed before malformed content/identity."""
+
+    try:
+        _require_complete_chat_choice(response)
+        output = _extract_chat_output(response)
+    except OpenAICompatibleBackendError as exc:
+        try:
+            known_usage = _extract_usage(response)
+        except OpenAICompatibleBackendError:
+            known_usage = None
+        raise OpenAICompatibleInvalidResponseError(str(exc), usage=known_usage) from exc
+    try:
+        usage = _extract_usage(response)
+    except OpenAICompatibleBackendError as exc:
+        raise OpenAICompatibleInvalidResponseError(str(exc), usage=None) from exc
+    try:
+        identity = _extract_provider_identity_observation(
+            response,
+            requested_model=requested_model,
+            backend_fingerprint=backend_fingerprint,
+        )
+    except OpenAICompatibleBackendError as exc:
+        raise OpenAICompatibleInvalidResponseError(str(exc), usage=usage) from exc
+    return BackendResponse(
+        output=output,
+        usage=usage,
+        cost_usd=None,
+        provider_identity_observation=identity,
+    )
+
+
 def _extract_chat_output(response: dict[str, Any]) -> str:
     choices = response.get("choices")
     if not isinstance(choices, list) or not choices:
@@ -345,5 +375,6 @@ def _redacted_http_error_detail(exc: urllib.error.HTTPError) -> str:
 __all__ = [
     "OpenAICompatibleBackendError",
     "OpenAICompatibleChatBackend",
+    "OpenAICompatibleInvalidResponseError",
     "normalize_openai_base_url",
 ]

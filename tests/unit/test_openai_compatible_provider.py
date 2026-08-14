@@ -18,6 +18,7 @@ from spiral_harness.execution.pure_contracts import materialize_pure_request
 from spiral_harness.providers.openai_compatible import (
     OpenAICompatibleBackendError,
     OpenAICompatibleChatBackend,
+    OpenAICompatibleInvalidResponseError,
     normalize_openai_base_url,
 )
 
@@ -220,7 +221,7 @@ def test_chat_and_pure_backends_fail_closed_on_malformed_identity_metadata(
             field_name: invalid_value,
         }
     )
-    with pytest.raises(OpenAICompatibleBackendError, match=field_name):
+    with pytest.raises(OpenAICompatibleInvalidResponseError, match=field_name) as exc_info:
         if pure:
             backend.invoke_pure(
                 spec=spec_for(backend),
@@ -232,6 +233,9 @@ def test_chat_and_pure_backends_fail_closed_on_malformed_identity_metadata(
             )
         else:
             backend.invoke(spec=spec_for(backend), request=request())
+    assert isinstance(exc_info.value, OpenAICompatibleBackendError)
+    assert exc_info.value.usage is not None
+    assert exc_info.value.usage.total_tokens == 5
 
 
 @pytest.mark.parametrize("pure", [False, True])

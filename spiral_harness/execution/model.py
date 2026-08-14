@@ -17,6 +17,7 @@ from spiral_harness.execution.attempts import (
     AttemptAccountingError,
     AttemptLedger,
 )
+from spiral_harness.execution.backend_errors import BackendResponseRejectedError
 from spiral_harness.execution.model_execution import make_model_execution
 from spiral_harness.storage.protocol import ArtifactRepository
 
@@ -350,6 +351,19 @@ class FixedModelRunner:
         started = self._read_clock()
         try:
             raw_response = self._backend.invoke(spec=self._spec, request=request)
+        except BackendResponseRejectedError as exc:
+            return self._record_failure(
+                reservation_ref=reservation_ref,
+                task=checked_task,
+                request=request,
+                execution_fingerprint=execution_fingerprint,
+                request_sha256=request_sha256,
+                usage=exc.usage or _contracts.BackendTokenUsage(input_tokens=0, output_tokens=0),
+                latency_ms=self._elapsed_ms(started),
+                error_class=_contracts.ExecutionErrorClass.INVALID_BACKEND_RESPONSE,
+                detail=self._exception_detail(exc),
+                cost_usd=exc.cost_usd,
+            )
         except TimeoutError as exc:
             return self._record_failure(
                 reservation_ref=reservation_ref,

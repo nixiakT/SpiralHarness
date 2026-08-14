@@ -13,6 +13,7 @@ from typing import Protocol, runtime_checkable
 from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.models import ArtifactRef
 from spiral_harness.execution.attempts import AttemptAccountingError, AttemptLedger
+from spiral_harness.execution.backend_errors import BackendResponseRejectedError
 from spiral_harness.execution.contracts import (
     PURE_REFERENCE_EXECUTION_MEDIA_TYPE,
     AttemptLedgerState,
@@ -235,6 +236,18 @@ class PureModelRunner:
         started = self._read_clock()
         try:
             raw_response = self._backend.invoke_pure(spec=self._spec, request=request)
+        except BackendResponseRejectedError as exc:
+            return self._finish_failure(
+                reservation_ref=reservation_ref,
+                task=checked_task,
+                request=request,
+                execution_fingerprint=execution_fingerprint,
+                usage=exc.usage or BackendTokenUsage(input_tokens=0, output_tokens=0),
+                latency_ms=self._elapsed_ms(started),
+                error_class=ExecutionErrorClass.INVALID_BACKEND_RESPONSE,
+                detail=self._exception_detail(exc),
+                cost_usd=exc.cost_usd,
+            )
         except TimeoutError as exc:
             return self._record_failure(
                 reservation_ref,

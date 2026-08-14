@@ -12,6 +12,7 @@ from spiral_harness.execution.attempts import (
     AttemptBudgetExceeded,
     AttemptLedger,
 )
+from spiral_harness.execution.backend_errors import BackendResponseRejectedError
 from spiral_harness.execution.contracts import (
     AttemptBudget,
     AttemptDisposition,
@@ -175,6 +176,28 @@ class InvalidResponseBackend:
             "usage": {"input_tokens": -1, "output_tokens": 1},
             "score": 1.0,
         }
+
+
+class RejectedResponseBackend:
+    fingerprint = BACKEND_FINGERPRINT
+
+    def invoke(self, *, spec: FrozenModelSpec, request: object) -> BackendResponse:
+        del spec, request
+        raise BackendResponseRejectedError(
+            "safe malformed metadata",
+            usage=BackendTokenUsage(input_tokens=10, output_tokens=9),
+            cost_usd=0.01,
+        )
+
+
+@pytest.mark.parametrize("cost_usd", [-0.01, float("nan"), 1])
+def test_typed_rejected_response_rejects_unsafe_cost(cost_usd: object) -> None:
+    with pytest.raises(ValueError, match="finite non-negative float"):
+        BackendResponseRejectedError(
+            "malformed",
+            usage=BackendTokenUsage(input_tokens=1, output_tokens=1),
+            cost_usd=cost_usd,  # type: ignore[arg-type]
+        )
 
 
 class MutableFingerprintBackend:
@@ -630,6 +653,29 @@ def test_invalid_backend_result_is_failed_and_burned(tmp_path) -> None:
     assert execution.error.error_class is ExecutionErrorClass.INVALID_BACKEND_RESPONSE
     assert outcome.disposition is AttemptDisposition.BURNED
     assert outcome.charged_tokens == 12
+
+
+def test_typed_rejected_response_preserves_usage_and_poisoning(tmp_path) -> None:
+    store = ArtifactStore(tmp_path / "cas")
+    ledger = attempt_ledger(store)
+    runner = FixedModelRunner(
+        spec=fixed_spec(),
+        backend=RejectedResponseBackend(),
+        attempt_ledger=ledger,
+    )
+
+    execution = runner.execute(task(), harness=harness(), seed=4)
+    outcome = store.get_json(ledger.tail_ref, AttemptOutcome)
+
+    assert execution.status is ExecutionStatus.FAILED
+    assert execution.output is None
+    assert execution.usage.total_tokens == 19
+    assert execution.cost_usd == 0.01
+    assert execution.error is not None
+    assert execution.error.error_class is ExecutionErrorClass.INVALID_BACKEND_RESPONSE
+    assert "malformed metadata" not in execution.error.detail
+    assert outcome.disposition is AttemptDisposition.POISONED
+    assert outcome.reported_tokens == outcome.charged_tokens == 19
 
 
 def test_provider_identity_observation_must_bind_the_frozen_request(tmp_path) -> None:
