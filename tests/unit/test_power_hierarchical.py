@@ -576,10 +576,14 @@ def test_power_simulation_is_seeded_reproducible_and_selects_smallest_candidate(
     assert first == second
     assert first.fingerprint == second.fingerprint
     assert first.conditional_selection_succeeded is True
+    assert (
+        first.config.selection_rule
+        == "first-calibration-combined-sizing-pass-then-one-independent-validation"
+    )
     assert first.calibration_selected_search_seeds == (1, 2)
     assert first.conditional_recommended_search_seeds == (1, 2)
-    assert first.selected_candidate_validation_statistical_endpoint_pass_power is not None
-    assert first.selected_candidate_validation_statistical_endpoint_pass_power.replicates == 20
+    assert first.selected_candidate_validation_combined_sizing_event_power is not None
+    assert first.selected_candidate_validation_combined_sizing_event_power.replicates == 20
     assert tuple(item.independent_search_seeds for item in first.candidate_diagnostics) == (
         (1, 2),
         (1, 2, 3),
@@ -589,6 +593,7 @@ def test_power_simulation_is_seeded_reproducible_and_selects_smallest_candidate(
     assert first.observed_harness_effect_evidence is False
     assert first.unconditional_power_guarantee is False
     assert first.calibration_validation_and_audit_streams_domain_separated is True
+    assert first.combined_sizing_event_scope_only is True
     assert first.pilot_closure_verified is False
     assert first.attested_sealed_closure_verified is False
     assert first.reportable_sealed_evidence is False
@@ -602,8 +607,11 @@ def test_power_simulation_is_seeded_reproducible_and_selects_smallest_candidate(
     assert first.provenance_pass_included is False
     assert first.estimated_leaf_value_lookups <= first.leaf_value_lookup_budget
     for candidate in first.candidate_diagnostics:
+        assert candidate.combined_sizing_event_definition == (
+            "all-three-holm-sesoi-rejections-and-both-h1-h2-simultaneous-10pp-claims"
+        )
         assert candidate.joint_h3_dependence_assumed_independent is True
-        assert candidate.calibration_statistical_endpoint_pass_power.replicates == 20
+        assert candidate.calibration_combined_sizing_event_power.replicates == 20
         assert candidate.passes_calibration_threshold is True
         assert candidate.null_holm_fwer_audit.one_sided_lower <= (
             candidate.null_holm_fwer_audit.estimate

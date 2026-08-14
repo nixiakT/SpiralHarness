@@ -91,9 +91,9 @@ class HierarchicalPowerSimulationConfig(ImmutableModel):
         "strict-prefix-by-increasing-cardinality"
     )
     maximum_leaf_value_lookups: Annotated[int, Field(ge=1, strict=True)]
-    selection_rule: Literal["first-calibration-joint-pass-then-one-independent-validation"] = (
-        "first-calibration-joint-pass-then-one-independent-validation"
-    )
+    selection_rule: Literal[
+        "first-calibration-combined-sizing-pass-then-one-independent-validation"
+    ] = "first-calibration-combined-sizing-pass-then-one-independent-validation"
     stream_partition: Literal["domain-separated-calibration-validation-and-null-audit"] = (
         "domain-separated-calibration-validation-and-null-audit"
     )
@@ -269,8 +269,8 @@ class CandidatePowerDiagnostic(ImmutableModel):
         tuple[EndpointPowerDiagnostic, ...],
         Field(min_length=3, max_length=3),
     ]
-    calibration_statistical_endpoint_pass_power: MonteCarloWilsonRate
-    statistical_endpoint_pass_definition: Literal[
+    calibration_combined_sizing_event_power: MonteCarloWilsonRate
+    combined_sizing_event_definition: Literal[
         "all-three-holm-sesoi-rejections-and-both-h1-h2-simultaneous-10pp-claims"
     ]
     joint_h3_dependence_assumed_independent: Literal[True]
@@ -297,7 +297,7 @@ class HierarchicalPowerSimulationReport(ImmutableModel):
     config: HierarchicalPowerSimulationConfig
     candidate_diagnostics: Annotated[tuple[CandidatePowerDiagnostic, ...], Field(min_length=1)]
     calibration_selected_search_seeds: tuple[int, ...] | None
-    selected_candidate_validation_statistical_endpoint_pass_power: MonteCarloWilsonRate | None
+    selected_candidate_validation_combined_sizing_event_power: MonteCarloWilsonRate | None
     conditional_recommended_search_seeds: tuple[int, ...] | None
     conditional_selection_succeeded: bool
     conditional_on_declared_simulation_assumptions: Literal[True]
@@ -306,7 +306,7 @@ class HierarchicalPowerSimulationReport(ImmutableModel):
     unconditional_power_guarantee: Literal[False]
     null_audit_used_for_selection: Literal[False]
     calibration_validation_and_audit_streams_domain_separated: Literal[True]
-    statistical_endpoint_scope_only: Literal[True]
+    combined_sizing_event_scope_only: Literal[True]
     protected_slice_pass_included: Literal[False]
     cost_pass_included: Literal[False]
     provenance_pass_included: Literal[False]
@@ -343,7 +343,7 @@ class HierarchicalPowerSimulationReport(ImmutableModel):
         for candidate in self.candidate_diagnostics:
             if candidate.null_holm_fwer_audit.replicates != self.config.null_audit_replicates:
                 raise ValueError("null audit rate has the wrong replicate count")
-            if candidate.calibration_statistical_endpoint_pass_power.replicates != (
+            if candidate.calibration_combined_sizing_event_power.replicates != (
                 self.config.alternative_calibration_replicates
             ):
                 raise ValueError("calibration rate has the wrong replicate count")
@@ -357,14 +357,14 @@ class HierarchicalPowerSimulationReport(ImmutableModel):
                     self.config.alternative_calibration_replicates
                 ):
                     raise ValueError("10pp diagnostic has the wrong replicate count")
-            passed = candidate.calibration_statistical_endpoint_pass_power.one_sided_lower >= (
+            passed = candidate.calibration_combined_sizing_event_power.one_sided_lower >= (
                 self.config.target_power
             )
             if candidate.passes_calibration_threshold != passed:
                 raise ValueError("calibration threshold flag is inconsistent")
         if self.calibration_selected_search_seeds != calibration_selected:
             raise ValueError("calibration selection is not the first passing candidate")
-        validation = self.selected_candidate_validation_statistical_endpoint_pass_power
+        validation = self.selected_candidate_validation_combined_sizing_event_power
         if (calibration_selected is None) != (validation is None):
             raise ValueError(
                 "independent validation must exist exactly for a calibration selection"
@@ -492,7 +492,7 @@ def _candidate_diagnostic(
     null_fwer = 0
     alternative_holm = [0, 0, 0]
     alternative_margin = [0, 0]
-    statistical_endpoint_passes = 0
+    combined_sizing_event_passes = 0
     phases = (
         ("null-audit", False, config.null_audit_replicates),
         (
@@ -517,7 +517,7 @@ def _candidate_diagnostic(
                 alternative_holm[index] += endpoint.holm_rejected
             for index, endpoint in enumerate(inference.endpoints[:2]):
                 alternative_margin[index] += endpoint.project_margin_claim_supported
-            statistical_endpoint_passes += (
+            combined_sizing_event_passes += (
                 inference.all_primary_holm_rejected
                 and inference.all_project_margin_claims_supported
             )
@@ -557,12 +557,12 @@ def _candidate_diagnostic(
         null_holm_fwer_audit=null_rate,
         null_fwer_exceeds_nominal_point_estimate=null_rate.estimate > config.family_wise_alpha,
         endpoint_diagnostics=tuple(endpoint_diagnostics),
-        calibration_statistical_endpoint_pass_power=_wilson_rate(
-            statistical_endpoint_passes,
+        calibration_combined_sizing_event_power=_wilson_rate(
+            combined_sizing_event_passes,
             power_replicates,
             config.monte_carlo_confidence_level,
         ),
-        statistical_endpoint_pass_definition=(
+        combined_sizing_event_definition=(
             "all-three-holm-sesoi-rejections-and-both-h1-h2-simultaneous-10pp-claims"
         ),
         joint_h3_dependence_assumed_independent=True,
@@ -571,7 +571,7 @@ def _candidate_diagnostic(
         provenance_pass_included=False,
         passes_calibration_threshold=(
             _wilson_rate(
-                statistical_endpoint_passes,
+                combined_sizing_event_passes,
                 power_replicates,
                 config.monte_carlo_confidence_level,
             ).one_sided_lower
@@ -640,7 +640,7 @@ def simulate_hierarchical_power(
         config=checked,
         candidate_diagnostics=diagnostics,
         calibration_selected_search_seeds=calibration_selected,
-        selected_candidate_validation_statistical_endpoint_pass_power=validation,
+        selected_candidate_validation_combined_sizing_event_power=validation,
         conditional_recommended_search_seeds=recommended,
         conditional_selection_succeeded=recommended is not None,
         conditional_on_declared_simulation_assumptions=True,
@@ -649,7 +649,7 @@ def simulate_hierarchical_power(
         unconditional_power_guarantee=False,
         null_audit_used_for_selection=False,
         calibration_validation_and_audit_streams_domain_separated=True,
-        statistical_endpoint_scope_only=True,
+        combined_sizing_event_scope_only=True,
         protected_slice_pass_included=False,
         cost_pass_included=False,
         provenance_pass_included=False,
