@@ -95,6 +95,45 @@ class OpenAICompatibleChatBackend:
         usage = _extract_usage(response)
         return BackendResponse(output=output, usage=usage, cost_usd=None)
 
+    def list_models(self, *, timeout_seconds: float = 15.0) -> tuple[str, ...]:
+        """Return the gateway's advertised model IDs without invoking a model.
+
+        This is an availability probe only.  It sends one authenticated
+        ``GET /models`` request and deliberately exposes neither provider
+        metadata nor credentials in the returned catalog.
+        """
+
+        if not isinstance(timeout_seconds, (int, float)) or isinstance(timeout_seconds, bool):
+            raise TypeError("timeout_seconds must be a number")
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive")
+        response = self._get_json("/models", timeout_seconds=float(timeout_seconds))
+        data = response.get("data")
+        if not isinstance(data, list):
+            raise OpenAICompatibleBackendError("model catalog response has no data list")
+        model_ids: list[str] = []
+        for index, item in enumerate(data):
+            if not isinstance(item, dict):
+                raise OpenAICompatibleBackendError(f"model catalog entry {index} must be an object")
+            model_id = item.get("id")
+            if not isinstance(model_id, str) or not model_id.strip():
+                raise OpenAICompatibleBackendError(
+                    f"model catalog entry {index} has no non-empty id"
+                )
+            model_ids.append(model_id.strip())
+        return tuple(sorted(set(model_ids)))
+
+    def _get_json(self, path: str, *, timeout_seconds: float) -> dict[str, Any]:
+        request = urllib.request.Request(
+            normalize_openai_base_url(self.base_url) + path,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "User-Agent": self.user_agent,
+            },
+            method="GET",
+        )
+        return self._open_json(request, timeout_seconds=timeout_seconds)
+
     def _post_json(
         self,
         path: str,
@@ -113,6 +152,14 @@ class OpenAICompatibleChatBackend:
             },
             method="POST",
         )
+        return self._open_json(request, timeout_seconds=timeout_seconds)
+
+    @staticmethod
+    def _open_json(
+        request: urllib.request.Request,
+        *,
+        timeout_seconds: float,
+    ) -> dict[str, Any]:
         try:
             with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
                 raw = response.read()
@@ -200,14 +247,10 @@ def _extract_usage(response: dict[str, Any]) -> BackendTokenUsage:
 
 
 def _redacted_http_error_detail(exc: urllib.error.HTTPError) -> str:
-    try:
-        body = exc.read(512).decode("utf-8", errors="replace")
-    except Exception:
-        body = ""
-    suffix = ""
-    if body:
-        suffix = ": " + body.replace("\n", " ")[:256]
-    return f"OpenAI-compatible backend HTTP {exc.code}{suffix}"
+    # Gateways and reverse proxies occasionally echo request material in error
+    # bodies.  Do not include any response body, URL query, or headers in an
+    # exception that may be persisted in experiment logs.
+    return f"OpenAI-compatible backend HTTP {exc.code}"
 
 
 __all__ = [

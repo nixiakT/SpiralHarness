@@ -82,3 +82,76 @@ def test_benchmark_fetch_rejects_an_unregistered_name() -> None:
 
     assert result.exit_code == 2
     assert "unknown benchmark" in result.output
+
+
+def test_list_models_is_availability_only_and_classifies_gateway_routes(monkeypatch) -> None:
+    class FakeBackend:
+        fingerprint = "f" * 64
+
+        def list_models(self, *, timeout_seconds: float) -> tuple[str, ...]:
+            assert timeout_seconds == 9.0
+            return (
+                "MiniMax-M2.5",
+                "dashscope/qwen36-35b-a3b",
+                "openai/gpt-test",
+            )
+
+    def fake_from_endpoint(*, base_url: str, api_key: str) -> FakeBackend:
+        assert base_url == "http://gateway.example/v1"
+        assert api_key == "fixture-secret"
+        return FakeBackend()
+
+    monkeypatch.setenv("TEST_LITELLM_URL", "http://gateway.example/v1")
+    monkeypatch.setenv("TEST_LITELLM_KEY", "fixture-secret")
+    monkeypatch.setattr(
+        cli_module.OpenAICompatibleChatBackend,
+        "from_endpoint",
+        fake_from_endpoint,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "benchmark",
+            "list-models",
+            "--timeout-seconds",
+            "9",
+            "--base-url-env",
+            "TEST_LITELLM_URL",
+            "--api-key-env",
+            "TEST_LITELLM_KEY",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["kind"] == "availability_only_model_catalog"
+    assert payload["score_bearing_calls"] == 0
+    assert payload["count"] == 3
+    assert payload["routes"] == {
+        "dashscope": ["dashscope/qwen36-35b-a3b"],
+        "direct": ["MiniMax-M2.5"],
+        "openai": ["openai/gpt-test"],
+    }
+    assert len(payload["catalog_sha256"]) == 64
+
+
+def test_list_models_requires_credentials_without_printing_them(monkeypatch) -> None:
+    monkeypatch.delenv("MISSING_LITELLM_URL", raising=False)
+    monkeypatch.setenv("PRESENT_LITELLM_KEY", "fixture-secret")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "benchmark",
+            "list-models",
+            "--base-url-env",
+            "MISSING_LITELLM_URL",
+            "--api-key-env",
+            "PRESENT_LITELLM_KEY",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "MISSING_LITELLM_URL" in result.output
+    assert "fixture-secret" not in result.output

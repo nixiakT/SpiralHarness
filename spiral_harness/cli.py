@@ -24,6 +24,7 @@ from spiral_harness.benchmark.penguin_public import (
     verify_penguin_source,
 )
 from spiral_harness.benchmark.skillsbench_smoke import run_dialogue_parser_smoke
+from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.experiment import ProtocolPartition
 from spiral_harness.evolution.controlled_demo import run_controlled_demo
 from spiral_harness.providers.openai_compatible import OpenAICompatibleChatBackend
@@ -80,6 +81,56 @@ def controlled_demo(
         "output": str(output.resolve()),
         "parent_mean": metrics.parent_mean if metrics is not None else None,
         "run_manifest_sha256": result.run_manifest_ref.sha256,
+    }
+    typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+
+
+@benchmark_app.command("list-models")
+def list_models(
+    timeout_seconds: Annotated[
+        float,
+        typer.Option("--timeout-seconds", help="Timeout for the availability-only request."),
+    ] = 15.0,
+    base_url_env: Annotated[
+        str,
+        typer.Option("--base-url-env", help="Environment variable holding the LiteLLM base URL."),
+    ] = "LITELLM_BASE_URL",
+    api_key_env: Annotated[
+        str,
+        typer.Option("--api-key-env", help="Environment variable holding the LiteLLM API key."),
+    ] = "LITELLM_API_KEY",
+) -> None:
+    """List advertised gateway models without running a score-bearing request."""
+
+    base_url = os.environ.get(base_url_env)
+    api_key = os.environ.get(api_key_env)
+    if not base_url:
+        raise typer.BadParameter(f"missing environment variable {base_url_env}")
+    if not api_key:
+        raise typer.BadParameter(f"missing environment variable {api_key_env}")
+    backend = OpenAICompatibleChatBackend.from_endpoint(base_url=base_url, api_key=api_key)
+    model_ids = backend.list_models(timeout_seconds=timeout_seconds)
+    routes = {
+        "dashscope": [model_id for model_id in model_ids if model_id.startswith("dashscope/")],
+        "openai": [model_id for model_id in model_ids if model_id.startswith("openai/")],
+        "direct": [
+            model_id for model_id in model_ids if not model_id.startswith(("dashscope/", "openai/"))
+        ],
+    }
+    payload = {
+        "kind": "availability_only_model_catalog",
+        "score_bearing_calls": 0,
+        "backend_fingerprint": backend.fingerprint,
+        "catalog_sha256": canonical_sha256(
+            {
+                "schema": "spiral-harness/model-catalog/v1",
+                "backend_fingerprint": backend.fingerprint,
+                "model_ids": model_ids,
+            }
+        ),
+        "count": len(model_ids),
+        "models": list(model_ids),
+        "routes": routes,
     }
     typer.echo(json.dumps(payload, indent=2, sort_keys=True))
 

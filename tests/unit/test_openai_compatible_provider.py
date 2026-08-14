@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import urllib.error
+from io import BytesIO
 
 import pytest
 
@@ -86,6 +87,10 @@ class CapturingBackend(OpenAICompatibleChatBackend):
         self.calls.append((path, payload, timeout_seconds))
         return self.response
 
+    def _get_json(self, path: str, *, timeout_seconds: float) -> dict[str, object]:
+        self.calls.append((path, None, timeout_seconds))
+        return self.response
+
 
 def test_base_url_normalization_is_credential_free_and_stable() -> None:
     assert normalize_openai_base_url(" http://10.0.0.1:8010/v1/ ") == "http://10.0.0.1:8010/v1"
@@ -165,6 +170,41 @@ def test_chat_backend_rejects_token_limit_truncation_even_when_text_exists() -> 
         backend.invoke(spec=spec_for(backend), request=request())
 
 
+def test_model_catalog_is_an_availability_only_sorted_unique_id_list() -> None:
+    backend = CapturingBackend(
+        {
+            "data": [
+                {"id": "openai/gpt-test", "owned_by": "ignored"},
+                {"id": "dashscope/qwen-test"},
+                {"id": "openai/gpt-test"},
+            ]
+        }
+    )
+
+    assert backend.list_models(timeout_seconds=7) == (
+        "dashscope/qwen-test",
+        "openai/gpt-test",
+    )
+    assert backend.calls == [("/models", None, 7.0)]
+
+
+@pytest.mark.parametrize(
+    "response, message",
+    [
+        ({}, "no data list"),
+        ({"data": ["bad"]}, "entry 0 must be an object"),
+        ({"data": [{}]}, "entry 0 has no non-empty id"),
+    ],
+)
+def test_model_catalog_rejects_malformed_responses(
+    response: dict[str, object], message: str
+) -> None:
+    backend = CapturingBackend(response)
+
+    with pytest.raises(OpenAICompatibleBackendError, match=message):
+        backend.list_models()
+
+
 def test_http_error_detail_does_not_include_request_headers(monkeypatch) -> None:
     backend = OpenAICompatibleChatBackend.from_endpoint(
         base_url="http://litellm.example/v1",
@@ -178,7 +218,7 @@ def test_http_error_detail_does_not_include_request_headers(monkeypatch) -> None
             401,
             "Unauthorized",
             {},
-            None,
+            BytesIO(b"gateway echoed Authorization: Bearer sk-do-not-log-this"),
         )
 
     monkeypatch.setattr("urllib.request.urlopen", fail)
@@ -186,4 +226,5 @@ def test_http_error_detail_does_not_include_request_headers(monkeypatch) -> None
     with pytest.raises(OpenAICompatibleBackendError) as exc_info:
         backend.invoke(spec=spec_for(backend), request=request())
     assert "sk-secret" not in str(exc_info.value)
+    assert "sk-do-not-log-this" not in str(exc_info.value)
     assert "HTTP 401" in str(exc_info.value)
