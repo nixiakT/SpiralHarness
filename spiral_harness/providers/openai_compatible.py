@@ -80,6 +80,7 @@ class OpenAICompatibleChatBackend:
             "temperature": checked_spec.inference.temperature,
             "top_p": checked_spec.inference.top_p,
             "max_tokens": checked_spec.inference.max_output_tokens,
+            "seed": checked_request.seed,
         }
         if checked_spec.inference.stop_sequences:
             payload["stop"] = list(checked_spec.inference.stop_sequences)

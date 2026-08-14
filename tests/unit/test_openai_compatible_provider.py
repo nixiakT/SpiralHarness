@@ -118,6 +118,7 @@ def test_chat_backend_posts_frozen_chat_completion_payload_and_usage() -> None:
     assert payload["temperature"] == 0.0
     assert payload["top_p"] == 1.0
     assert payload["max_tokens"] == 64
+    assert payload["seed"] == 0
     assert payload["stop"] == ["END"]
     assert payload["messages"] == [
         {"role": "system", "content": "Solve carefully."},
