@@ -130,9 +130,10 @@ def derive_manifest_bound_paired_proposer_seed(
         search_run_seed=search_run_seed,
         baseline_kind=baseline_kind,
     )
-    if not isinstance(shared_coordinate_fingerprint, str) or len(
-        shared_coordinate_fingerprint
-    ) != 64:
+    if (
+        not isinstance(shared_coordinate_fingerprint, str)
+        or len(shared_coordinate_fingerprint) != 64
+    ):
         raise ValueError("shared_coordinate_fingerprint must be a lowercase SHA-256 digest")
     if any(character not in "0123456789abcdef" for character in shared_coordinate_fingerprint):
         raise ValueError("shared_coordinate_fingerprint must be a lowercase SHA-256 digest")
