@@ -72,6 +72,7 @@ from spiral_harness.execution.contracts import FrozenModelSpec, InferenceConfig
 from spiral_harness.execution.policy import CAPABILITY_POLICY_MEDIA_TYPE, CapabilityPolicy
 from spiral_harness.experiments.baselines import (
     BASELINE_STUDY_PLAN_MEDIA_TYPE,
+    LEGACY_BASELINE_KINDS,
     BaselineKind,
     BaselineStudyPlan,
     FrozenMutationPolicy,
@@ -423,7 +424,7 @@ def build_frozen_replay_fixture(root: str | Path) -> FrozenReplayFixture:
         seed_harness_ref=seed_harness_ref,
         mutation_policy=mutation_policy,
         objective="benchmark-score",
-        baselines=tuple(kind.value for kind in BaselineKind),
+        baselines=tuple(kind.value for kind in LEGACY_BASELINE_KINDS),
         stopping=("one-round-or-no-candidate",),
         search_budget=budget,
     )
@@ -506,7 +507,7 @@ def build_frozen_replay_fixture(root: str | Path) -> FrozenReplayFixture:
     stopping_refs: dict[BaselineKind, ArtifactRef] = {}
     plugin_refs: dict[BaselineKind, ArtifactRef] = {}
     implementation_refs: dict[BaselineKind, ArtifactRef] = {}
-    for kind in BaselineKind:
+    for kind in LEGACY_BASELINE_KINDS:
         is_static = kind is BaselineKind.STATIC
         policy = make_search_policy(
             baseline_kind=kind,

@@ -39,6 +39,7 @@ from spiral_harness.evolution.replay_setup import (
 )
 from spiral_harness.experiments.baselines import (
     BASELINE_STUDY_PLAN_MEDIA_TYPE,
+    LEGACY_BASELINE_KINDS,
     BaselineKind,
 )
 from spiral_harness.experiments.controller import ExperimentController
@@ -134,7 +135,7 @@ class ReplayStudyResult(ImmutableModel):
         if len(self.runs) != self.exact_run_count:
             raise ValueError("replay study must contain exactly eight runs")
         coordinates = tuple((run.key.baseline_kind, run.key.search_run_seed) for run in self.runs)
-        expected = {(kind, seed) for kind in BaselineKind for seed in SEARCH_RUN_SEEDS}
+        expected = {(kind, seed) for kind in LEGACY_BASELINE_KINDS for seed in SEARCH_RUN_SEEDS}
         if len(coordinates) != len(set(coordinates)) or set(coordinates) != expected:
             raise ValueError("replay study does not cover the exact four-by-two schedule")
         manifests = tuple(run.search_controller_manifest_ref for run in self.runs)

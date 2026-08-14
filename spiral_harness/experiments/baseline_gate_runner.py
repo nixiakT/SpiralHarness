@@ -26,6 +26,7 @@ from spiral_harness.experiments.baseline_gate_closure import (
     publish_baseline_gate_study_closure,
 )
 from spiral_harness.experiments.baselines import (
+    LEGACY_BASELINE_KINDS,
     BaselineKind,
     BaselineProtocolConsistencyReport,
     BaselineProtocolValidator,
@@ -217,7 +218,7 @@ class TrustedBaselineGateRunner[TaskT]:
                 ),
                 source_refs=_optional_mapping_value(source_refs, kind, default=()),
             )
-            for kind in BaselineKind
+            for kind in LEGACY_BASELINE_KINDS
         )
         consistency = BaselineProtocolValidator.validate_usage(
             checked_plan,
@@ -316,8 +317,10 @@ def _publish_usage_report(
 
 
 def _require_kind(kind: BaselineKind) -> BaselineKind:
-    if not isinstance(kind, BaselineKind):
-        raise TypeError("kind must be a BaselineKind")
+    if type(kind) is not BaselineKind:
+        raise TypeError("kind must be an exact BaselineKind")
+    if kind not in LEGACY_BASELINE_KINDS:
+        raise BaselineGateRunnerError("legacy gate runner cannot execute protocol-v2 SCORE")
     return kind
 
 
@@ -345,12 +348,28 @@ def _require_mapping_value[ValueT](
     field_name: str,
 ) -> ValueT:
     checked_kind = _require_kind(kind)
+    _require_exact_legacy_mapping(values, field_name=field_name)
+    return values[checked_kind]
+
+
+def _require_exact_legacy_mapping[ValueT](
+    values: dict[BaselineKind, ValueT],
+    *,
+    field_name: str,
+) -> None:
     if type(values) is not dict:
         raise TypeError(f"{field_name} must be a dict keyed by BaselineKind")
-    try:
-        return values[checked_kind]
-    except KeyError as exc:
-        raise BaselineGateRunnerError(f"{field_name} is missing {checked_kind.value}") from exc
+    if any(type(key) is not BaselineKind for key in values):
+        raise TypeError(f"{field_name} keys must be exact BaselineKind values")
+    supplied = frozenset(values)
+    expected = frozenset(LEGACY_BASELINE_KINDS)
+    if supplied != expected or len(values) != len(LEGACY_BASELINE_KINDS):
+        missing = sorted(kind.value for kind in expected.difference(supplied))
+        unexpected = sorted(kind.value for kind in supplied.difference(expected))
+        raise BaselineGateRunnerError(
+            f"{field_name} must contain exactly the legacy baseline keys; "
+            f"missing={missing!r}, unexpected={unexpected!r}"
+        )
 
 
 def _optional_mapping_value[ValueT](

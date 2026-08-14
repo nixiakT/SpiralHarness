@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from spiral_harness.core.models import HARNESS_MANIFEST_MEDIA_TYPE, ArtifactRef, ComponentKind
 from spiral_harness.experiments.baselines import (
+    LEGACY_BASELINE_KINDS,
     BaselineArmPlan,
     BaselineKind,
     BaselineProtocolError,
@@ -139,7 +140,7 @@ def usage_reports(plan: BaselineStudyPlan) -> tuple[BaselineUsageReport, ...]:
             feedback_used=feedback_by_kind[kind],
             mutated_component_kinds=mutated_by_kind[kind],
         )
-        for kind in BaselineKind
+        for kind in LEGACY_BASELINE_KINDS
     )
 
 
@@ -155,7 +156,7 @@ def test_planner_freezes_exactly_four_matched_condition_profiles() -> None:
     plan = study_plan()
 
     assert tuple(arm.kind for arm in plan.arms) == tuple(
-        sorted(BaselineKind, key=lambda kind: kind.value)
+        sorted(LEGACY_BASELINE_KINDS, key=lambda kind: kind.value)
     )
     assert len({arm.context for arm in plan.arms}) == 1
     assert len({arm.evaluation for arm in plan.arms}) == 1
@@ -327,7 +328,7 @@ def test_protocol_report_shape_cannot_omit_conditions_or_checks() -> None:
     with pytest.raises(ValidationError, match="complete canonical"):
         type(valid)(
             plan_fingerprint=plan.fingerprint,
-            baseline_kinds=tuple(BaselineKind),
+            baseline_kinds=LEGACY_BASELINE_KINDS,
             checks=("complete-condition-set",),
         )
 

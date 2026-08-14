@@ -40,6 +40,10 @@ from spiral_harness.evidence.models import (
     Trajectory,
     resolve_evidence_span,
 )
+from spiral_harness.evolution.feedback_media_types import (
+    EXPLORATION_INPUTS_MEDIA_TYPE,
+    SAFE_BENCHMARK_METADATA_MEDIA_TYPE,
+)
 from spiral_harness.evolution.models import (
     CANDIDATE_SCREEN_MEDIA_TYPE,
     DIAGNOSIS_MEDIA_TYPE,
@@ -91,6 +95,7 @@ from spiral_harness.experiments.admission import (
 )
 from spiral_harness.experiments.baselines import (
     BASELINE_STUDY_PLAN_MEDIA_TYPE,
+    LEGACY_BASELINE_KINDS,
     BaselineArmPlan,
     BaselineKind,
     BaselineStudyPlan,
@@ -128,10 +133,6 @@ SEARCH_ANALYSIS_PLAN_MEDIA_TYPE = "application/vnd.spiral-harness.search-analysi
 SEARCH_BENCHMARK_BINDING_MEDIA_TYPE = (
     "application/vnd.spiral-harness.search-benchmark-binding.v1+json"
 )
-SAFE_BENCHMARK_METADATA_MEDIA_TYPE = (
-    "application/vnd.spiral-harness.safe-benchmark-metadata.v1+json"
-)
-EXPLORATION_INPUTS_MEDIA_TYPE = "application/vnd.spiral-harness.exploration-inputs.v1+json"
 EXPLORATION_AGGREGATES_MEDIA_TYPE = "application/vnd.spiral-harness.exploration-aggregates.v1+json"
 EXPLORATION_ITEM_FEEDBACK_MEDIA_TYPE = (
     "application/vnd.spiral-harness.exploration-item-feedback.v1+json"
@@ -215,8 +216,6 @@ def _load_canonical_model[ModelT: BaseModel](
     model_type: type[ModelT],
     media_type: str,
 ) -> ModelT:
-    """Load one exact typed artifact without trusting caller-declared metadata."""
-
     if ref.media_type != media_type:
         raise ValueError(f"{model_type.__name__} artifact declares the wrong media type")
     payload = store.get_bytes(ref)
@@ -394,7 +393,7 @@ class SearchAnalysisPlan(ImmutableModel):
         tuple[Annotated[int, Field(ge=0, strict=True)], ...],
         Field(min_length=2),
     ]
-    baseline_kinds: tuple[BaselineKind, ...] = tuple(BaselineKind)
+    baseline_kinds: tuple[BaselineKind, ...] = LEGACY_BASELINE_KINDS
 
     @field_validator("search_run_seeds", "repeat_seeds")
     @classmethod
@@ -411,7 +410,9 @@ class SearchAnalysisPlan(ImmutableModel):
         value: tuple[BaselineKind, ...],
     ) -> tuple[BaselineKind, ...]:
         ordered = tuple(sorted(value, key=lambda kind: kind.value))
-        if frozenset(ordered) != frozenset(BaselineKind) or len(ordered) != len(BaselineKind):
+        if frozenset(ordered) != frozenset(LEGACY_BASELINE_KINDS) or len(ordered) != len(
+            LEGACY_BASELINE_KINDS
+        ):
             raise ValueError("analysis plan must name exactly the four frozen baselines")
         return ordered
 
@@ -584,8 +585,6 @@ def _load_exploration_trajectory_index(
     store: ArtifactRepository,
     benchmark: SearchBenchmarkBinding,
 ) -> ExplorationTrajectoryIndex:
-    """Load every frozen exploration trajectory without conflating it with diagnostics."""
-
     index = _load_canonical_model(
         store,
         benchmark.exploration_trajectories_ref,
@@ -1666,7 +1665,7 @@ class SearchRunAdmissionService:
         arm = study.arm(run.baseline_kind)
         if experiment.seed_harness_ref != run.seed_harness_ref:
             raise SearchRunAdmissionError("experiment and search run use different seed harnesses")
-        required_baselines = frozenset(kind.value for kind in BaselineKind)
+        required_baselines = frozenset(kind.value for kind in LEGACY_BASELINE_KINDS)
         if frozenset(experiment.baselines) != required_baselines:
             raise SearchRunAdmissionError(
                 "automatic four-arm experiment must freeze exactly the four baseline names"

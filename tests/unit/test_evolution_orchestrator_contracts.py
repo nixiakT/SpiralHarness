@@ -116,6 +116,7 @@ from spiral_harness.execution.schedule import (
 )
 from spiral_harness.experiments.baselines import (
     BASELINE_STUDY_PLAN_MEDIA_TYPE,
+    LEGACY_BASELINE_KINDS,
     BaselineKind,
     BaselineStudyPlan,
     FeedbackType,
@@ -348,7 +349,7 @@ def build_admission_fixture(tmp_path: Path) -> SimpleNamespace:
     experiment = base_experiment.model_copy(
         update={
             "objective": "benchmark-score",
-            "baselines": tuple(kind.value for kind in BaselineKind),
+            "baselines": tuple(kind.value for kind in LEGACY_BASELINE_KINDS),
         }
     )
     experiment_ref = store.put_json(
@@ -452,7 +453,7 @@ def build_admission_fixture(tmp_path: Path) -> SimpleNamespace:
 
     runs: dict[BaselineKind, tuple[ArtifactRef, ArtifactRef]] = {}
     controllers: dict[BaselineKind, SearchController] = {}
-    for kind in BaselineKind:
+    for kind in LEGACY_BASELINE_KINDS:
         static = kind is BaselineKind.STATIC
         policy = make_search_policy(
             baseline_kind=kind,
@@ -995,7 +996,7 @@ def test_shared_analysis_plan_admits_static_and_all_three_search_arms(
             ),
         )
 
-    assert frozenset(reports) == frozenset(BaselineKind)
+    assert frozenset(reports) == frozenset(LEGACY_BASELINE_KINDS)
     assert {report.analysis_plan_ref for report in reports.values()} == {env.analysis_ref}
     assert {report.benchmark_binding_ref for report in reports.values()} == {env.benchmark_ref}
     assert reports[BaselineKind.STATIC].gate_confidence_level is None

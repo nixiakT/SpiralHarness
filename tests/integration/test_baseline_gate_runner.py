@@ -42,6 +42,7 @@ from spiral_harness.experiments.baseline_gate_runner import (
     baseline_gate_attempt_budget,
 )
 from spiral_harness.experiments.baselines import (
+    LEGACY_BASELINE_KINDS,
     BaselineKind,
     BaselineProtocolValidator,
     BaselineStudyPlan,
@@ -447,7 +448,7 @@ def test_baseline_gate_runner_executes_all_four_conditions_and_validates_usage(
     tmp_path: Path,
 ) -> None:
     fixture = _fixture(tmp_path)
-    factories = {kind: _runner_factory(fixture, kind=kind) for kind in BaselineKind}
+    factories = {kind: _runner_factory(fixture, kind=kind) for kind in LEGACY_BASELINE_KINDS}
 
     study = TrustedBaselineGateRunner(
         fixture.store,
@@ -473,7 +474,7 @@ def test_baseline_gate_runner_executes_all_four_conditions_and_validates_usage(
         tuple(execution.report for execution in study.executions),
     )
     assert study.consistency.execution_attested is False
-    assert tuple(execution.kind for execution in study.executions) == tuple(BaselineKind)
+    assert tuple(execution.kind for execution in study.executions) == LEGACY_BASELINE_KINDS
     assert study.closure_ref.media_type == BASELINE_GATE_STUDY_CLOSURE_MEDIA_TYPE
     assert fixture.store.get_json(study.closure_ref, BaselineGateStudyClosure) == study.closure
     assert (
@@ -482,7 +483,7 @@ def test_baseline_gate_runner_executes_all_four_conditions_and_validates_usage(
     )
     assert study.closure.reportable_benchmark_result is False
     assert frozenset(condition.kind for condition in study.closure.conditions) == frozenset(
-        BaselineKind
+        LEGACY_BASELINE_KINDS
     )
     execution_refs = {execution.kind: execution.report_ref for execution in study.executions}
     closure_refs = {condition.kind: condition.report_ref for condition in study.closure.conditions}
@@ -492,11 +493,41 @@ def test_baseline_gate_runner_executes_all_four_conditions_and_validates_usage(
     assert {execution.report.used.evaluations for execution in study.executions} == {16}
 
 
+def test_legacy_gate_runner_rejects_extra_score_mapping_key(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    factories = {kind: _runner_factory(fixture, kind=kind) for kind in LEGACY_BASELINE_KINDS}
+    candidate_refs = {
+        **fixture.candidate_refs,
+        BaselineKind.SCORE_ONLY_MATCHED: fixture.candidate_refs[BaselineKind.STATIC],
+    }
+
+    with pytest.raises(BaselineGateRunnerError, match=r"unexpected=.*score-only-matched"):
+        TrustedBaselineGateRunner(
+            fixture.store,
+            adapter=fixture.adapter,
+            gate_batch_service=fixture.gate_batch_service,
+        ).execute_study(
+            fixture.plan,
+            query=0,
+            protocol_ref=fixture.protocol_ref,
+            protocol=fixture.protocol,
+            candidate_refs=candidate_refs,
+            parent_harness_ref=fixture.parent_ref,
+            candidate_harness_refs=fixture.candidate_harness_refs,
+            gate_split_ref=fixture.gate_split_ref,
+            mechanism_evidence_refs=fixture.mechanism_evidence_refs,
+            task_ids=fixture.task_ids,
+            token_ceiling_per_attempt=32,
+            runner_factories=factories,
+        )
+    assert fixture.backends == []
+
+
 def test_baseline_gate_closure_rejects_tampered_embedded_usage_report(
     tmp_path: Path,
 ) -> None:
     fixture = _fixture(tmp_path)
-    factories = {kind: _runner_factory(fixture, kind=kind) for kind in BaselineKind}
+    factories = {kind: _runner_factory(fixture, kind=kind) for kind in LEGACY_BASELINE_KINDS}
     study = TrustedBaselineGateRunner(
         fixture.store,
         adapter=fixture.adapter,

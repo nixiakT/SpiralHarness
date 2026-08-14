@@ -38,6 +38,7 @@ from spiral_harness.evolution.strategies import (
 )
 from spiral_harness.experiments.baselines import (
     BASELINE_STUDY_PLAN_MEDIA_TYPE,
+    LEGACY_BASELINE_KINDS,
     BaselineKind,
     FeedbackType,
     FrozenMutationPolicy,
@@ -157,7 +158,7 @@ def prompt_proposal(
     return PromptProposal(**values)
 
 
-@pytest.mark.parametrize("kind", tuple(BaselineKind))
+@pytest.mark.parametrize("kind", LEGACY_BASELINE_KINDS)
 def test_search_policy_and_plugin_freeze_exact_four_arm_profiles(kind: BaselineKind) -> None:
     policy = search_policy(kind)
     plugin = make_strategy_plugin_manifest(

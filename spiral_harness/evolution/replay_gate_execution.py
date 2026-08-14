@@ -44,7 +44,11 @@ from spiral_harness.experiments.baseline_gate_runner import (
     TrustedBaselineGateRunner,
     baseline_gate_attempt_budget,
 )
-from spiral_harness.experiments.baselines import BaselineKind, BaselineStudyPlan
+from spiral_harness.experiments.baselines import (
+    LEGACY_BASELINE_KINDS,
+    BaselineKind,
+    BaselineStudyPlan,
+)
 from spiral_harness.verification.mechanism import ATTESTED_MECHANISM_EVIDENCE_MEDIA_TYPE
 from spiral_harness.verification.models import (
     MechanismCheck,
@@ -171,10 +175,10 @@ def execute_replay_gate(
     )
     candidate_refs = {
         kind: _candidate_ref(study, baseline=kind, harness_ref=study.fixture.seed_harness_ref)
-        for kind in BaselineKind
+        for kind in LEGACY_BASELINE_KINDS
     }
     candidate_harness_refs = {
-        kind: _candidate_harness_ref(study, baseline=kind) for kind in BaselineKind
+        kind: _candidate_harness_ref(study, baseline=kind) for kind in LEGACY_BASELINE_KINDS
     }
     mechanism_refs = {
         kind: _mechanism_ref(
@@ -183,7 +187,7 @@ def execute_replay_gate(
             candidate_ref=candidate_refs[kind],
             harness_ref=candidate_harness_refs[kind],
         )
-        for kind in BaselineKind
+        for kind in LEGACY_BASELINE_KINDS
     }
     return TrustedBaselineGateRunner(
         study.fixture.store,
@@ -201,7 +205,9 @@ def execute_replay_gate(
         mechanism_evidence_refs=mechanism_refs,
         task_ids=("gate-1",),
         token_ceiling_per_attempt=32,
-        runner_factories={kind: _runner_factory(study, kind=kind) for kind in BaselineKind},
+        runner_factories={
+            kind: _runner_factory(study, kind=kind) for kind in LEGACY_BASELINE_KINDS
+        },
     )
 
 

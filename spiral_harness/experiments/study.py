@@ -1,15 +1,14 @@
-"""Attested four-arm study barrier over independently closed search runs.
+"""Attested legacy four-arm barrier over independently closed search runs.
 
-The study controller never accepts caller-authored aggregate usage reports.
-Instead, every expected ``(baseline kind, search-run seed)`` cell must present
-two live capabilities: its :class:`SearchController` re-authenticates the
-current search selection tail, and its underlying :class:`ExperimentController`
-re-authenticates the current experiment selection tail.  A controller-authored
-run closure binds both before the study can cross its all-runs barrier.
+The controller never accepts caller-authored aggregate usage reports. Instead,
+every expected ``(baseline kind, search-run seed)`` cell must present two live
+capabilities: its :class:`SearchController` re-authenticates the current search
+selection tail, and its :class:`ExperimentController` re-authenticates the
+current experiment tail. A controller-authored closure binds both before the
+study can cross its all-runs barrier.
 
-This barrier detects and rejects a run controller that entered sealed state
-early; it does not revoke the lower-level ``ExperimentController.start_sealed``
-API or claim to prevent an out-of-band caller from observing that split.
+The barrier rejects a run controller that entered sealed state early; it does
+not revoke lower-level sealed APIs or prevent out-of-band split observation.
 """
 
 from __future__ import annotations
@@ -42,6 +41,7 @@ from spiral_harness.evolution.orchestrator import (
 )
 from spiral_harness.experiments.baselines import (
     BASELINE_STUDY_PLAN_MEDIA_TYPE,
+    LEGACY_BASELINE_KINDS,
     BaselineKind,
     BaselineStudyPlan,
 )
@@ -751,7 +751,7 @@ class StudyJournal:
                 raise StudyJournalIntegrityError(
                     "pre-registered experiment and search run use different seed harnesses"
                 )
-            required_baselines = frozenset(kind.value for kind in BaselineKind)
+            required_baselines = frozenset(kind.value for kind in LEGACY_BASELINE_KINDS)
             if frozenset(experiment.baselines) != required_baselines:
                 raise StudyJournalIntegrityError(
                     "pre-registered experiment does not freeze the exact four baselines"
@@ -776,7 +776,7 @@ class StudyJournal:
     ) -> None:
         """Reject seed-level treatment drift and unmatched search resources."""
 
-        for kind in BaselineKind:
+        for kind in LEGACY_BASELINE_KINDS:
             keys = tuple(key for key in verified if key[0] == kind.value)
             first = keys[0]
             first_run = verified[first][1]

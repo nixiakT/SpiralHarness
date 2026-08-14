@@ -1,9 +1,4 @@
-"""Immutable contracts for diagnosis, proposal, screening, and nomination.
-
-The substantive artifacts referenced by this module live in the content
-addressed store.  Search events carry :class:`ArtifactRef` values rather than
-paths, mutable objects, or caller-authored bare hashes.
-"""
+"""Immutable, content-addressed diagnosis, proposal, screen, and nomination contracts."""
 
 from __future__ import annotations
 
@@ -107,7 +102,9 @@ def expected_strategy_feedback(kind: BaselineKind) -> frozenset[FeedbackType]:
     }
     if kind is BaselineKind.PROMPT_ONLY:
         return ordinary_optimizer_feedback
-    return ordinary_optimizer_feedback | {FeedbackType.DIAGNOSTIC_EVIDENCE}
+    if kind is BaselineKind.EVIDENCE_TARGETED:
+        return ordinary_optimizer_feedback | {FeedbackType.DIAGNOSTIC_EVIDENCE}
+    raise ValueError(f"{kind.value} requires the protocol-v2 feedback view")
 
 
 def expected_strategy_mutation(kind: BaselineKind) -> MutationCapability:
@@ -126,12 +123,14 @@ def expected_strategy_mutation(kind: BaselineKind) -> MutationCapability:
             mutable_component_kinds=(ComponentKind.PROMPT,),
             may_call_optimizer_model=True,
         )
-    return MutationCapability(
-        mode=MutationMode.EVIDENCE_TARGETED,
-        mutable_component_kinds=(ComponentKind.PROMPT,),
-        may_use_diagnostic_evidence=True,
-        may_call_optimizer_model=True,
-    )
+    if kind is BaselineKind.EVIDENCE_TARGETED:
+        return MutationCapability(
+            mode=MutationMode.EVIDENCE_TARGETED,
+            mutable_component_kinds=(ComponentKind.PROMPT,),
+            may_use_diagnostic_evidence=True,
+            may_call_optimizer_model=True,
+        )
+    raise ValueError(f"{kind.value} requires the protocol-v2 mutation profile")
 
 
 class SearchStoppingPolicy(ImmutableModel):
@@ -609,7 +608,7 @@ class StrategyFeedbackView(ImmutableModel):
 
 
 # Short public name retained for orchestration code that does not need the
-# strategy qualifier.  It is the same strict model, not a weaker base class.
+# strategy qualifier. It is the same strict model, not a weaker base class.
 FeedbackView = StrategyFeedbackView
 
 

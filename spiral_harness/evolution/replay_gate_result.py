@@ -24,7 +24,10 @@ from spiral_harness.experiments.baseline_gate_acceptance import (
 from spiral_harness.experiments.baseline_gate_closure import (
     BASELINE_GATE_STUDY_CLOSURE_MEDIA_TYPE,
 )
-from spiral_harness.experiments.baselines import BASELINE_STUDY_PLAN_MEDIA_TYPE, BaselineKind
+from spiral_harness.experiments.baselines import (
+    BASELINE_STUDY_PLAN_MEDIA_TYPE,
+    LEGACY_BASELINE_KINDS,
+)
 from spiral_harness.experiments.study import (
     STUDY_BARRIER_CLOSURE_MEDIA_TYPE,
     STUDY_CONTROLLER_MANIFEST_MEDIA_TYPE,
@@ -150,7 +153,9 @@ class ReplayStudyGateResult(ImmutableModel):
         _require_json_ref(self.analysis_plan_ref, field_name="analysis_plan_ref")
         coordinates = tuple(_run_coordinate(run.key) for run in self.runs)
         expected_coordinates = tuple(
-            sorted((kind.value, seed) for kind in BaselineKind for seed in SEARCH_RUN_SEEDS)
+            sorted(
+                (kind.value, seed) for kind in LEGACY_BASELINE_KINDS for seed in SEARCH_RUN_SEEDS
+            )
         )
         if coordinates != expected_coordinates:
             raise ValueError("replay study gate result does not cover the four-by-two schedule")

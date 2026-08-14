@@ -14,6 +14,9 @@ from spiral_harness.core.canonical import canonical_json_bytes
 from spiral_harness.experiments.baselines import BaselineKind
 
 STRATEGY_SEED_DOMAIN = "spiral-harness/evolution/strategy-seed/v1"
+UNBOUND_PAIRED_PROPOSER_SEED_DOMAIN = (
+    "spiral-harness/evolution/unbound-paired-proposer-seed-helper/v2"
+)
 RANDOM_VALID_SAMPLE_DOMAIN = "spiral-harness/evolution/random-valid-sample/v1"
 UNIFORM_SHUFFLE_ALGORITHM = "sha256-counter-fisher-yates-rejection-v1"
 
@@ -52,10 +55,49 @@ def derive_strategy_seed(
     run = _require_nonnegative_integer(search_run_seed, field_name="search_run_seed")
     if not isinstance(baseline_kind, BaselineKind):
         raise TypeError("baseline_kind must be a BaselineKind")
+    if baseline_kind is BaselineKind.SCORE_ONLY_MATCHED:
+        raise ValueError("score-only-matched cannot use the legacy strategy seed contract")
     digest = _digest_payload(
         domain=STRATEGY_SEED_DOMAIN,
         payload={
             "baseline_kind": baseline_kind.value,
+            "proposal_master_seed": master,
+            "search_run_seed": run,
+        },
+    )
+    return int.from_bytes(digest, byteorder="big", signed=False)
+
+
+def derive_unbound_paired_proposer_seed(
+    *,
+    proposal_master_seed: int,
+    search_run_seed: int,
+    baseline_kind: BaselineKind,
+) -> int:
+    """Derive a design-time seed candidate for the matched SCORE/FULL pair.
+
+    The condition name is validated but deliberately excluded from the digest,
+    so identical inputs produce an equal value.  This phase1 helper is not
+    persisted in, or verified by, a run manifest or admission service; it is
+    not evidence that runtime proposer streams are paired.
+    """
+
+    master = _require_nonnegative_integer(
+        proposal_master_seed,
+        field_name="proposal_master_seed",
+    )
+    run = _require_nonnegative_integer(search_run_seed, field_name="search_run_seed")
+    if type(baseline_kind) is not BaselineKind:
+        raise TypeError("baseline_kind must be an exact BaselineKind")
+    if baseline_kind not in {
+        BaselineKind.SCORE_ONLY_MATCHED,
+        BaselineKind.EVIDENCE_TARGETED,
+    }:
+        raise ValueError("paired proposer seeds are defined only for SCORE and FULL")
+    digest = _digest_payload(
+        domain=UNBOUND_PAIRED_PROPOSER_SEED_DOMAIN,
+        payload={
+            "pair": "score-full",
             "proposal_master_seed": master,
             "search_run_seed": run,
         },
@@ -151,8 +193,10 @@ def uniform_without_replacement_indices(
 __all__ = [
     "RANDOM_VALID_SAMPLE_DOMAIN",
     "STRATEGY_SEED_DOMAIN",
+    "UNBOUND_PAIRED_PROPOSER_SEED_DOMAIN",
     "UNIFORM_SHUFFLE_ALGORITHM",
     "derive_random_valid_sample_seed",
     "derive_strategy_seed",
+    "derive_unbound_paired_proposer_seed",
     "uniform_without_replacement_indices",
 ]

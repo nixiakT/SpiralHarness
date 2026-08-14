@@ -1,11 +1,4 @@
-"""Frozen, budget-matched protocol for the four research baselines.
-
-This module deliberately stops at configuration, planning, and validation.  It
-does not generate mutations, call a model, execute a benchmark, or select a
-winner.  Keeping the protocol independent of those implementations makes a
-structurally inconsistent comparison declaration rejectable before scores are
-compared.
-"""
+"""Frozen planning and validation for the legacy four-arm baseline protocol."""
 
 from __future__ import annotations
 
@@ -31,23 +24,26 @@ class BaselineProtocolError(ValueError):
 
 
 class BaselineKind(StrEnum):
-    """The complete and exclusive set of conditions in the first study."""
+    """Known study conditions across protocol versions."""
 
     STATIC = "static"
     RANDOM_VALID = "random-valid"
     PROMPT_ONLY = "prompt-only"
+    SCORE_ONLY_MATCHED = "score-only-matched"
     EVIDENCE_TARGETED = "evidence-targeted"
 
 
-REQUIRED_BASELINES = frozenset(BaselineKind)
+LEGACY_BASELINE_KINDS = (
+    BaselineKind.STATIC,
+    BaselineKind.RANDOM_VALID,
+    BaselineKind.PROMPT_ONLY,
+    BaselineKind.EVIDENCE_TARGETED,
+)
+REQUIRED_BASELINES = frozenset(LEGACY_BASELINE_KINDS)
 
 
 class FeedbackType(StrEnum):
-    """Information a condition may consume while proposing candidates.
-
-    Gate and sealed item content is represented so malformed plans and usage
-    reports can be rejected explicitly.  It is never granted to any condition.
-    """
+    """Information a condition may consume while proposing candidates."""
 
     BENCHMARK_METADATA = "benchmark-metadata"
     EXPLORATION_INPUTS = "exploration-inputs"
@@ -55,6 +51,7 @@ class FeedbackType(StrEnum):
     EXPLORATION_ITEM_FEEDBACK = "exploration-item-feedback"
     EXPLORATION_TRAJECTORIES = "exploration-trajectories"
     DIAGNOSTIC_EVIDENCE = "diagnostic-evidence"
+    MECHANISM_EVIDENCE = "mechanism-evidence"
     GATE_AGGREGATES = "gate-aggregates"
     GATE_ITEM_CONTENT = "gate-item-content"
     SEALED_ITEM_CONTENT = "sealed-item-content"
@@ -146,12 +143,7 @@ class FrozenRunContext(ImmutableModel):
 
 
 class PairedEvaluationPlan(ImmutableModel):
-    """Independent search replications plus paired task-rollout repeats.
-
-    ``search_run_seeds`` identify statistically independent end-to-end search
-    runs. ``repeat_seeds`` pair task rollouts inside each such run. They are
-    separate schedules and neither may be substituted for the other.
-    """
+    """Independent search replications plus paired task-rollout repeats."""
 
     schema_version: Literal["1"] = "1"
     search_run_seeds: Annotated[
@@ -265,12 +257,14 @@ def _expected_feedback(kind: BaselineKind) -> frozenset[FeedbackType]:
             FeedbackType.EXPLORATION_ITEM_FEEDBACK,
             FeedbackType.EXPLORATION_TRAJECTORIES,
         }
-    return _COMMON_SEARCH_FEEDBACK | {
-        FeedbackType.EXPLORATION_AGGREGATES,
-        FeedbackType.EXPLORATION_ITEM_FEEDBACK,
-        FeedbackType.EXPLORATION_TRAJECTORIES,
-        FeedbackType.DIAGNOSTIC_EVIDENCE,
-    }
+    if kind is BaselineKind.EVIDENCE_TARGETED:
+        return _COMMON_SEARCH_FEEDBACK | {
+            FeedbackType.EXPLORATION_AGGREGATES,
+            FeedbackType.EXPLORATION_ITEM_FEEDBACK,
+            FeedbackType.EXPLORATION_TRAJECTORIES,
+            FeedbackType.DIAGNOSTIC_EVIDENCE,
+        }
+    raise ValueError(f"{kind.value} is not supported by the legacy four-arm protocol")
 
 
 def _expected_mutation_capability(
@@ -290,12 +284,14 @@ def _expected_mutation_capability(
             mutable_component_kinds=(ComponentKind.PROMPT,),
             may_call_optimizer_model=True,
         )
-    return MutationCapability(
-        mode=MutationMode.EVIDENCE_TARGETED,
-        mutable_component_kinds=policy.allowed_component_kinds,
-        may_use_diagnostic_evidence=True,
-        may_call_optimizer_model=True,
-    )
+    if kind is BaselineKind.EVIDENCE_TARGETED:
+        return MutationCapability(
+            mode=MutationMode.EVIDENCE_TARGETED,
+            mutable_component_kinds=policy.allowed_component_kinds,
+            may_use_diagnostic_evidence=True,
+            may_call_optimizer_model=True,
+        )
+    raise ValueError(f"{kind.value} is not supported by the legacy four-arm protocol")
 
 
 class BaselineArmPlan(ImmutableModel):
@@ -411,7 +407,7 @@ def plan_four_baselines(
                 available_feedback=tuple(_expected_feedback(kind)),
                 mutation=_expected_mutation_capability(kind, context.mutation_policy),
             )
-            for kind in BaselineKind
+            for kind in LEGACY_BASELINE_KINDS
         )
     )
 
@@ -688,6 +684,7 @@ class BaselineProtocolValidator:
 __all__ = [
     "BASELINE_STUDY_PLAN_MEDIA_TYPE",
     "FORBIDDEN_ITEM_FEEDBACK",
+    "LEGACY_BASELINE_KINDS",
     "REQUIRED_BASELINES",
     "BaselineArmPlan",
     "BaselineKind",

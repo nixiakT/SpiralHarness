@@ -30,7 +30,11 @@ from spiral_harness.evolution.strategies import (
     sample_random_valid,
     validate_strategy_permissions,
 )
-from spiral_harness.experiments.baselines import BaselineKind, FrozenMutationPolicy
+from spiral_harness.experiments.baselines import (
+    LEGACY_BASELINE_KINDS,
+    BaselineKind,
+    FrozenMutationPolicy,
+)
 
 
 def ref(character: str, media_type: str = "application/json", *, size: int = 32) -> ArtifactRef:
@@ -312,9 +316,9 @@ def test_strategy_seed_domains_separate_baselines_and_search_runs() -> None:
             search_run_seed=run_seed,
             baseline_kind=kind,
         )
-        for kind, run_seed in itertools.product(BaselineKind, (101, 103))
+        for kind, run_seed in itertools.product(LEGACY_BASELINE_KINDS, (101, 103))
     }
-    assert len(seeds) == len(BaselineKind) * 2
+    assert len(seeds) == len(LEGACY_BASELINE_KINDS) * 2
 
 
 def test_strategy_permission_join_revalidates_unchecked_plugin_copies() -> None:

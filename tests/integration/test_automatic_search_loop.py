@@ -12,7 +12,7 @@ from spiral_harness.evolution.replay_study import (
     ReplayStudyResult,
     run_non_reportable_replay_study,
 )
-from spiral_harness.experiments.baselines import BaselineKind
+from spiral_harness.experiments.baselines import LEGACY_BASELINE_KINDS, BaselineKind
 from spiral_harness.experiments.study import StudyState
 from spiral_harness.storage.artifact_store import ArtifactStore
 
@@ -32,7 +32,9 @@ def test_four_by_two_automatic_loops_cross_the_complete_study_barrier(
     coordinates = {
         (run.result.key.baseline_kind, run.result.key.search_run_seed) for run in execution.runs
     }
-    assert coordinates == {(kind, seed) for kind in BaselineKind for seed in SEARCH_RUN_SEEDS}
+    assert coordinates == {
+        (kind, seed) for kind in LEGACY_BASELINE_KINDS for seed in SEARCH_RUN_SEEDS
+    }
     assert {run.result.key.search_run_seed for run in execution.runs} == set(SEARCH_RUN_SEEDS)
 
     # The study keeps eight distinct process-local verification capabilities.

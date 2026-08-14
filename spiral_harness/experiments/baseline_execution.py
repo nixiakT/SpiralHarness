@@ -10,6 +10,7 @@ from spiral_harness.core.models import HARNESS_MANIFEST_MEDIA_TYPE, ArtifactRef,
 from spiral_harness.execution.receipts import TrustedExecutionUsage
 from spiral_harness.execution.schedule import EvaluationBatchSchedule, EvaluationPhase
 from spiral_harness.experiments.baselines import (
+    LEGACY_BASELINE_KINDS,
     BaselineArmPlan,
     BaselineKind,
     BaselineProtocolError,
@@ -182,8 +183,12 @@ def _derive_master_seed(
 
 
 def _require_baseline_kind(kind: BaselineKind) -> BaselineKind:
-    if not isinstance(kind, BaselineKind):
-        raise TypeError("kind must be a BaselineKind")
+    if type(kind) is not BaselineKind:
+        raise TypeError("kind must be an exact BaselineKind")
+    if kind not in LEGACY_BASELINE_KINDS:
+        raise BaselineExecutionBindingError(
+            "legacy baseline execution cannot run protocol-v2 SCORE"
+        )
     return kind
 
 

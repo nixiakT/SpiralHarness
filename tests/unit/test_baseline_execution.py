@@ -17,6 +17,7 @@ from spiral_harness.experiments.baseline_execution import (
     summarize_baseline_gate_usage,
 )
 from spiral_harness.experiments.baselines import (
+    LEGACY_BASELINE_KINDS,
     BaselineKind,
     BaselineProtocolValidator,
     BaselineStudyPlan,
@@ -115,6 +116,21 @@ def test_derives_canonical_gate_schedules_for_every_search_run() -> None:
     assert len({schedule.master_seed for schedule in schedules}) == 2
 
 
+def test_legacy_gate_schedule_rejects_protocol_v2_score_condition() -> None:
+    plan = study_plan()
+    with pytest.raises(BaselineExecutionBindingError, match="cannot run protocol-v2 SCORE"):
+        derive_baseline_gate_schedule(
+            plan,
+            kind=BaselineKind.SCORE_ONLY_MATCHED,
+            search_run_seed=101,
+            query=0,
+            parent_harness_ref=plan.arms[0].context.seed_harness_ref,
+            candidate_harness_ref=ref("c", HARNESS_MANIFEST_MEDIA_TYPE),
+            task_ids=("task-a",),
+            token_ceiling_per_attempt=64,
+        )
+
+
 def test_summarizes_complete_receipt_backed_gate_usage() -> None:
     plan = study_plan()
     parent_ref = plan.arms[0].context.seed_harness_ref
@@ -177,7 +193,7 @@ def test_summarizes_complete_receipt_backed_gate_usage() -> None:
                         )
                     ),
                 )
-                for kind in BaselineKind
+                for kind in LEGACY_BASELINE_KINDS
             ),
         ).reports_consistent
         is True
