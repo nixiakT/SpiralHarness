@@ -5,6 +5,7 @@ from __future__ import annotations
 import secrets
 from threading import RLock
 
+import spiral_harness.execution.accounted_execution as _execution
 import spiral_harness.execution.contracts as _contracts
 from spiral_harness.core.models import ArtifactRef
 from spiral_harness.storage.protocol import ArtifactRepository
@@ -323,26 +324,23 @@ class AttemptLedger:
     def _load_execution(
         self,
         execution_ref: ArtifactRef,
-    ) -> tuple[ArtifactRef, _contracts.ModelExecution]:
+    ) -> tuple[ArtifactRef, _execution.AccountedExecution]:
         try:
             checked_ref = ArtifactRef.model_validate(execution_ref, strict=True)
         except Exception as exc:
             raise AttemptReservationError("execution reference is malformed") from exc
-        if checked_ref.media_type != _contracts.MODEL_EXECUTION_MEDIA_TYPE:
+        if checked_ref.media_type not in _contracts.ATTEMPT_EXECUTION_MEDIA_TYPES:
             raise AttemptReservationError("execution reference declares the wrong media type")
         try:
-            loaded = self._repository.get_json(checked_ref, _contracts.ModelExecution)
-            execution = _contracts.ModelExecution.model_validate(loaded, strict=True)
-        except Exception as exc:
-            raise AttemptReservationError(
-                "execution artifact is not a canonical ModelExecution"
-            ) from exc
+            execution = _execution.load_accounted_execution(self._repository, checked_ref)
+        except _execution.AccountedExecutionLoadError as exc:
+            raise AttemptReservationError(str(exc)) from exc
         return checked_ref, execution
 
     @staticmethod
     def _verify_execution_binding(
         reservation: _contracts.AttemptReservation,
-        execution: _contracts.ModelExecution,
+        execution: _execution.AccountedExecution,
     ) -> None:
         if execution.task.fingerprint != reservation.task_fingerprint:
             raise AttemptReservationError("execution task does not match its reservation")

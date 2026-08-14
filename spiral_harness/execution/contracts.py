@@ -25,6 +25,12 @@ from spiral_harness.skills.package import (
 ATTEMPT_RESERVATION_MEDIA_TYPE = "application/vnd.spiral-harness.attempt-reservation.v3+json"
 ATTEMPT_OUTCOME_MEDIA_TYPE = "application/vnd.spiral-harness.attempt-outcome.v3+json"
 MODEL_EXECUTION_MEDIA_TYPE = "application/vnd.spiral-harness.model-execution.v2+json"
+PURE_REFERENCE_EXECUTION_MEDIA_TYPE = (
+    "application/vnd.spiral-harness.pure-reference-execution.v1+json"
+)
+ATTEMPT_EXECUTION_MEDIA_TYPES = frozenset(
+    {MODEL_EXECUTION_MEDIA_TYPE, PURE_REFERENCE_EXECUTION_MEDIA_TYPE}
+)
 
 _UNPINNED_REVISIONS = frozenset(
     {
@@ -115,7 +121,7 @@ class AttemptOutcome(ImmutableModel):
             raise ValueError("reservation_ref declares the wrong media type")
         if (
             self.execution_ref is not None
-            and self.execution_ref.media_type != MODEL_EXECUTION_MEDIA_TYPE
+            and self.execution_ref.media_type not in ATTEMPT_EXECUTION_MEDIA_TYPES
         ):
             raise ValueError("execution_ref declares the wrong media type")
         if self.disposition is AttemptDisposition.SETTLED:
@@ -610,9 +616,11 @@ class ModelExecutionRecord(_FrozenExecutionModel):
 
 
 __all__ = [
+    "ATTEMPT_EXECUTION_MEDIA_TYPES",
     "ATTEMPT_OUTCOME_MEDIA_TYPE",
     "ATTEMPT_RESERVATION_MEDIA_TYPE",
     "MODEL_EXECUTION_MEDIA_TYPE",
+    "PURE_REFERENCE_EXECUTION_MEDIA_TYPE",
     "AttemptBudget",
     "AttemptDisposition",
     "AttemptLedgerState",

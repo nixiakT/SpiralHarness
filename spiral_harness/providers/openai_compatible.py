@@ -21,6 +21,7 @@ from spiral_harness.execution.contracts import (
     FrozenModelSpec,
     ModelRequest,
 )
+from spiral_harness.execution.pure_contracts import PureReferenceRequest
 
 
 class OpenAICompatibleBackendError(RuntimeError):
@@ -94,6 +95,47 @@ class OpenAICompatibleChatBackend:
         output = _extract_chat_output(response)
         usage = _extract_usage(response)
         return BackendResponse(output=output, usage=usage, cost_usd=None)
+
+    def invoke_pure(
+        self,
+        *,
+        spec: FrozenModelSpec,
+        request: PureReferenceRequest,
+    ) -> BackendResponse:
+        """Call the model with exactly one user message and no harness surface."""
+
+        checked_spec = FrozenModelSpec.model_validate(spec, strict=True)
+        checked_request = PureReferenceRequest.model_validate(request, strict=True)
+        if checked_spec.backend_fingerprint != self.fingerprint:
+            raise OpenAICompatibleBackendError("backend fingerprint differs from frozen spec")
+
+        payload = {
+            "model": checked_spec.model,
+            "messages": [
+                {
+                    "role": checked_request.messages[0].role,
+                    "content": checked_request.messages[0].content,
+                }
+            ],
+            "temperature": checked_spec.inference.temperature,
+            "top_p": checked_spec.inference.top_p,
+            "max_tokens": checked_spec.inference.max_output_tokens,
+            "seed": checked_request.rollout_seed,
+        }
+        if checked_spec.inference.stop_sequences:
+            payload["stop"] = list(checked_spec.inference.stop_sequences)
+
+        response = self._post_json(
+            "/chat/completions",
+            payload,
+            timeout_seconds=checked_spec.inference.timeout_seconds,
+        )
+        _require_complete_chat_choice(response)
+        return BackendResponse(
+            output=_extract_chat_output(response),
+            usage=_extract_usage(response),
+            cost_usd=None,
+        )
 
     def list_models(self, *, timeout_seconds: float = 15.0) -> tuple[str, ...]:
         """Return the gateway's advertised model IDs without invoking a model.
@@ -232,11 +274,11 @@ def _require_complete_chat_choice(response: dict[str, Any]) -> None:
 def _extract_usage(response: dict[str, Any]) -> BackendTokenUsage:
     usage = response.get("usage")
     if usage is None:
-        return BackendTokenUsage(input_tokens=0, output_tokens=0)
+        raise OpenAICompatibleBackendError("chat completion response is missing token usage")
     if not isinstance(usage, dict):
         raise OpenAICompatibleBackendError("chat completion usage must be an object")
-    input_tokens = usage.get("prompt_tokens", usage.get("input_tokens", 0))
-    output_tokens = usage.get("completion_tokens", usage.get("output_tokens", 0))
+    input_tokens = usage.get("prompt_tokens", usage.get("input_tokens"))
+    output_tokens = usage.get("completion_tokens", usage.get("output_tokens"))
     if not isinstance(input_tokens, int) or isinstance(input_tokens, bool):
         raise OpenAICompatibleBackendError("chat completion prompt token usage must be an integer")
     if not isinstance(output_tokens, int) or isinstance(output_tokens, bool):

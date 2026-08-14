@@ -8,11 +8,13 @@ import pytest
 from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.models import HARNESS_MANIFEST_MEDIA_TYPE, ArtifactRef
 from spiral_harness.execution.contracts import (
+    CandidateTask,
     FrozenModelSpec,
     InferenceConfig,
     ModelRequest,
     ResolvedHarness,
 )
+from spiral_harness.execution.pure_contracts import materialize_pure_request
 from spiral_harness.providers.openai_compatible import (
     OpenAICompatibleBackendError,
     OpenAICompatibleChatBackend,
@@ -131,6 +133,36 @@ def test_chat_backend_posts_frozen_chat_completion_payload_and_usage() -> None:
     ]
 
 
+def test_pure_backend_posts_only_one_user_message_and_no_harness_fields() -> None:
+    backend = CapturingBackend(
+        {
+            "choices": [{"message": {"content": "#### 5"}}],
+            "usage": {"prompt_tokens": 4, "completion_tokens": 2},
+        }
+    )
+    pure_request = materialize_pure_request(
+        CandidateTask(task_id="gsm8k-example", question="What is 2+3?"),
+        reference_id="a" * 64,
+        rollout_seed=19,
+    )
+
+    response = backend.invoke_pure(spec=spec_for(backend), request=pure_request)
+
+    assert response.output == "#### 5"
+    _, payload, _ = backend.calls[0]
+    assert payload["messages"] == [{"role": "user", "content": "What is 2+3?"}]
+    assert payload["seed"] == 19
+    assert set(payload) == {
+        "model",
+        "messages",
+        "temperature",
+        "top_p",
+        "max_tokens",
+        "seed",
+        "stop",
+    }
+
+
 def test_chat_backend_accepts_openai_responses_style_text_parts() -> None:
     backend = CapturingBackend(
         {
@@ -150,6 +182,27 @@ def test_chat_backend_rejects_malformed_provider_responses() -> None:
     backend = CapturingBackend({"choices": []})
 
     with pytest.raises(OpenAICompatibleBackendError, match="no choices"):
+        backend.invoke(spec=spec_for(backend), request=request())
+
+
+@pytest.mark.parametrize(
+    "usage",
+    [
+        None,
+        {},
+        {"prompt_tokens": 1},
+        {"completion_tokens": 1},
+    ],
+)
+def test_chat_backend_rejects_missing_or_incomplete_usage(
+    usage: dict[str, int] | None,
+) -> None:
+    response: dict[str, object] = {"choices": [{"message": {"content": "#### 5"}}]}
+    if usage is not None:
+        response["usage"] = usage
+    backend = CapturingBackend(response)
+
+    with pytest.raises(OpenAICompatibleBackendError, match=r"usage|token usage"):
         backend.invoke(spec=spec_for(backend), request=request())
 
 
