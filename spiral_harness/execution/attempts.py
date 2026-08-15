@@ -6,6 +6,7 @@ import secrets
 from threading import RLock
 
 import spiral_harness.execution.accounted_execution as _execution
+import spiral_harness.execution.attempt_checkpoint as _checkpoint
 import spiral_harness.execution.contracts as _contracts
 from spiral_harness.core.models import ArtifactRef
 from spiral_harness.storage.protocol import ArtifactRepository
@@ -33,6 +34,12 @@ class AttemptLedger:
     Reservations precede backend calls; failures burn their reservation and an
     overrun poisons the stream. Reopened tails are audit-only. Cross-process
     writers still require durable coordination around this trusted capability.
+
+    A live writer advances one in-memory checkpoint derived from the initial
+    full replay and each subsequently verified append. This relies on the
+    repository's immutable-reference contract and avoids replaying the complete
+    history before every write. Public state reads still replay from storage and
+    compare the result with that checkpoint, so audit boundaries remain fresh.
     """
 
     def __init__(
@@ -55,10 +62,13 @@ class AttemptLedger:
         self._budget = _contracts.AttemptBudget.model_validate(budget, strict=True)
         self.__writer_epoch_id = secrets.token_hex(32)
         self._lock = RLock()
-        self._tail_ref = (
+        initial_tail_ref = (
             None if tail_ref is None else ArtifactRef.model_validate(tail_ref, strict=True)
         )
-        self._replay(self._tail_ref)
+        self._checkpoint = _checkpoint.AttemptWriterCheckpoint(
+            self._replay(initial_tail_ref),
+            integrity_error_type=AttemptLedgerIntegrityError,
+        )
 
     @property
     def repository(self) -> ArtifactRepository:
@@ -74,15 +84,16 @@ class AttemptLedger:
 
     @property
     def tail_ref(self) -> ArtifactRef | None:
-        return self._tail_ref
+        with self._lock:
+            return self._checkpoint.tail_ref
 
     def state(self) -> _contracts.AttemptLedgerState:
         with self._lock:
-            return self._replay(self._tail_ref)
+            return self._checkpoint.fresh_current(self._replay)
 
     def state_at(self, tail_ref: ArtifactRef | None) -> _contracts.AttemptLedgerState:
         with self._lock:
-            return self._replay(tail_ref)
+            return self._checkpoint.fresh_at(self._replay, tail_ref)
 
     def reserve(
         self,
@@ -94,14 +105,18 @@ class AttemptLedger:
     ) -> ArtifactRef:
         """Persist a single-use reservation before any backend call is allowed."""
         with self._lock:
-            state = self._replay(self._tail_ref)
+            state = self._checkpoint.current()
             if state.pending_reservation_ref is not None:
                 raise AttemptReservationError("the ledger already has an open reservation")
-            if (
-                state.tail_ref is not None
-                and self._load_outcome(state.tail_ref).writer_epoch_id != self.__writer_epoch_id
-            ):
-                raise AttemptReservationError("a reopened ledger is an audit-only view")
+            if state.tail_ref is not None:
+                current_outcome = self._checkpoint.verify_current_outcome(
+                    state.tail_ref,
+                    load_outcome=self._load_outcome,
+                    load_reservation=self._load_reservation,
+                    verify_pair=self._verify_pair,
+                )
+                if current_outcome.writer_epoch_id != self.__writer_epoch_id:
+                    raise AttemptReservationError("a reopened ledger is an audit-only view")
             if state.poisoned:
                 raise AttemptBudgetExceeded("attempt ledger is poisoned by a token overrun")
             if state.attempts_used >= self._budget.max_attempts:
@@ -127,7 +142,7 @@ class AttemptLedger:
                 execution_fingerprint=execution_fingerprint,
                 request_sha256=request_sha256,
                 reserved_tokens=ceiling,
-                previous_outcome_ref=self._tail_ref,
+                previous_outcome_ref=state.tail_ref,
             )
             reservation_ref = self._repository.put_json(
                 reservation,
@@ -139,7 +154,10 @@ class AttemptLedger:
                 model_type=_contracts.AttemptReservation,
                 expected_value=reservation,
             )
-            self._tail_ref = checked_ref
+            self._checkpoint.append_reservation(
+                checked_ref,
+                reserved_tokens=ceiling,
+            )
             return checked_ref
 
     def reserve_at_tail(
@@ -167,7 +185,7 @@ class AttemptLedger:
                 raise AttemptReservationError(
                     "expected previous outcome declares the wrong media type"
                 )
-            if self._tail_ref != checked_expected:
+            if self._checkpoint.tail_ref != checked_expected:
                 raise AttemptReservationError(
                     "attempt ledger advanced beyond the expected scheduled boundary"
                 )
@@ -298,25 +316,25 @@ class AttemptLedger:
             model_type=_contracts.AttemptOutcome,
             expected_value=outcome,
         )
-        self._tail_ref = checked_ref
+        self._checkpoint.append_outcome(reservation_ref, checked_ref, outcome)
         return checked_ref
 
     def _require_current_reservation(
         self,
         reservation_ref: ArtifactRef,
     ) -> tuple[ArtifactRef, _contracts.AttemptReservation]:
+        state = self._checkpoint.current()
         try:
             checked_ref = ArtifactRef.model_validate(reservation_ref, strict=True)
         except Exception as exc:
             raise AttemptReservationError("reservation reference is malformed") from exc
         if checked_ref.media_type != _contracts.ATTEMPT_RESERVATION_MEDIA_TYPE:
             raise AttemptReservationError("reservation reference declares the wrong media type")
-        state = self._replay(self._tail_ref)
         if state.pending_reservation_ref is None or checked_ref != state.pending_reservation_ref:
             raise AttemptReservationError(
                 "reservation is stale, foreign, forged, or already consumed"
             )
-        reservation = self._load_reservation(checked_ref)
+        reservation = self._checkpoint.load_current(self._load_reservation, checked_ref)
         if reservation.writer_epoch_id != self.__writer_epoch_id:
             raise AttemptReservationError("a reopened ledger is an audit-only view")
         return checked_ref, reservation
@@ -375,129 +393,15 @@ class AttemptLedger:
         return checked_ref
 
     def _replay(self, tail_ref: ArtifactRef | None) -> _contracts.AttemptLedgerState:
-        if tail_ref is None:
-            return _contracts.AttemptLedgerState(
-                ledger_id=self._ledger_id,
-                writer_epoch_id=self.__writer_epoch_id,
-                budget=self._budget,
-                tail_ref=None,
-                pending_reservation_ref=None,
-                poisoned=False,
-                attempts_used=0,
-                completed_attempts=0,
-                charged_tokens=0,
-                encumbered_tokens=0,
-                remaining_attempts=self._budget.max_attempts,
-                remaining_tokens=self._budget.max_total_tokens,
-            )
-
-        try:
-            checked_tail = ArtifactRef.model_validate(tail_ref, strict=True)
-        except Exception as exc:
-            raise AttemptLedgerIntegrityError("attempt ledger tail is malformed") from exc
-
-        cursor: ArtifactRef | None = checked_tail
-        pending: tuple[ArtifactRef, _contracts.AttemptReservation] | None = None
-        backwards: list[
-            tuple[
-                ArtifactRef,
-                _contracts.AttemptReservation,
-                ArtifactRef,
-                _contracts.AttemptOutcome,
-            ]
-        ] = []
-        seen: set[str] = set()
-
-        if cursor.media_type == _contracts.ATTEMPT_RESERVATION_MEDIA_TYPE:
-            reservation = self._load_reservation(cursor)
-            pending = (cursor, reservation)
-            seen.add(cursor.sha256)
-            cursor = reservation.previous_outcome_ref
-        elif cursor.media_type != _contracts.ATTEMPT_OUTCOME_MEDIA_TYPE:
-            raise AttemptLedgerIntegrityError("attempt ledger tail declares the wrong media type")
-
-        while cursor is not None:
-            if cursor.media_type != _contracts.ATTEMPT_OUTCOME_MEDIA_TYPE:
-                raise AttemptLedgerIntegrityError(
-                    "attempt outcome link declares the wrong media type"
-                )
-            if cursor.sha256 in seen:
-                raise AttemptLedgerIntegrityError("attempt ledger contains a cycle")
-            seen.add(cursor.sha256)
-            outcome_ref = cursor
-            outcome = self._load_outcome(outcome_ref)
-            reservation_ref = outcome.reservation_ref
-            if reservation_ref.sha256 in seen:
-                raise AttemptLedgerIntegrityError("attempt ledger contains a cycle")
-            seen.add(reservation_ref.sha256)
-            reservation = self._load_reservation(reservation_ref)
-            self._verify_pair(reservation, outcome)
-            backwards.append((reservation_ref, reservation, outcome_ref, outcome))
-            cursor = reservation.previous_outcome_ref
-
-        pairs = tuple(reversed(backwards))
-        previous_outcome_ref: ArtifactRef | None = None
-        chain_writer_epoch_id: str | None = None
-        charged_tokens = 0
-        poisoned = False
-        for sequence, (reservation_ref, reservation, outcome_ref, outcome) in enumerate(pairs):
-            del reservation_ref
-            if poisoned:
-                raise AttemptLedgerIntegrityError(
-                    "attempt entries must not follow a poisoned outcome"
-                )
-            if reservation.sequence != sequence or outcome.sequence != sequence:
-                raise AttemptLedgerIntegrityError("attempt sequences are not contiguous")
-            if reservation.previous_outcome_ref != previous_outcome_ref:
-                raise AttemptLedgerIntegrityError(
-                    "attempt ledger link does not match prior outcome"
-                )
-            if chain_writer_epoch_id is None:
-                chain_writer_epoch_id = reservation.writer_epoch_id
-            elif reservation.writer_epoch_id != chain_writer_epoch_id:
-                raise AttemptLedgerIntegrityError("attempt chain crosses writer epochs")
-            charged_tokens += outcome.charged_tokens
-            poisoned = outcome.disposition is _contracts.AttemptDisposition.POISONED
-            previous_outcome_ref = outcome_ref
-
-        pending_tokens = 0
-        if pending is not None:
-            if poisoned:
-                raise AttemptLedgerIntegrityError(
-                    "a poisoned ledger must not contain a pending reservation"
-                )
-            _, reservation = pending
-            if reservation.sequence != len(pairs):
-                raise AttemptLedgerIntegrityError("pending reservation sequence is not contiguous")
-            if reservation.previous_outcome_ref != previous_outcome_ref:
-                raise AttemptLedgerIntegrityError("pending reservation link is inconsistent")
-            if (
-                chain_writer_epoch_id is not None
-                and reservation.writer_epoch_id != chain_writer_epoch_id
-            ):
-                raise AttemptLedgerIntegrityError("attempt chain crosses writer epochs")
-            pending_tokens = reservation.reserved_tokens
-
-        attempts_used = len(pairs) + int(pending is not None)
-        encumbered_tokens = charged_tokens + pending_tokens
-        if attempts_used > self._budget.max_attempts:
-            raise AttemptLedgerIntegrityError("attempt chain exceeds its hard attempt budget")
-        if not poisoned and encumbered_tokens > self._budget.max_total_tokens:
-            raise AttemptLedgerIntegrityError("attempt chain exceeds its hard token budget")
-
-        return _contracts.AttemptLedgerState(
+        return _checkpoint.replay_attempt_ledger(
             ledger_id=self._ledger_id,
             writer_epoch_id=self.__writer_epoch_id,
             budget=self._budget,
-            tail_ref=checked_tail,
-            pending_reservation_ref=None if pending is None else pending[0],
-            poisoned=poisoned,
-            attempts_used=attempts_used,
-            completed_attempts=len(pairs),
-            charged_tokens=charged_tokens,
-            encumbered_tokens=encumbered_tokens,
-            remaining_attempts=(0 if poisoned else self._budget.max_attempts - attempts_used),
-            remaining_tokens=(0 if poisoned else self._budget.max_total_tokens - encumbered_tokens),
+            tail_ref=tail_ref,
+            integrity_error_type=AttemptLedgerIntegrityError,
+            load_reservation=self._load_reservation,
+            load_outcome=self._load_outcome,
+            verify_pair=self._verify_pair,
         )
 
     def _verify_pair(

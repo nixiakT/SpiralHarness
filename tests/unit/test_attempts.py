@@ -35,6 +35,28 @@ from spiral_harness.storage.artifact_store import ArtifactStore
 SHA_A = "a" * 64
 
 
+class _CountingArtifactStore(ArtifactStore):
+    def __init__(self, root) -> None:
+        super().__init__(root)
+        self.json_reads = 0
+
+    def get_json(self, ref_or_digest, model_type=None):
+        self.json_reads += 1
+        return super().get_json(ref_or_digest, model_type)
+
+
+class _SelectivelyUnreadableArtifactStore(ArtifactStore):
+    unreadable_media_type: str | None = None
+
+    def get_json(self, ref_or_digest, model_type=None):
+        if (
+            isinstance(ref_or_digest, ArtifactRef)
+            and ref_or_digest.media_type == self.unreadable_media_type
+        ):
+            raise RuntimeError("simulated publication read failure")
+        return super().get_json(ref_or_digest, model_type)
+
+
 def fixed_spec() -> FrozenModelSpec:
     return FrozenModelSpec(
         backend="deterministic-replay",
@@ -588,3 +610,167 @@ def test_budget_and_artifact_models_are_strict_and_immutable() -> None:
         budget(total_tokens=5, per_attempt=10)
     with pytest.raises(ValidationError):
         configured.max_attempts = 99
+
+
+def test_live_writer_checkpoint_keeps_typed_repository_reads_linear(tmp_path) -> None:
+    def measure(attempt_count: int, directory_name: str) -> tuple[int, int]:
+        store = _CountingArtifactStore(tmp_path / directory_name)
+        ledger = AttemptLedger(
+            store,
+            ledger_id=f"linear-{attempt_count}",
+            budget=budget(
+                attempts=attempt_count,
+                total_tokens=10 * attempt_count,
+                per_attempt=10,
+            ),
+        )
+        for index in range(attempt_count):
+            completed = execution(
+                task_id=f"task-{index}",
+                question=f"What is {index} + 1?",
+            )
+            reservation_ref = reserve(ledger, completed)
+            ledger.settle(
+                reservation_ref,
+                execution_ref=store_execution(store, completed),
+            )
+
+        mutation_reads = store.json_reads
+        state = ledger.state()
+        assert state.completed_attempts == attempt_count
+        return mutation_reads, store.json_reads - mutation_reads
+
+    small_mutation_reads, small_audit_reads = measure(16, "small")
+    large_mutation_reads, large_audit_reads = measure(32, "large")
+
+    # Four typed reads publish/settle each attempt. Every non-initial append
+    # additionally reloads the current outcome, reservation, and execution.
+    assert small_mutation_reads == 16 * 7 - 3
+    assert large_mutation_reads == 32 * 7 - 3
+    assert large_mutation_reads <= 2 * small_mutation_reads + 3
+    assert small_audit_reads == 16 * 3
+    assert large_audit_reads == 32 * 3
+
+
+def test_failed_historical_ancestor_replay_latches_writer_before_another_append(
+    tmp_path,
+) -> None:
+    store = ArtifactStore(tmp_path / "cas")
+    ledger = AttemptLedger(
+        store,
+        ledger_id="run",
+        budget=budget(attempts=3, total_tokens=30, per_attempt=10),
+    )
+    first = execution(task_id="task-1")
+    first_reservation_ref = reserve(ledger, first)
+    first_outcome_ref = ledger.settle(
+        first_reservation_ref,
+        execution_ref=store_execution(store, first),
+    )
+    first_reservation_bytes = store.get_bytes(first_reservation_ref)
+    second = execution(task_id="task-2")
+    second_reservation_ref = reserve(ledger, second)
+    ledger.settle(
+        second_reservation_ref,
+        execution_ref=store_execution(store, second),
+    )
+    tail_before_failure = ledger.tail_ref
+
+    store.path_for(first_reservation_ref).write_bytes(b"{}")
+    with pytest.raises(AttemptLedgerIntegrityError, match="cannot be verified"):
+        ledger.state_at(first_outcome_ref)
+
+    store.path_for(first_reservation_ref).write_bytes(first_reservation_bytes)
+    with pytest.raises(AttemptLedgerIntegrityError, match="locked after an integrity failure"):
+        ledger.state_at(tail_before_failure)
+    assert ledger.state_at(None).attempts_used == 0
+
+    object_paths = set(store.objects_dir.rglob("*"))
+    with pytest.raises(AttemptLedgerIntegrityError, match="locked after an integrity failure"):
+        reserve(ledger, execution(task_id="must-not-publish"))
+
+    assert ledger.tail_ref == tail_before_failure
+    assert set(store.objects_dir.rglob("*")) == object_paths
+
+
+@pytest.mark.parametrize("corrupted_artifact", ["outcome", "reservation", "execution"])
+def test_live_writer_reverifies_current_outcome_closure_before_extending_checkpoint(
+    tmp_path,
+    corrupted_artifact: str,
+) -> None:
+    store = ArtifactStore(tmp_path / corrupted_artifact)
+    ledger = AttemptLedger(store, ledger_id="run", budget=budget())
+    completed = execution()
+    reservation_ref = reserve(ledger, completed)
+    execution_ref = store_execution(store, completed)
+    outcome_ref = ledger.settle(
+        reservation_ref,
+        execution_ref=execution_ref,
+    )
+
+    target_ref = {
+        "outcome": outcome_ref,
+        "reservation": reservation_ref,
+        "execution": execution_ref,
+    }[corrupted_artifact]
+    target_bytes = store.get_bytes(target_ref)
+    store.path_for(target_ref).write_bytes(b"{}")
+    with pytest.raises(AttemptLedgerIntegrityError):
+        reserve(ledger, execution(task_id="must-not-publish"))
+
+    store.path_for(target_ref).write_bytes(target_bytes)
+    with pytest.raises(AttemptLedgerIntegrityError, match="locked after an integrity failure"):
+        reserve(ledger, execution(task_id="still-must-not-publish"))
+
+    assert ledger.tail_ref == outcome_ref
+
+
+def test_failed_foreign_state_replay_does_not_latch_a_valid_writer(tmp_path) -> None:
+    store = ArtifactStore(tmp_path / "cas")
+    ledger = AttemptLedger(store, ledger_id="run", budget=budget())
+    first = execution(task_id="task-1")
+    reservation_ref = reserve(ledger, first)
+    ledger.settle(reservation_ref, execution_ref=store_execution(store, first))
+    missing_foreign_tail = ArtifactRef(
+        sha256="f" * 64,
+        size=2,
+        media_type=ATTEMPT_OUTCOME_MEDIA_TYPE,
+    )
+
+    with pytest.raises(AttemptLedgerIntegrityError, match="outcome cannot be verified"):
+        ledger.state_at(missing_foreign_tail)
+
+    second = execution(task_id="task-2")
+    second_reservation_ref = reserve(ledger, second)
+    ledger.settle(
+        second_reservation_ref,
+        execution_ref=store_execution(store, second),
+    )
+    assert ledger.state().completed_attempts == 2
+
+
+def test_failed_publication_read_does_not_advance_tail_or_checkpoint(tmp_path) -> None:
+    store = _SelectivelyUnreadableArtifactStore(tmp_path / "cas")
+    ledger = AttemptLedger(store, ledger_id="run", budget=budget())
+    completed = execution()
+
+    store.unreadable_media_type = ATTEMPT_RESERVATION_MEDIA_TYPE
+    with pytest.raises(AttemptLedgerIntegrityError, match="published accounting artifact"):
+        reserve(ledger, completed)
+    assert ledger.tail_ref is None
+    assert ledger.state().attempts_used == 0
+
+    store.unreadable_media_type = None
+    reservation_ref = reserve(ledger, completed)
+    execution_ref = store_execution(store, completed)
+    store.unreadable_media_type = ATTEMPT_OUTCOME_MEDIA_TYPE
+    with pytest.raises(AttemptLedgerIntegrityError, match="published accounting artifact"):
+        ledger.settle(reservation_ref, execution_ref=execution_ref)
+    pending = ledger.state()
+    assert pending.tail_ref == reservation_ref
+    assert pending.pending_reservation_ref == reservation_ref
+
+    store.unreadable_media_type = None
+    outcome_ref = ledger.settle(reservation_ref, execution_ref=execution_ref)
+    assert ledger.tail_ref == outcome_ref
+    assert ledger.state().completed_attempts == 1
