@@ -29,9 +29,12 @@ PURE_REFERENCE_EXECUTION_MEDIA_TYPE = (
     "application/vnd.spiral-harness.pure-reference-execution.v1+json"
 )
 ATTEMPT_EXECUTION_MEDIA_TYPES = frozenset(
-    {MODEL_EXECUTION_MEDIA_TYPE, PURE_REFERENCE_EXECUTION_MEDIA_TYPE}
+    {
+        MODEL_EXECUTION_MEDIA_TYPE,
+        "application/vnd.spiral-harness.native-execution.v1+json",
+        PURE_REFERENCE_EXECUTION_MEDIA_TYPE,
+    }
 )
-
 _UNPINNED_REVISIONS = frozenset(
     {
         "auto",
