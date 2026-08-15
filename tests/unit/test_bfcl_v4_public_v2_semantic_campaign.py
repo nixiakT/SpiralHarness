@@ -5,6 +5,9 @@ from pathlib import Path
 
 import pytest
 
+from spiral_harness.benchmark.bfcl_v4_public_v2_semantic_review_live import (
+    BfclV4PublicV2SemanticReviewRole,
+)
 from spiral_harness.core.canonical import canonical_json_bytes
 from spiral_harness.experiments.bfcl_v4_public_v2_semantic_campaign import (
     BFCL_V4_PUBLIC_V2_SEMANTIC_ADJUDICATOR_MODEL,
@@ -116,3 +119,40 @@ def test_semantic_campaign_runs_two_reviews_and_only_adjudicates_disagreement(
     assert result.credentials_recorded is False
     assert result.hmac_secret_recorded is False
     assert result.solver_campaign_started is False
+
+    replay_transport = _Transport(disagree=disagree)
+    existing = {
+        BfclV4PublicV2SemanticReviewRole.PRIMARY_ONE: result.primary_sessions[0],
+        BfclV4PublicV2SemanticReviewRole.PRIMARY_TWO: result.primary_sessions[1],
+    }
+    if result.adjudicator_session is not None:
+        existing[BfclV4PublicV2SemanticReviewRole.ADJUDICATOR] = result.adjudicator_session
+    replayed = run_bfcl_v4_public_v2_semantic_campaign(
+        checkout=_CHECKOUT,
+        runtime_hmac_secret=_SECRET,
+        base_url="http://litellm.invalid/v1",
+        api_key="not-recorded-test-key",
+        catalog_loader=_catalog,
+        transport=replay_transport,
+        existing_sessions=existing,
+    )
+    assert replay_transport.models == []
+    assert replayed == result
+
+    partial_transport = _Transport(disagree=disagree)
+    partial = run_bfcl_v4_public_v2_semantic_campaign(
+        checkout=_CHECKOUT,
+        runtime_hmac_secret=_SECRET,
+        base_url="http://litellm.invalid/v1",
+        api_key="not-recorded-test-key",
+        catalog_loader=_catalog,
+        transport=partial_transport,
+        existing_sessions={
+            BfclV4PublicV2SemanticReviewRole.PRIMARY_ONE: result.primary_sessions[0]
+        },
+    )
+    assert partial_transport.models == [
+        BFCL_V4_PUBLIC_V2_SEMANTIC_PRIMARY_MODELS[1],
+        *((BFCL_V4_PUBLIC_V2_SEMANTIC_ADJUDICATOR_MODEL,) if disagree else ()),
+    ]
+    assert partial.release.reviewer_count == attempts

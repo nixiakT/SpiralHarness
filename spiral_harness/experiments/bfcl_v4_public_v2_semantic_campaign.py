@@ -8,7 +8,8 @@ starts the benchmark solver campaign.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import hashlib
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Literal, Self
 
@@ -22,6 +23,8 @@ from spiral_harness.benchmark.bfcl_v4_public_pilot import (
 )
 from spiral_harness.benchmark.bfcl_v4_public_v2_semantic_projection import (
     build_bfcl_v4_public_v2_semantic_reviewer_projection,
+    validate_bfcl_v4_public_v2_semantic_reviewer_response,
+    verify_bfcl_v4_public_v2_semantic_distribution_receipt,
 )
 from spiral_harness.benchmark.bfcl_v4_public_v2_semantic_projection_contracts import (
     BfclV4PublicV2SemanticProjection,
@@ -37,11 +40,15 @@ from spiral_harness.benchmark.bfcl_v4_public_v2_semantic_release_contracts impor
     BfclV4PublicV2SemanticReviewSessionEvidence,
 )
 from spiral_harness.benchmark.bfcl_v4_public_v2_semantic_review_live import (
+    BFCL_V4_PUBLIC_V2_SEMANTIC_REVIEW_MODEL_REVISION,
+    BFCL_V4_PUBLIC_V2_SEMANTIC_REVIEW_PROMPT_SHA256,
     BfclV4PublicV2SemanticReviewRole,
+    _normalized_base_url,
     _post_raw_http,
+    build_bfcl_v4_public_v2_semantic_review_request,
     run_bfcl_v4_public_v2_semantic_review,
 )
-from spiral_harness.core.canonical import canonical_sha256
+from spiral_harness.core.canonical import canonical_json_bytes, canonical_sha256
 from spiral_harness.core.models import ImmutableModel, NonEmptyStr, Sha256
 from spiral_harness.providers.openai_native_function import (
     OpenAICompatibleNativeFunctionBackend,
@@ -200,6 +207,144 @@ def _review(
     return session
 
 
+def _expected_route_identity(
+    *,
+    provider_origin_sha256: str,
+    catalog_observation_sha256: str,
+    model: str,
+) -> str:
+    return canonical_sha256(
+        {
+            "domain": "spiral-bfcl-v4-public-v2-opaque-review-model-route/v1",
+            "provider_origin_sha256": provider_origin_sha256,
+            "catalog_observation_sha256": catalog_observation_sha256,
+            "model": model,
+            "revision": BFCL_V4_PUBLIC_V2_SEMANTIC_REVIEW_MODEL_REVISION,
+            "actual_weights_cryptographically_verified": False,
+        }
+    )
+
+
+def _verify_resumed_session(
+    projection: BfclV4PublicV2SemanticProjection,
+    session: BfclV4PublicV2SemanticReviewSessionEvidence,
+    *,
+    runtime_hmac_secret: bytes,
+    base_url: str,
+    model: str,
+    role: BfclV4PublicV2SemanticReviewRole,
+    seed: int,
+    catalog_observation_sha256: str,
+) -> BfclV4PublicV2SemanticReviewSessionEvidence:
+    try:
+        checked = BfclV4PublicV2SemanticReviewSessionEvidence.model_validate(
+            session,
+            strict=True,
+        )
+        declaration = checked.reviewer_declaration
+        verify_bfcl_v4_public_v2_semantic_distribution_receipt(
+            checked.distribution_receipt,
+            projection.reviewer_packet,
+            projection.trusted_mapping,
+            declaration,
+            runtime_hmac_secret=runtime_hmac_secret,
+        )
+        validate_bfcl_v4_public_v2_semantic_reviewer_response(
+            projection.reviewer_packet,
+            declaration,
+            checked.reviewer_response,
+        )
+        provider_origin_sha256 = canonical_sha256(_normalized_base_url(base_url))
+        request = build_bfcl_v4_public_v2_semantic_review_request(
+            projection.reviewer_packet,
+            model=model,
+            generation_seed_u64=seed,
+        )
+        attestation = checked.execution_attestation
+        expected = (
+            f"litellm:{role.value}:{model}",
+            model,
+            BFCL_V4_PUBLIC_V2_SEMANTIC_REVIEW_MODEL_REVISION,
+            _expected_route_identity(
+                provider_origin_sha256=provider_origin_sha256,
+                catalog_observation_sha256=catalog_observation_sha256,
+                model=model,
+            ),
+            BFCL_V4_PUBLIC_V2_SEMANTIC_REVIEW_PROMPT_SHA256,
+            seed,
+            provider_origin_sha256,
+            hashlib.sha256(canonical_json_bytes(request)).hexdigest(),
+            model,
+            model,
+            seed,
+        )
+        observed = (
+            declaration.declared_principal_id,
+            declaration.model_name,
+            declaration.model_revision,
+            declaration.served_model_weights_identity_sha256,
+            declaration.model_prompt_sha256,
+            declaration.model_generation_seed_u64,
+            attestation.provider_origin_sha256,
+            attestation.request_body_sha256,
+            attestation.requested_model,
+            attestation.provider_reported_model,
+            attestation.provider_seed_u64,
+        )
+        if observed != expected:
+            raise ValueError("resumed session identity mismatch")
+        return checked
+    except Exception:
+        raise BfclV4PublicV2SemanticCampaignError(
+            f"persisted semantic session for {role.value} failed reverification"
+        ) from None
+
+
+def _review_or_resume(
+    projection: BfclV4PublicV2SemanticProjection,
+    *,
+    existing_sessions: Mapping[
+        BfclV4PublicV2SemanticReviewRole,
+        BfclV4PublicV2SemanticReviewSessionEvidence,
+    ],
+    runtime_hmac_secret: bytes,
+    base_url: str,
+    api_key: str,
+    model: str,
+    role: BfclV4PublicV2SemanticReviewRole,
+    seed: int,
+    catalog_observation_sha256: str,
+    timeout_seconds: float,
+    transport: _RawTransport,
+    session_sink: _SessionSink | None,
+) -> BfclV4PublicV2SemanticReviewSessionEvidence:
+    existing = existing_sessions.get(role)
+    if existing is not None:
+        return _verify_resumed_session(
+            projection,
+            existing,
+            runtime_hmac_secret=runtime_hmac_secret,
+            base_url=base_url,
+            model=model,
+            role=role,
+            seed=seed,
+            catalog_observation_sha256=catalog_observation_sha256,
+        )
+    return _review(
+        projection,
+        runtime_hmac_secret=runtime_hmac_secret,
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        role=role,
+        seed=seed,
+        catalog_observation_sha256=catalog_observation_sha256,
+        timeout_seconds=timeout_seconds,
+        transport=transport,
+        session_sink=session_sink,
+    )
+
+
 def run_bfcl_v4_public_v2_semantic_campaign(
     *,
     checkout: str | Path,
@@ -211,6 +356,11 @@ def run_bfcl_v4_public_v2_semantic_campaign(
     catalog_loader: _CatalogLoader = _load_catalog,
     transport: _RawTransport,
     session_sink: _SessionSink | None = None,
+    existing_sessions: Mapping[
+        BfclV4PublicV2SemanticReviewRole,
+        BfclV4PublicV2SemanticReviewSessionEvidence,
+    ]
+    | None = None,
 ) -> BfclV4PublicV2SemanticCampaignEvidence:
     """Run the frozen two-review/optional-adjudicator prerequisite exactly once."""
 
@@ -232,10 +382,21 @@ def run_bfcl_v4_public_v2_semantic_campaign(
             "BFCL v2 semantic projection or catalog activation failed"
         ) from None
     catalog_sha256 = canonical_sha256(catalog)
+    resumed = {} if existing_sessions is None else existing_sessions
+    allowed_roles = frozenset(BfclV4PublicV2SemanticReviewRole)
+    if any(type(role) is not BfclV4PublicV2SemanticReviewRole for role in resumed):
+        raise BfclV4PublicV2SemanticCampaignError(
+            "persisted semantic session map has a non-frozen role"
+        )
+    if not set(resumed).issubset(allowed_roles):  # pragma: no cover - enum is closed
+        raise BfclV4PublicV2SemanticCampaignError(
+            "persisted semantic session map has an unknown role"
+        )
 
     primary = (
-        _review(
+        _review_or_resume(
             projection,
+            existing_sessions=resumed,
             runtime_hmac_secret=runtime_hmac_secret,
             base_url=base_url,
             api_key=api_key,
@@ -247,8 +408,9 @@ def run_bfcl_v4_public_v2_semantic_campaign(
             transport=transport,
             session_sink=session_sink,
         ),
-        _review(
+        _review_or_resume(
             projection,
+            existing_sessions=resumed,
             runtime_hmac_secret=runtime_hmac_secret,
             base_url=base_url,
             api_key=api_key,
@@ -276,8 +438,9 @@ def run_bfcl_v4_public_v2_semantic_campaign(
             is not BfclV4PublicV2SemanticReleaseFailureStage.DISAGREEMENT_ARBITRATION
         ):
             raise
-        adjudicator = _review(
+        adjudicator = _review_or_resume(
             projection,
+            existing_sessions=resumed,
             runtime_hmac_secret=runtime_hmac_secret,
             base_url=base_url,
             api_key=api_key,
@@ -296,6 +459,11 @@ def run_bfcl_v4_public_v2_semantic_campaign(
             runtime_hmac_secret=runtime_hmac_secret,
             adjudicator_session=adjudicator,
         )
+    else:
+        if BfclV4PublicV2SemanticReviewRole.ADJUDICATOR in resumed:
+            raise BfclV4PublicV2SemanticCampaignError(
+                "persisted adjudicator session exists without a primary disagreement"
+            )
 
     verified = verify_bfcl_v4_public_v2_semantic_development_release(
         release,
