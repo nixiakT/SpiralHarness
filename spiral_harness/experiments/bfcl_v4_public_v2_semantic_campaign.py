@@ -54,8 +54,11 @@ from spiral_harness.providers.openai_native_function import (
     OpenAICompatibleNativeFunctionBackend,
 )
 
-BFCL_V4_PUBLIC_V2_SEMANTIC_PRIMARY_MODELS = ("DeepSeek-V3", "GLM-5.2")
-BFCL_V4_PUBLIC_V2_SEMANTIC_ADJUDICATOR_MODEL = "MiniMax-M2.5"
+BFCL_V4_PUBLIC_V2_SEMANTIC_CAMPAIGN_REVISION = (
+    "semantic-review-v2-after-v1-json-conformance-failure@2026-08-15"
+)
+BFCL_V4_PUBLIC_V2_SEMANTIC_PRIMARY_MODELS = ("GLM-5.2", "MiniMax-M2.5")
+BFCL_V4_PUBLIC_V2_SEMANTIC_ADJUDICATOR_MODEL = "Kimi-K2.6"
 BFCL_V4_PUBLIC_V2_SEMANTIC_REVIEW_SEEDS_U64 = (
     2_026_081_701,
     2_026_081_702,
@@ -78,6 +81,9 @@ class BfclV4PublicV2SemanticCampaignEvidence(ImmutableModel):
     """Complete credential-free evidence for one review/release campaign."""
 
     schema_version: Literal["1"] = "1"
+    campaign_revision: Literal[BFCL_V4_PUBLIC_V2_SEMANTIC_CAMPAIGN_REVISION] = (
+        BFCL_V4_PUBLIC_V2_SEMANTIC_CAMPAIGN_REVISION
+    )
     projection: BfclV4PublicV2SemanticProjection
     catalog_observation_sha256: Sha256
     advertised_model_count: int = Field(ge=3, strict=True)
