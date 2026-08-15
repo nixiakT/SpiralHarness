@@ -117,6 +117,83 @@ grouping authority has attested the roster. Consequently
 `score_bearing_execution_allowed=false`; the runtime boundary raises rather
 than releasing a score-bearing plan.
 
+## Independent semantic-family freeze protocol
+
+The repository now defines a fail-closed evidence format and structural
+verifier for this blocker. It does **not** include completed production
+reviews. Unit-test fixtures are synthetic protocol tests and are not benchmark
+evidence. The current manifest therefore remains unattested and
+non-executable.
+
+The trusted binding universe contains the 15 v1 and 25 v2 selected question
+rows in a salt-hash frozen order. Each of the 40 records binds the task ID,
+pinned question path, raw-row size and SHA-256, and candidate-payload SHA-256.
+It contains no explicit partition-label field, answer identity, score, HOLDOUT
+score, model result, or harness result. This is **not** a blind reviewer packet:
+the task IDs and paths are present, and a reviewer can map them back to the
+public roster and infer the partition. The universe is trusted-control-plane
+only, `partition_inference_prevented=false`, `reviewer_facing=false`, and
+`reviewer_facing_projection_implemented=false`. Its fingerprint is
+`c13a59852fcf3a63718e4b858f16a8044c6e81590f67e71ab70d0e0ec3259a5c`.
+
+A reviewer-facing question/schema projection and an authenticated distribution
+mechanism have not yet been implemented. Review records can declare
+`explicit_partition_labels_provided=false` and
+`partition_roster_lookup_used=false`, but non-use of the public roster is not
+externally verified. `reviewer_facing_projection_used=false` records the
+current limitation rather than proving blinding. Consequently, artifacts built
+directly against this trusted universe cannot close the semantic freeze.
+
+Two reviewers must independently label the complete ordered universe before
+pairing, with one non-empty rationale per item. Every reviewer declares exactly
+one type:
+
+- `human` requires a human identity commitment and forbids every model
+  coordinate;
+- `model-assisted` requires provider, model, revision, served-weights identity,
+  prompt fingerprint, and generation seed.
+
+The evidence records only that this declaration is present
+(`reviewer_kind_declaration_present=true`); it does not assert that the
+declaration is truthful.
+
+Independence is checked by reviewer principal. For model-assisted work it is
+keyed by the served-weights identity, deliberately excluding the seed. Thus two
+runs of the same model under different seeds cannot count as independent and
+cannot be serialized as human reviews while retaining model provenance. Human
+type and identity commitments are auditable declarations, not cryptographic
+proof of reviewer identity or of avoiding undeclared assistance. There is
+currently no pinned reviewer authority, public-key signature, or equivalent
+authentication. Any caller can construct two syntactically valid human
+declarations, so production artifacts require external identity and
+distribution authentication before they can be accepted.
+
+The blocked verification receipt records only the structural result
+`same_declared_model_weights_multi_seed_accepted_as_independent=false`. It
+cannot make any claim about model assistance omitted from a human declaration.
+
+The verifier compares the two labelings as pairwise equivalence relations, so
+reviewer-local family names need not match. If any pair differs, a third
+principal must adjudicate every and only disagreement, provide an explicit
+same/different decision and rationale for each, and submit a globally
+consistent final labeling. Missing, extra, inconsistent, or same-principal
+adjudication rejects the evidence.
+
+Finally, no adjudicated semantic family may span `v1`, `FIT`, `GATE`, or
+`HOLDOUT`. A cross-boundary family is a terminal rejection: the loader does not
+swap or backfill tasks. Structurally valid consensus or adjudication produces a
+blocked receipt with
+`status=blocked-reviewer-facing-projection-not-implemented`,
+`review_distribution_provenance_verified=false`,
+`review_declarations_authenticated=false`, and
+`independent_semantic_family_disjointness_attested=false`. The score guard
+re-verifies the full double-review structure and still rejects it because the
+reviewer-facing question/schema projection, review-distribution provenance,
+and external reviewer-authority authentication are not verified. This remains
+an unconditional blocker even if execution seeds and a call plan are added
+later. Neither verification nor the guard reads answers or scores, and neither
+starts a model campaign.
+
 Any source-lineage, frozen-identity, deterministic-selection, family-graph,
 function-name, or lexical-audit failure emits a typed rejected receipt. The
 loader never changes the salt, retries a draw, or backfills a failed selection.

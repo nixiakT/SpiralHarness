@@ -36,6 +36,10 @@ from spiral_harness.benchmark.bfcl_v4_public_development_v2_identities import (
     BFCL_V4_PUBLIC_DEVELOPMENT_V2_QUESTION_BLOB_IDENTITIES,
     BFCL_V4_PUBLIC_DEVELOPMENT_V2_V1_TASK_IDS,
 )
+from spiral_harness.benchmark.bfcl_v4_public_development_v2_semantic_audit import (
+    BfclV4SemanticAuditEvidence,
+    verify_bfcl_v4_semantic_family_audit,
+)
 from spiral_harness.benchmark.bfcl_v4_public_pilot_identities import (
     BFCL_V4_PILOT_ROW_IDENTITIES,
 )
@@ -626,22 +630,46 @@ def load_bfcl_v4_public_development_v2(
     return loaded
 
 
+def _assert_bfcl_v4_public_development_v2_semantic_evidence_allows_execution(
+    manifest_fingerprint: str,
+    semantic_audit_evidence: BfclV4SemanticAuditEvidence,
+) -> NoReturn:
+    """Apply the provider-free semantic evidence boundary after bundle validation."""
+
+    verification = verify_bfcl_v4_semantic_family_audit(
+        manifest_fingerprint,
+        semantic_audit_evidence,
+    )
+    if (
+        not verification.reviewer_facing_projection_implemented
+        or not verification.review_distribution_provenance_verified
+        or not verification.review_declarations_authenticated
+    ):
+        raise BfclV4PublicDevelopmentV2ExecutionError(
+            "BFCL v2 score-bearing execution is forbidden: reviewer-facing "
+            "question/schema projection, review-distribution provenance, and "
+            "external reviewer-authority authentication are not verified"
+        )
+    raise BfclV4PublicDevelopmentV2ExecutionError(
+        "BFCL v2 score-bearing execution is not implemented"
+    )
+
+
 def assert_bfcl_v4_public_development_v2_score_bearing_execution_allowed(
     loaded: BfclV4LoadedPublicDevelopmentV2,
+    semantic_audit_evidence: BfclV4SemanticAuditEvidence | None = None,
 ) -> None:
-    """Fail closed because question-only grouping cannot prove semantic families."""
+    """Verify semantic structure, then retain production provenance blockers."""
 
     checked = BfclV4LoadedPublicDevelopmentV2.model_validate(loaded, strict=True)
-    if (
-        not checked.independent_semantic_family_disjointness_attested
-        or not checked.score_bearing_execution_allowed
-    ):
+    if semantic_audit_evidence is None:
         raise BfclV4PublicDevelopmentV2ExecutionError(
             "BFCL v2 score-bearing execution is forbidden: independent semantic "
             "family disjointness is not proven"
         )
-    raise BfclV4PublicDevelopmentV2ExecutionError(
-        "BFCL v2 score-bearing execution is not implemented"
+    _assert_bfcl_v4_public_development_v2_semantic_evidence_allows_execution(
+        checked.manifest.fingerprint,
+        semantic_audit_evidence,
     )
 
 
