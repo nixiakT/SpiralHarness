@@ -36,6 +36,19 @@ PLAIN_REPORT = """Aurora is a real-time analytics platform.
 - Retention changes could cut storage cost by 55%
 """
 
+ROUND_TWO_EIGHT_POINT_REPORT = """wrong marker
+Round Two Candidate
+wrong classification
+
+Aurora processes 2 million events per second at 120ms, and retention changes could save 55%.
+
+- First fact
+- Second fact
+- Third fact
+
+wrong footer
+"""
+
 
 class SequenceBackend:
     fingerprint = "fixture-penguin-public-backend-v1"
@@ -211,7 +224,7 @@ def test_live_runner_mirrors_call_schedule_and_persists_states(tmp_path: Path) -
         10.0,
         10.0,
     ]
-    assert [round_["promoted"] for round_ in result.payload["rounds"]] == [True, True]
+    assert [round_["promoted"] for round_ in result.payload["rounds"]] == [True, False]
     assert result.payload["reflection_information"].endswith("no scorer")
     assert result.payload["invariant_compiler"] == "position-stable-non-empty-lines-v1"
     assert [
@@ -254,6 +267,57 @@ def test_live_runner_mirrors_call_schedule_and_persists_states(tmp_path: Path) -
     )
     assert repeated.payload == result.payload
     assert repeated.artifact_ref == result.artifact_ref
+
+
+def test_round_two_compares_against_champion_after_round_one_rollback(tmp_path: Path) -> None:
+    outputs = [
+        GOOD_REPORT,
+        "<SPIRAL_STATE>round one guidance</SPIRAL_STATE>",
+        PLAIN_REPORT,
+        "<SPIRAL_STATE>round two guidance</SPIRAL_STATE>",
+        ROUND_TWO_EIGHT_POINT_REPORT,
+    ]
+
+    result = subject.run_public_self_evolution(
+        output=tmp_path / "rollback",
+        backend=SequenceBackend(outputs),
+        model="dashscope/qwen3-coder-flash",
+        runs_per_generation=1,
+        max_output_tokens=256,
+    )
+
+    assert [generation["mean"] for generation in result.payload["generations"]] == [
+        10.0,
+        5.0,
+        8.0,
+    ]
+    assert [round_["promoted"] for round_ in result.payload["rounds"]] == [False, False]
+    assert result.payload["rounds"][1]["parent_state_ref"] is None
+
+
+def test_promotion_requires_strict_improvement_in_each_round(tmp_path: Path) -> None:
+    outputs = [
+        GOOD_REPORT,
+        "<SPIRAL_STATE>round one guidance</SPIRAL_STATE>",
+        GOOD_REPORT,
+        "<SPIRAL_STATE>round two guidance</SPIRAL_STATE>",
+        GOOD_REPORT,
+    ]
+
+    result = subject.run_public_self_evolution(
+        output=tmp_path / "ties",
+        backend=SequenceBackend(outputs),
+        model="dashscope/qwen3-coder-flash",
+        runs_per_generation=1,
+        max_output_tokens=256,
+    )
+
+    assert [generation["mean"] for generation in result.payload["generations"]] == [
+        10.0,
+        10.0,
+        10.0,
+    ]
+    assert [round_["promoted"] for round_ in result.payload["rounds"]] == [False, False]
 
 
 @pytest.mark.parametrize("runs", [1, 4])

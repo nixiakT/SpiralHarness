@@ -529,8 +529,11 @@ def run_public_self_evolution(
     state_one = extract_state(round_one_call.output)
     state_one_ref = store.put_bytes(state_one.encode(), media_type="text/markdown; charset=utf-8")
     generation_one = evaluate("N+1", state_one, 1)
-    promote_one = float(generation_one["mean"]) >= float(baseline["mean"])
+    promote_one = float(generation_one["mean"]) > float(baseline["mean"])
     selected_one = state_one if promote_one else None
+    champion_mean_after_round_one = float(
+        generation_one["mean"] if promote_one else baseline["mean"]
+    )
 
     round_two_call = invoke(
         task_id="penguin-public/reflect/2",
@@ -548,7 +551,7 @@ def run_public_self_evolution(
         2,
         fixed_line_evidence=(REFERENCE_1, REFERENCE_2, REFERENCE_3),
     )
-    promote_two = float(generation_two["mean"]) >= float(generation_one["mean"])
+    promote_two = float(generation_two["mean"]) > champion_mean_after_round_one
 
     trajectory = [baseline, generation_one, generation_two]
     kind = "penguin_public_self_evolution_compatible_run"
