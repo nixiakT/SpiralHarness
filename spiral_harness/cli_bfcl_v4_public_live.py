@@ -43,6 +43,7 @@ from spiral_harness.benchmark.bfcl_v4_public_pilot_plan_contracts import (
 from spiral_harness.cli_bfcl_v4_public_summary import (
     build_bfcl_v4_public_terminal_summary,
 )
+from spiral_harness.cli_exception_boundary import discard_exception_graph
 from spiral_harness.core.canonical import (
     canonical_json,
     canonical_json_bytes,
@@ -485,7 +486,7 @@ def _run_full_campaign(
     return terminal_summary
 
 
-def run_bfcl_v4_public_live(
+def _run_bfcl_v4_public_live_impl(
     *,
     checkout: Path,
     output: Path,
@@ -582,6 +583,44 @@ def run_bfcl_v4_public_live(
     return summary
 
 
+def run_bfcl_v4_public_live(
+    *,
+    checkout: Path,
+    output: Path,
+    dry_run: bool,
+    smoke: bool,
+    full: bool = False,
+    catalog_timeout_seconds: float = 15.0,
+    campaign_runner: Callable[..., BfclV4PublicCampaignExecutionRecord] | None = None,
+    campaign_verifier: Callable[..., BfclV4PublicCampaignExecutionVerification] | None = None,
+    environment: Mapping[str, str] | None = None,
+    observed_at_utc: str | None = None,
+) -> dict[str, object]:
+    """Run with a sanitized exception boundary that releases credential-bearing frames."""
+
+    failure_message: str | None = None
+    try:
+        return _run_bfcl_v4_public_live_impl(
+            checkout=checkout,
+            output=output,
+            dry_run=dry_run,
+            smoke=smoke,
+            full=full,
+            catalog_timeout_seconds=catalog_timeout_seconds,
+            campaign_runner=campaign_runner,
+            campaign_verifier=campaign_verifier,
+            environment=environment,
+            observed_at_utc=observed_at_utc,
+        )
+    except BfclV4PublicLiveCliError as error:
+        failure_message = str(error)
+        discard_exception_graph(error)
+    environment = None
+    campaign_runner = None
+    campaign_verifier = None
+    raise BfclV4PublicLiveCliError(failure_message) from None
+
+
 def bfcl_v4_public_live(
     checkout: Annotated[
         Path,
@@ -619,6 +658,7 @@ def bfcl_v4_public_live(
 ) -> None:
     """Explicitly choose validation, smoke, or a 300-call public-development run."""
 
+    bad_parameter_message: str | None = None
     try:
         payload = run_bfcl_v4_public_live(
             checkout=checkout,
@@ -629,7 +669,10 @@ def bfcl_v4_public_live(
             catalog_timeout_seconds=catalog_timeout_seconds,
         )
     except BfclV4PublicLiveCliError as error:
-        raise typer.BadParameter(str(error)) from None
+        bad_parameter_message = str(error)
+        discard_exception_graph(error)
+    if bad_parameter_message is not None:
+        raise typer.BadParameter(bad_parameter_message) from None
     typer.echo(json.dumps(payload, indent=2, sort_keys=True))
     if payload.get("mode") == "full" and payload["terminal"]["status"] == "incomplete":
         raise typer.Exit(code=1)

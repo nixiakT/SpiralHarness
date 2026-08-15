@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from pathlib import Path
-from types import SimpleNamespace
+from types import FunctionType, MethodType, ModuleType, SimpleNamespace, TracebackType
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 import spiral_harness.cli_bfcl_v4_public_live as subject
@@ -126,6 +128,70 @@ def _exception_graph_text(error: BaseException) -> str:
             if linked is not None:
                 pending.append(linked)
     return "\n".join(rendered)
+
+
+def _reachable_traceback_local_text(error: BaseException) -> str:
+    """Render reachable exception/frame state without invoking arbitrary attributes."""
+
+    pending: list[object] = [error]
+    seen: set[int] = set()
+    rendered: list[str] = []
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if len(seen) > 20_000:
+            pytest.fail("exception reachability audit exceeded its bounded object graph")
+        for renderer in (str, repr):
+            try:
+                rendered.append(renderer(current))
+            except Exception:
+                rendered.append(f"<{type(current).__name__}:unrenderable>")
+        if isinstance(current, BaseException):
+            pending.extend(current.args)
+            pending.extend(
+                item for item in (current.__cause__, current.__context__) if item is not None
+            )
+            if current.__traceback__ is not None:
+                pending.append(current.__traceback__)
+            continue
+        if isinstance(current, TracebackType):
+            if not current.tb_frame.f_code.co_name.startswith("test_"):
+                pending.extend(tuple(current.tb_frame.f_locals.values()))
+            if current.tb_next is not None:
+                pending.append(current.tb_next)
+            continue
+        if isinstance(current, Mapping):
+            for key, value in current.items():
+                pending.extend((key, value))
+            continue
+        if isinstance(current, (tuple, list, set, frozenset)):
+            pending.extend(current)
+            continue
+        if isinstance(current, (ModuleType, type, FunctionType, MethodType)):
+            continue
+        try:
+            state = object.__getattribute__(current, "__dict__")
+        except (AttributeError, TypeError):
+            continue
+        if isinstance(state, dict):
+            pending.append(state)
+    return "\n".join(rendered)
+
+
+def test_traceback_reachability_auditor_detects_nested_frame_local() -> None:
+    secret = "auditor-must-detect-this-frame-local"
+
+    def explode() -> None:
+        retained_backend = SimpleNamespace(api_key=secret)
+        if retained_backend.api_key:
+            raise RuntimeError("sanitized")
+
+    with pytest.raises(RuntimeError) as captured:
+        explode()
+
+    assert secret in _reachable_traceback_local_text(captured.value)
 
 
 def _ref(label: str, media_type: str) -> ArtifactRef:
@@ -428,6 +494,48 @@ def test_smoke_response_must_bind_the_exact_materialized_request(
         )
 
 
+def test_smoke_failure_releases_backend_key_from_reachable_traceback_locals(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkout, _ = _install_checkout_validation(monkeypatch, tmp_path)
+    output = tmp_path / "failed-smoke-cas"
+    secret = "smoke-frame-local-secret"
+    backend = _FakeNativeBackend(model_ids=(subject.BFCL_V4_PUBLIC_LIVE_DIRECT_MODEL_ROUTE,))
+    backend.retained_api_key = secret
+    _install_live_backend(monkeypatch, backend, expected_key=secret)
+    monkeypatch.setattr(
+        subject,
+        "_frozen_fit_task",
+        lambda *args, task_id, **kwargs: SimpleNamespace(
+            task_id=task_id,
+            split=BfclV4PilotSplit.FIT,
+        ),
+    )
+
+    def explode(task):
+        provider_payload = {"api_key": secret, "task": task}
+        raise RuntimeError(repr(provider_payload))
+
+    monkeypatch.setattr(subject, "adapt_bfcl_v4_public_pilot_task", explode)
+    with pytest.raises(subject.BfclV4PublicLiveCliError) as captured:
+        subject.run_bfcl_v4_public_live(
+            checkout=checkout,
+            output=output,
+            dry_run=False,
+            smoke=True,
+            environment=_environment(secret),
+            observed_at_utc="2026-08-15T17:00:00Z",
+        )
+
+    assert str(captured.value) == "one-call nonreportable smoke invocation failed"
+    assert secret not in _exception_graph_text(captured.value)
+    assert secret not in _reachable_traceback_local_text(captured.value)
+    assert captured.value.__cause__ is None
+    assert captured.value.__context__ is None
+    assert not output.exists()
+
+
 def test_live_failures_are_sanitized_and_never_echo_the_key(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -455,8 +563,79 @@ def test_live_failures_are_sanitized_and_never_echo_the_key(
 
     assert str(captured.value) == "direct-only LiteLLM catalog activation failed"
     assert secret not in _exception_graph_text(captured.value)
+    assert secret not in _reachable_traceback_local_text(captured.value)
     assert captured.value.__cause__ is None
     assert captured.value.__context__ is None
+
+
+def test_typer_boundary_discards_caught_error_frames_before_bad_parameter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret = "typer-boundary-frame-secret"
+
+    def explode(**kwargs):
+        leaked_environment = {"api_key": secret, "kwargs": kwargs}
+        raise subject.BfclV4PublicLiveCliError("sanitized command failure") from RuntimeError(
+            repr(leaked_environment)
+        )
+
+    monkeypatch.setattr(subject, "run_bfcl_v4_public_live", explode)
+    with pytest.raises(typer.BadParameter) as captured:
+        subject.bfcl_v4_public_live(
+            checkout=tmp_path / "unused-checkout",
+            output=tmp_path / "unused-output",
+            dry_run=False,
+            smoke=True,
+            full=False,
+        )
+
+    assert str(captured.value) == "sanitized command failure"
+    assert secret not in _exception_graph_text(captured.value)
+    assert secret not in _reachable_traceback_local_text(captured.value)
+    assert captured.value.__cause__ is None
+    assert captured.value.__context__ is None
+
+
+def test_registered_typer_command_never_emits_activation_key_to_stderr_or_cas(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkout, _ = _install_checkout_validation(monkeypatch, tmp_path)
+    output = tmp_path / "failed-registered-smoke-cas"
+    secret = "registered-activation-frame-secret"
+
+    def explode(**kwargs):
+        leaked_request = {"api_key": secret, "kwargs": kwargs}
+        raise RuntimeError(repr(leaked_request))
+
+    monkeypatch.setattr(
+        subject,
+        "OpenAICompatibleNativeFunctionBackend",
+        SimpleNamespace(from_endpoint=explode),
+    )
+    monkeypatch.setenv(subject.LITELLM_BASE_URL_ENV, "http://litellm.internal/v1")
+    monkeypatch.setenv(subject.LITELLM_API_KEY_ENV, secret)
+    result = CliRunner().invoke(
+        root_app,
+        [
+            "benchmark",
+            "bfcl-v4-public-live",
+            "--checkout",
+            str(checkout),
+            "--output",
+            str(output),
+            "--smoke",
+        ],
+    )
+    rendered = result.stdout + result.stderr
+
+    assert result.exit_code == 2
+    assert "direct-only LiteLLM catalog activation failed" in rendered
+    assert secret not in rendered
+    if result.exception is not None:
+        assert secret not in _reachable_traceback_local_text(result.exception)
+    assert not output.exists()
 
 
 @pytest.mark.parametrize("missing", [subject.LITELLM_BASE_URL_ENV, subject.LITELLM_API_KEY_ENV])
@@ -487,6 +666,7 @@ def test_live_modes_require_only_the_two_fixed_environment_names(
         )
 
     assert "present-secret" not in _exception_graph_text(captured.value)
+    assert "present-secret" not in _reachable_traceback_local_text(captured.value)
 
 
 @pytest.mark.parametrize("complete", [True, False])
@@ -618,6 +798,8 @@ def test_full_executor_exception_cannot_retain_key_in_traceback_or_cas(
 
     assert str(captured.value) == "full campaign executor failed"
     assert secret not in _exception_graph_text(captured.value)
+    assert secret not in _reachable_traceback_local_text(captured.value)
+    assert captured.value.__cause__ is None
     assert captured.value.__context__ is None
     assert all(
         secret.encode() not in path.read_bytes() for path in output.rglob("*") if path.is_file()
@@ -664,6 +846,7 @@ def test_terminal_summary_exception_cannot_retain_key_in_traceback_or_cas(
 
     assert str(captured.value) == "verified campaign terminal summary could not be rendered"
     assert secret not in _exception_graph_text(captured.value)
+    assert secret not in _reachable_traceback_local_text(captured.value)
     assert captured.value.__cause__ is None
     assert captured.value.__context__ is None
     assert all(
