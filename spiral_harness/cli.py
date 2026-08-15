@@ -24,6 +24,7 @@ from spiral_harness.benchmark.penguin_public import (
     verify_penguin_source,
 )
 from spiral_harness.benchmark.skillsbench_smoke import run_dialogue_parser_smoke
+from spiral_harness.cli_bfcl_v4_public_live import bfcl_v4_public_live
 from spiral_harness.cli_development_four_arm import dev_four_arm
 from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.experiment import ProtocolPartition
@@ -43,6 +44,7 @@ benchmark_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(benchmark_app, name="benchmark")
+benchmark_app.command("bfcl-v4-public-live")(bfcl_v4_public_live)
 benchmark_app.command("dev-four-arm")(dev_four_arm)
 
 

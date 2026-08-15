@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from spiral_harness.benchmark.bfcl_v4_public_pilot_campaign import (
     BFCL_V4_PUBLIC_PILOT_CAMPAIGN_FINGERPRINT,
+    BFCL_V4_PUBLIC_PILOT_CAMPAIGN_ID,
     build_bfcl_v4_public_pilot_campaign,
 )
 from spiral_harness.benchmark.bfcl_v4_public_pilot_plan_contracts import (
@@ -13,6 +14,10 @@ from spiral_harness.benchmark.bfcl_v4_public_pilot_plan_contracts import (
 from spiral_harness.benchmark.bfcl_v4_public_run_contracts import (
     BFCL_V4_RUN_CLOSURE_MEDIA_TYPE,
     BfclV4RunClosureVerification,
+)
+from spiral_harness.cli_bfcl_v4_public_summary import (
+    BfclV4PublicLiveSummaryError,
+    build_bfcl_v4_public_terminal_summary,
 )
 from spiral_harness.core.canonical import sha256_bytes
 from spiral_harness.core.models import ArtifactRef
@@ -28,6 +33,27 @@ from spiral_harness.experiments.bfcl_v4_public_campaign_analysis_contracts impor
     BfclV4PublicCampaignAnalysisInput,
     BfclV4PublicCampaignDescriptiveAnalysis,
 )
+from spiral_harness.experiments.bfcl_v4_public_campaign_executor_contracts import (
+    BFCL_V4_CAMPAIGN_ANALYSIS_INPUT_MEDIA_TYPE,
+    BFCL_V4_CAMPAIGN_ANALYSIS_MEDIA_TYPE,
+    BFCL_V4_CAMPAIGN_CHECKPOINT_MEDIA_TYPE,
+    BFCL_V4_CAMPAIGN_EXECUTION_RESULT_MEDIA_TYPE,
+    BFCL_V4_CAMPAIGN_LIVE_CONFIG_MEDIA_TYPE,
+    BFCL_V4_CAMPAIGN_REGISTRATION_MEDIA_TYPE,
+    BFCL_V4_CAMPAIGN_REPLICATE_VERIFICATION_MEDIA_TYPE,
+    BfclV4CampaignExecutionFailure,
+    BfclV4CampaignExecutionStatus,
+    BfclV4CampaignFailureStage,
+    BfclV4CampaignVerifiedReplicate,
+    BfclV4PublicCampaignExecutionRecord,
+    BfclV4PublicCampaignExecutionResult,
+    BfclV4PublicCampaignExecutionVerification,
+)
+from spiral_harness.experiments.bfcl_v4_public_runner_contracts import (
+    BFCL_V4_RUNNER_METRICS_MEDIA_TYPE,
+    BFCL_V4_RUNNER_RESULT_MEDIA_TYPE,
+    BFCL_V4_RUNNER_SELECTION_DECISION_MEDIA_TYPE,
+)
 from spiral_harness.experiments.bfcl_v4_public_selection_contracts import (
     BFCL_V4_HOLDOUT_TASK_IDS,
     BFCL_V4_METRIC_ARM_ORDER,
@@ -40,6 +66,7 @@ from spiral_harness.experiments.bfcl_v4_public_selection_contracts import (
     BfclV4RollbackReason,
     BfclV4SelectionDecision,
 )
+from spiral_harness.storage.artifact_store import ArtifactStore
 
 
 def _sha(label: str) -> str:
@@ -268,6 +295,169 @@ def _all_values(value):
     return (value,)
 
 
+def _complete_terminal_fixture(tmp_path):
+    repository = ArtifactStore(tmp_path / "summary-cas")
+    analysis_input = _analysis_input()
+    analysis_input_ref = repository.put_json(
+        analysis_input,
+        media_type=BFCL_V4_CAMPAIGN_ANALYSIS_INPUT_MEDIA_TYPE,
+    )
+    computed = compute_bfcl_v4_public_campaign_descriptive_analysis(analysis_input)
+    provider_succeeded = (96, 95, 94)
+    provider_observations = (96, 95, 94)
+    backend_fingerprint = _sha("summary-terminal-backend")
+    analysis = BfclV4PublicCampaignDescriptiveAnalysis.model_validate(
+        computed.model_copy(
+            update={
+                "backend_fingerprint": backend_fingerprint,
+                "provider_identity_observation_counts": provider_observations,
+                "provider_declared_identity_consistent_within_replicates": (
+                    True,
+                    True,
+                    True,
+                ),
+            }
+        ),
+        strict=True,
+    )
+    analysis_ref = repository.put_json(
+        analysis,
+        media_type=BFCL_V4_CAMPAIGN_ANALYSIS_MEDIA_TYPE,
+    )
+    campaign = analysis_input.campaign
+    campaign_ref = repository.put_json(
+        campaign,
+        media_type=BFCL_V4_CAMPAIGN_REGISTRATION_MEDIA_TYPE,
+    )
+    config_ref = repository.put_json(
+        {"fixture": "summary-live-config"},
+        media_type=BFCL_V4_CAMPAIGN_LIVE_CONFIG_MEDIA_TYPE,
+    )
+    completed = tuple(
+        BfclV4CampaignVerifiedReplicate(
+            ordinal=registered.ordinal,
+            replicate_id=registered.replicate_id,
+            outer_seed_u64=registered.outer_seed_u64,
+            plan_fingerprint=registered.call_plan.fingerprint,
+            schedule_content_sha256=registered.call_plan.schedule_content_sha256,
+            attempt_ledger_id=(f"{BFCL_V4_PUBLIC_PILOT_CAMPAIGN_ID}/{registered.replicate_id}"),
+            model_spec_fingerprint=analysis.model_spec_fingerprint,
+            backend_fingerprint=backend_fingerprint,
+            inference_fingerprint=analysis.inference_fingerprint,
+            attempt_budget_fingerprint=analysis.attempt_budget_fingerprint,
+            run_result_ref=_ref(
+                f"summary-run:{registered.replicate_id}",
+                BFCL_V4_RUNNER_RESULT_MEDIA_TYPE,
+            ),
+            run_result_fingerprint=_sha(f"summary-run:{registered.replicate_id}"),
+            verification_ref=_ref(
+                f"summary-verification:{registered.replicate_id}",
+                BFCL_V4_CAMPAIGN_REPLICATE_VERIFICATION_MEDIA_TYPE,
+            ),
+            verification_fingerprint=_sha(f"summary-verification:{registered.replicate_id}"),
+            closure_ref=analysis.ordered_closure_refs[registered.ordinal],
+            joint_selection_decision_ref=ArtifactRef(
+                sha256=analysis.joint_selection_fingerprints[registered.ordinal],
+                size=1,
+                media_type=BFCL_V4_RUNNER_SELECTION_DECISION_MEDIA_TYPE,
+            ),
+            descriptive_metrics_ref=ArtifactRef(
+                sha256=analysis.descriptive_metrics_fingerprints[registered.ordinal],
+                size=1,
+                media_type=BFCL_V4_RUNNER_METRICS_MEDIA_TYPE,
+            ),
+            provider_attempts_succeeded=provider_succeeded[registered.ordinal],
+            provider_attempts_failed=100 - provider_succeeded[registered.ordinal],
+            provider_identity_observation_count=provider_observations[registered.ordinal],
+            provider_declared_identity_consistent=True,
+        )
+        for registered in campaign.replicates
+    )
+    checkpoints = tuple(
+        _ref(f"summary-checkpoint:{index}", BFCL_V4_CAMPAIGN_CHECKPOINT_MEDIA_TYPE)
+        for index in range(3)
+    )
+    result = BfclV4PublicCampaignExecutionResult(
+        status=BfclV4CampaignExecutionStatus.COMPLETE,
+        campaign_fingerprint=campaign.fingerprint,
+        campaign_ref=campaign_ref,
+        live_execution_config_ref=config_ref,
+        live_execution_config_fingerprint=config_ref.sha256,
+        model_spec_fingerprint=analysis.model_spec_fingerprint,
+        backend_fingerprint=backend_fingerprint,
+        inference_fingerprint=analysis.inference_fingerprint,
+        attempt_budget_fingerprint=analysis.attempt_budget_fingerprint,
+        completed_replicates=completed,
+        checkpoint_refs=checkpoints,
+        latest_checkpoint_ref=checkpoints[-1],
+        verified_closed_model_calls=300,
+        analysis_input_ref=analysis_input_ref,
+        analysis_input_fingerprint=analysis_input_ref.sha256,
+        analysis_ref=analysis_ref,
+        analysis_fingerprint=analysis_ref.sha256,
+    )
+    result_ref = repository.put_json(
+        result,
+        media_type=BFCL_V4_CAMPAIGN_EXECUTION_RESULT_MEDIA_TYPE,
+    )
+    record = BfclV4PublicCampaignExecutionRecord(result=result, result_ref=result_ref)
+    verification = BfclV4PublicCampaignExecutionVerification(
+        execution_result_fingerprint=result.fingerprint,
+        status=result.status,
+        verified_replicate_count=3,
+        verified_model_calls=300,
+        verified_checkpoint_count=3,
+        analysis_recomputed_and_matched=True,
+    )
+    return repository, record, verification, analysis
+
+
+def _incomplete_terminal_fixture(tmp_path):
+    repository = ArtifactStore(tmp_path / "incomplete-summary-cas")
+    campaign = build_bfcl_v4_public_pilot_campaign()
+    campaign_ref = repository.put_json(
+        campaign,
+        media_type=BFCL_V4_CAMPAIGN_REGISTRATION_MEDIA_TYPE,
+    )
+    config_ref = repository.put_json(
+        {"fixture": "incomplete-summary-live-config"},
+        media_type=BFCL_V4_CAMPAIGN_LIVE_CONFIG_MEDIA_TYPE,
+    )
+    result = BfclV4PublicCampaignExecutionResult(
+        status=BfclV4CampaignExecutionStatus.INCOMPLETE,
+        campaign_fingerprint=campaign.fingerprint,
+        campaign_ref=campaign_ref,
+        live_execution_config_ref=config_ref,
+        live_execution_config_fingerprint=config_ref.sha256,
+        model_spec_fingerprint=_sha("incomplete-model"),
+        backend_fingerprint=_sha("incomplete-backend"),
+        inference_fingerprint=_sha("incomplete-inference"),
+        attempt_budget_fingerprint=_sha("incomplete-budget"),
+        verified_closed_model_calls=0,
+        failure=BfclV4CampaignExecutionFailure(
+            stage=BfclV4CampaignFailureStage.REPLICATE_EXECUTION,
+            completed_replicate_count=0,
+            active_replicate_ordinal=0,
+            active_replicate_id=campaign.replicates[0].replicate_id,
+            active_outer_seed_u64=campaign.replicates[0].outer_seed_u64,
+        ),
+    )
+    result_ref = repository.put_json(
+        result,
+        media_type=BFCL_V4_CAMPAIGN_EXECUTION_RESULT_MEDIA_TYPE,
+    )
+    record = BfclV4PublicCampaignExecutionRecord(result=result, result_ref=result_ref)
+    verification = BfclV4PublicCampaignExecutionVerification(
+        execution_result_fingerprint=result.fingerprint,
+        status=result.status,
+        verified_replicate_count=0,
+        verified_model_calls=0,
+        verified_checkpoint_count=0,
+        analysis_recomputed_and_matched=False,
+    )
+    return repository, record, verification
+
+
 def test_campaign_analysis_preserves_clusters_promotions_and_exact_rational_delta() -> None:
     analysis_input = _analysis_input()
     result = compute_bfcl_v4_public_campaign_descriptive_analysis(analysis_input)
@@ -302,6 +492,174 @@ def test_campaign_analysis_preserves_clusters_promotions_and_exact_rational_delt
     assert len(full_pure.task_clusters) == 8
     assert all(len(item.treatment_correctness) == 3 for item in full_pure.task_clusters)
     assert not any(isinstance(value, float) for value in _all_values(result.model_dump()))
+
+
+def test_verified_terminal_summary_expands_exact_canonical_campaign_analysis(tmp_path) -> None:
+    repository, record, verification, analysis = _complete_terminal_fixture(tmp_path)
+
+    terminal = build_bfcl_v4_public_terminal_summary(repository, record, verification)
+    summary = terminal["analysis_summary"]
+
+    assert terminal["status"] == "complete"
+    assert terminal["protocol_complete"] is True
+    assert summary["source"] == "verifier-checked-canonical-cas"
+    assert summary["analysis_fingerprint"] == analysis.fingerprint
+    assert [
+        (item["arm"], item["correct_task_seed_cells"], item["accuracy"]) for item in summary["arms"]
+    ] == [
+        (BfclV4PilotArm.PURE.value, 3, {"numerator": 1, "denominator": 8}),
+        (BfclV4PilotArm.STATIC.value, 6, {"numerator": 1, "denominator": 4}),
+        (BfclV4PilotArm.SCORE.value, 12, {"numerator": 1, "denominator": 2}),
+        (BfclV4PilotArm.FULL.value, 17, {"numerator": 17, "denominator": 24}),
+        (BfclV4PilotArm.PURE_AT_B.value, 9, {"numerator": 3, "denominator": 8}),
+    ]
+    assert all(item["task_seed_cell_count"] == 24 for item in summary["arms"])
+    assert [
+        (item["arm"], item["promotion_count"], item["rollback_count"])
+        for item in summary["promotions"]
+    ] == [
+        (BfclV4PilotArm.SCORE.value, 2, 1),
+        (BfclV4PilotArm.FULL.value, 2, 1),
+    ]
+    assert all(len(item["decisions"]) == 3 for item in summary["promotions"])
+    assert len(summary["paired_contrasts"]) == 8
+    assert all(
+        item["strictly_exceeds_positive_ten_percentage_points"] is True
+        for item in summary["paired_contrasts"]
+    )
+    assert [
+        (item["provider_attempts_succeeded"], item["provider_attempts_failed"])
+        for item in summary["provider_by_seed"]
+    ] == [(96, 4), (95, 5), (94, 6)]
+    assert summary["claim_limits"]["public_development_descriptive_only"] is True
+    assert summary["claim_limits"]["same_provider_weights_attested"] is False
+    assert summary["claim_limits"]["reportable_result"] is False
+    assert not any(isinstance(value, float) for value in _all_values(summary))
+
+
+def test_incomplete_terminal_emits_null_analysis_without_repository_read(tmp_path) -> None:
+    _, record, verification = _incomplete_terminal_fixture(tmp_path)
+
+    class NoReadRepository:
+        def get_bytes(self, ref):
+            pytest.fail(f"incomplete terminal attempted CAS byte read: {ref!r}")
+
+        def get_json(self, ref):
+            pytest.fail(f"incomplete terminal attempted CAS JSON read: {ref!r}")
+
+    terminal = build_bfcl_v4_public_terminal_summary(
+        NoReadRepository(),
+        record,
+        verification,
+    )
+
+    assert terminal["status"] == "incomplete"
+    assert terminal["protocol_complete"] is False
+    assert terminal["analysis_ref"] is None
+    assert terminal["analysis_summary"] is None
+
+
+def test_terminal_summary_rejects_wrong_analysis_media_type(tmp_path) -> None:
+    repository, record, verification, _ = _complete_terminal_fixture(tmp_path)
+    wrong_ref = record.result.analysis_ref.model_copy(update={"media_type": "application/json"})
+    forged_result = record.result.model_copy(update={"analysis_ref": wrong_ref})
+    forged_record = record.model_copy(update={"result": forged_result})
+
+    with pytest.raises(BfclV4PublicLiveSummaryError):
+        build_bfcl_v4_public_terminal_summary(repository, forged_record, verification)
+
+
+def test_terminal_summary_rejects_missing_analysis_reference(tmp_path) -> None:
+    repository, record, _, _ = _complete_terminal_fixture(tmp_path)
+    missing_ref = ArtifactRef(
+        sha256=_sha("missing-summary-analysis"),
+        size=1,
+        media_type=BFCL_V4_CAMPAIGN_ANALYSIS_MEDIA_TYPE,
+    )
+    result = BfclV4PublicCampaignExecutionResult.model_validate(
+        record.result.model_copy(
+            update={
+                "analysis_ref": missing_ref,
+                "analysis_fingerprint": missing_ref.sha256,
+            }
+        ),
+        strict=True,
+    )
+    result_ref = repository.put_json(
+        result,
+        media_type=BFCL_V4_CAMPAIGN_EXECUTION_RESULT_MEDIA_TYPE,
+    )
+    missing_record = BfclV4PublicCampaignExecutionRecord(
+        result=result,
+        result_ref=result_ref,
+    )
+    missing_verification = BfclV4PublicCampaignExecutionVerification(
+        execution_result_fingerprint=result.fingerprint,
+        status=result.status,
+        verified_replicate_count=3,
+        verified_model_calls=300,
+        verified_checkpoint_count=3,
+        analysis_recomputed_and_matched=True,
+    )
+
+    with pytest.raises(BfclV4PublicLiveSummaryError):
+        build_bfcl_v4_public_terminal_summary(
+            repository,
+            missing_record,
+            missing_verification,
+        )
+
+
+def test_terminal_summary_rejects_analysis_bytes_tampered_after_verification(tmp_path) -> None:
+    repository, record, verification, _ = _complete_terminal_fixture(tmp_path)
+    repository.path_for(record.result.analysis_ref).write_bytes(b"{}")
+
+    with pytest.raises(BfclV4PublicLiveSummaryError):
+        build_bfcl_v4_public_terminal_summary(repository, record, verification)
+
+
+def test_terminal_summary_rejects_canonical_analysis_with_foreign_lineage(tmp_path) -> None:
+    repository, record, _, analysis = _complete_terminal_fixture(tmp_path)
+    foreign = BfclV4PublicCampaignDescriptiveAnalysis.model_validate(
+        analysis.model_copy(update={"backend_fingerprint": _sha("foreign-backend")}),
+        strict=True,
+    )
+    foreign_ref = repository.put_json(
+        foreign,
+        media_type=BFCL_V4_CAMPAIGN_ANALYSIS_MEDIA_TYPE,
+    )
+    result = BfclV4PublicCampaignExecutionResult.model_validate(
+        record.result.model_copy(
+            update={
+                "analysis_ref": foreign_ref,
+                "analysis_fingerprint": foreign_ref.sha256,
+            }
+        ),
+        strict=True,
+    )
+    result_ref = repository.put_json(
+        result,
+        media_type=BFCL_V4_CAMPAIGN_EXECUTION_RESULT_MEDIA_TYPE,
+    )
+    foreign_record = BfclV4PublicCampaignExecutionRecord(
+        result=result,
+        result_ref=result_ref,
+    )
+    foreign_verification = BfclV4PublicCampaignExecutionVerification(
+        execution_result_fingerprint=result.fingerprint,
+        status=result.status,
+        verified_replicate_count=3,
+        verified_model_calls=300,
+        verified_checkpoint_count=3,
+        analysis_recomputed_and_matched=True,
+    )
+
+    with pytest.raises(BfclV4PublicLiveSummaryError, match="lineage"):
+        build_bfcl_v4_public_terminal_summary(
+            repository,
+            foreign_record,
+            foreign_verification,
+        )
 
 
 def test_campaign_output_states_public_descriptive_and_provider_identity_limits() -> None:
