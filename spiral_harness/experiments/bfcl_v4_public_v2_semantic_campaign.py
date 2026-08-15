@@ -57,6 +57,10 @@ BFCL_V4_PUBLIC_V2_SEMANTIC_REVIEW_SEEDS_U64 = (
 
 _CatalogLoader = Callable[[str, str, float], tuple[str, ...]]
 _RawTransport = Callable[[str, str, str, dict[str, Any], float], bytes]
+_SessionSink = Callable[
+    [BfclV4PublicV2SemanticReviewRole, BfclV4PublicV2SemanticReviewSessionEvidence],
+    None,
+]
 
 
 class BfclV4PublicV2SemanticCampaignError(RuntimeError):
@@ -176,8 +180,9 @@ def _review(
     catalog_observation_sha256: str,
     timeout_seconds: float,
     transport: _RawTransport,
+    session_sink: _SessionSink | None,
 ) -> BfclV4PublicV2SemanticReviewSessionEvidence:
-    return run_bfcl_v4_public_v2_semantic_review(
+    session = run_bfcl_v4_public_v2_semantic_review(
         projection.reviewer_packet,
         projection.trusted_mapping,
         runtime_hmac_secret=runtime_hmac_secret,
@@ -190,6 +195,9 @@ def _review(
         timeout_seconds=timeout_seconds,
         transport=transport,
     )
+    if session_sink is not None:
+        session_sink(role, session)
+    return session
 
 
 def run_bfcl_v4_public_v2_semantic_campaign(
@@ -202,6 +210,7 @@ def run_bfcl_v4_public_v2_semantic_campaign(
     review_timeout_seconds: float = 300.0,
     catalog_loader: _CatalogLoader = _load_catalog,
     transport: _RawTransport,
+    session_sink: _SessionSink | None = None,
 ) -> BfclV4PublicV2SemanticCampaignEvidence:
     """Run the frozen two-review/optional-adjudicator prerequisite exactly once."""
 
@@ -236,6 +245,7 @@ def run_bfcl_v4_public_v2_semantic_campaign(
             catalog_observation_sha256=catalog_sha256,
             timeout_seconds=review_timeout_seconds,
             transport=transport,
+            session_sink=session_sink,
         ),
         _review(
             projection,
@@ -248,6 +258,7 @@ def run_bfcl_v4_public_v2_semantic_campaign(
             catalog_observation_sha256=catalog_sha256,
             timeout_seconds=review_timeout_seconds,
             transport=transport,
+            session_sink=session_sink,
         ),
     )
 
@@ -276,6 +287,7 @@ def run_bfcl_v4_public_v2_semantic_campaign(
             catalog_observation_sha256=catalog_sha256,
             timeout_seconds=review_timeout_seconds,
             transport=transport,
+            session_sink=session_sink,
         )
         release = issue_bfcl_v4_public_v2_semantic_development_release(
             projection.reviewer_packet,

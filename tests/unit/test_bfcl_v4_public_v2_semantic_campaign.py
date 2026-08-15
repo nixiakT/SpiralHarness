@@ -89,6 +89,7 @@ def test_semantic_campaign_runs_two_reviews_and_only_adjudicates_disagreement(
 ) -> None:
     _require_checkout()
     transport = _Transport(disagree=disagree)
+    persisted_roles = []
     result = run_bfcl_v4_public_v2_semantic_campaign(
         checkout=_CHECKOUT,
         runtime_hmac_secret=_SECRET,
@@ -96,12 +97,18 @@ def test_semantic_campaign_runs_two_reviews_and_only_adjudicates_disagreement(
         api_key="not-recorded-test-key",
         catalog_loader=_catalog,
         transport=transport,
+        session_sink=lambda role, _session: persisted_roles.append(role.value),
     )
 
     expected_models = [*BFCL_V4_PUBLIC_V2_SEMANTIC_PRIMARY_MODELS]
     if disagree:
         expected_models.append(BFCL_V4_PUBLIC_V2_SEMANTIC_ADJUDICATOR_MODEL)
     assert transport.models == expected_models
+    assert persisted_roles == [
+        "primary-one",
+        "primary-two",
+        *(("adjudicator",) if disagree else ()),
+    ]
     assert result.review_attempt_count == attempts
     assert result.release.reviewer_count == attempts
     assert result.total_review_tokens == attempts * 300
