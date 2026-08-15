@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from math import isfinite
 from pathlib import Path
 
 from spiral_harness.core.canonical import canonical_sha256
@@ -20,18 +21,43 @@ class CandidateResult:
 
 
 def select_validation_champion(
-    artifact_paths: tuple[Path, ...], *, output: Path, minimum_gain: float = 0.0
+    artifact_paths: tuple[Path, ...],
+    *,
+    parent_artifact_path: Path,
+    output: Path,
+    minimum_gain: float = 0.0,
 ) -> dict[str, object]:
-    """Select by validation accuracy, then tokens; test artifacts are forbidden."""
+    """Promote the best validation challenger only when it improves its exact parent.
+
+    Token usage breaks ties between challengers, but never turns an accuracy tie
+    with the current parent into a promotion.  The parent is explicit so a later
+    round cannot silently fall back to PURE after the champion has changed.
+    """
 
     if len(artifact_paths) < 2:
         raise ValueError("selection requires at least two candidate artifacts")
-    candidates = []
+    if isinstance(minimum_gain, bool) or not isinstance(minimum_gain, (int, float)):
+        raise TypeError("minimum_gain must be a finite non-negative number")
+    minimum_gain = float(minimum_gain)
+    if not isfinite(minimum_gain) or minimum_gain < 0:
+        raise ValueError("minimum_gain must be a finite non-negative number")
+
+    resolved_paths = tuple(Path(path).resolve(strict=True) for path in artifact_paths)
+    if len(resolved_paths) != len(set(resolved_paths)):
+        raise ValueError("selection artifact paths must be unique")
+    resolved_parent_path = Path(parent_artifact_path).resolve(strict=True)
+    parent_indexes = tuple(
+        index for index, path in enumerate(resolved_paths) if path == resolved_parent_path
+    )
+    if len(parent_indexes) != 1:
+        raise ValueError("parent artifact must appear exactly once in candidate artifacts")
+
+    candidates: list[CandidateResult] = []
     benchmark = model = None
-    for path in artifact_paths:
+    for path in resolved_paths:
         import json
 
-        raw = Path(path).read_bytes()
+        raw = path.read_bytes()
         payload = json.loads(raw)
         if payload.get("split") != "val":
             raise ValueError("self-evolution selection accepts validation artifacts only")
@@ -39,28 +65,48 @@ def select_validation_champion(
             benchmark, model = payload.get("benchmark"), payload.get("model")
         if payload.get("benchmark") != benchmark or payload.get("model") != model:
             raise ValueError("candidate benchmark and model coordinates must match")
-        candidates.append(
-            CandidateResult(
-                name=f"{payload.get('arm')}@k={payload.get('retrieval_k')}",
-                artifact_sha256=canonical_sha256(payload),
-                accuracy=float(payload["accuracy"]),
-                total_tokens=int(payload["total_tokens"]),
-            )
+        accuracy_value = payload["accuracy"]
+        if isinstance(accuracy_value, bool) or not isinstance(accuracy_value, (int, float)):
+            raise ValueError("candidate accuracy must be an integer or float")
+        accuracy = float(accuracy_value)
+        if not isfinite(accuracy) or not 0.0 <= accuracy <= 1.0:
+            raise ValueError("candidate accuracy must be finite and within [0, 1]")
+        total_tokens = payload["total_tokens"]
+        if type(total_tokens) is not int or total_tokens < 0:
+            raise ValueError("candidate total_tokens must be a non-negative integer")
+        candidate = CandidateResult(
+            name=f"{payload.get('arm')}@k={payload.get('retrieval_k')}",
+            artifact_sha256=canonical_sha256(payload),
+            accuracy=accuracy,
+            total_tokens=total_tokens,
         )
-    ranked = sorted(candidates, key=lambda item: (-item.accuracy, item.total_tokens, item.name))
-    baseline = next((item for item in candidates if item.name.startswith("pure@")), candidates[0])
-    champion = ranked[0]
-    gain = champion.accuracy - baseline.accuracy
-    accepted = gain >= minimum_gain and champion != baseline
+        candidates.append(candidate)
+
+    parent_index = parent_indexes[0]
+    parent = candidates[parent_index]
+    challengers = tuple(
+        candidate for index, candidate in enumerate(candidates) if index != parent_index
+    )
+    challenger = min(
+        challengers,
+        key=lambda item: (-item.accuracy, item.total_tokens, item.name),
+    )
+    gain = challenger.accuracy - parent.accuracy
+    accepted = gain > 0.0 and gain >= minimum_gain
+    champion = challenger if accepted else parent
     trace: dict[str, object] = {
         "schema_version": "1",
         "benchmark": benchmark,
         "model": model,
         "selection_partition": "val",
-        "objective": "maximize_accuracy_then_minimize_tokens",
+        "objective": "improve_parent_accuracy_then_minimize_challenger_tokens",
         "minimum_gain": minimum_gain,
-        "baseline": asdict(baseline),
+        # Retain the legacy field as an exact alias, while making its corrected
+        # current-parent meaning explicit for new consumers.
+        "baseline": asdict(parent),
+        "parent": asdict(parent),
         "candidates": [asdict(item) for item in candidates],
+        "challenger": asdict(challenger),
         "champion": asdict(champion),
         "gain": gain,
         "accepted": accepted,
