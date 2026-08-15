@@ -246,9 +246,10 @@ branch on the hidden answer type or call the official scorer during selection.
    CI; add the pinned upstream only to a separate benchmark environment.
 2. Build a no-provider BFCL fixture bridge and verify that official generated
    result files round-trip through the upstream evaluator unchanged.
-3. Run a small public BFCL wiring pilot with one open model only after the user
-   authorizes model spending. Label it development and retain every receipt.
-4. Use pilot covariance, failure, category, and search-seed variation to run
+3. The authorized open-model public BFCL pilot has run and is reported with all
+   receipts in [the result report](../bfcl-v4-public-pilot-results.md).  It is
+   development-only and produced no successful promoted self-evolution step.
+4. Use its failure, category, and search-seed variation to run
    the prospective power procedure. Do not pick `S` from the favorable point
    estimate.
 5. Contact GAIA maintainers for blinded whole-grid scoring before designating
@@ -257,5 +258,7 @@ branch on the hidden answer type or call the official scorer during selection.
    analysis, and authority key; then execute once. The sealed result is
    terminal for that study lineage.
 
-No current GAIA or BFCL result exists in SpiralHarness. Passing the contracts
-or verifying the public checkout is implementation evidence only.
+No current GAIA result or confirmatory BFCL result exists in SpiralHarness.
+The BFCL public-development pilot is a negative, non-reportable partial-suite
+result; passing the remaining contracts or verifying a checkout is still only
+implementation evidence.

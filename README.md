@@ -348,9 +348,12 @@ receipt-backed screen, and study barrier are specified in the
 
 The current public, reproducible nominal-model-matched development runs are
 documented separately from plumbing-only demos. They are exploratory pilots:
-their test sets are now exposed, they do not contain independent end-to-end
-search replications, the gateway aliases are not signed served-revision
-attestations, and they are not confirmatory evidence for the ICLR study.
+their test sets are now exposed, the gateway aliases are not signed
+served-revision attestations, and they are not confirmatory evidence for the
+ICLR study. Penguin and the Meta-Harness ports lack independent end-to-end
+search replications. The BFCL pilot has three frozen search seeds, but all three
+repeat the same eight public HOLDOUT tasks, so its 24 task-by-seed cells are not
+24 independent task samples.
 
 - [PenguinHarness public recursive self-evolution](docs/penguin-public-self-evolution-results.md):
   `dashscope/qwen3-coder-flash`, Penguin 4.0/10 versus Spiral N+2 9.6/10;
@@ -358,6 +361,11 @@ attestations, and they are not confirmatory evidence for the ICLR study.
   `MemorySystem`, loader, runner, and grader with pure, few-shot, paper-reconstruction, and Spiral
   arms under `dashscope/qwen3-coder-flash`; frozen USPTO Spiral reaches 14%, versus 0% pure and 2%
   for the paper-algorithm reconstruction;
+- [BFCL V4 public-development pilot](docs/bfcl-v4-public-pilot-results.md): under
+  `qwen36-35b-a3b`, PURE 45.83%, STATIC/SCORE 62.50%, FULL 58.33%, and PURE@B 50.00%
+  across 24 repeated task-by-seed cells. All six adaptive candidates rolled back; FULL trailed
+  STATIC/SCORE and exceeded budget-matched PURE@B by only 8.33 points, so this is an explicit
+  negative self-evolution result;
 - [Earlier Meta-Harness data compatibility port](docs/same-model-self-evolution-results.md):
   Spiral-native prompts and adapters, retained with an explicit non-native protocol warning.
 

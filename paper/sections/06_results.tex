@@ -50,6 +50,18 @@ the primary comparisons.  An adaptively tuned Symptom2Disease run is expressly
 excluded from the main results because its test data were exposed before later
 tuning.
 
+A stricter public-development BFCL pilot produced a negative result.  Across 24
+task-by-seed HOLDOUT cells, descriptive accuracies were PURE 45.83\% (11/24),
+STATIC 62.50\% (15/24), SCORE 62.50\% (15/24), FULL 58.33\% (14/24), and
+PURE@B 50.00\% (12/24).  FULL trailed STATIC and SCORE by 4.17 percentage
+points and exceeded the ex-ante call-budget-matched PURE@B reference by 8.33
+points.  All six adaptive candidates rolled back, so
+\pilotonly{this campaign did not demonstrate successful self-evolution}.
+FULL--PURE was descriptively $+12.50$ points, but PURE is not search-budget
+matched and this public pilot cannot support a greater-than-ten-point claim.
+Moreover, its FULL--SCORE contrast varied only the feedback view, rather than
+the paper's joint feedback-plus-promotion-policy treatment.
+
 No confirmatory result should be inferred from implementation tests, replay
 fixtures, or the absence of a crash.  Table~\ref{tab:results} must remain visibly
 blocked until every result is linked to the preregistration commit, exact model

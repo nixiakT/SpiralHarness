@@ -89,9 +89,11 @@ matches:
 rg -n '\\evidenceblocked\{' main.tex sections figures --glob '*.tex'
 ```
 
-USPTO and the single Penguin public task may appear only as motivating pilots.
-The adaptively tuned Symptom2Disease result is excluded from the primary table
-and headline claims.
+USPTO, the single Penguin public task, and the BFCL public-development pilot may
+appear only as motivating pilots.  BFCL must be reported as a negative
+self-evolution result with its five arms, rollback outcome, repeated-task
+denominator, and nominal-route limitation intact.  The adaptively tuned
+Symptom2Disease result is excluded from the primary table and headline claims.
 
 ## Build
 
