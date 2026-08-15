@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import sys
 import urllib.error
 import urllib.request
@@ -155,6 +156,40 @@ def _post_raw_http(
             "User-Agent": user_agent,
         },
         method="POST",
+    )
+    detail: str | None = None
+    try:
+        with _direct_only_opener().open(request, timeout=timeout_seconds) as response:
+            raw = response.read(_MAX_RESPONSE_BYTES + 1)
+    except urllib.error.HTTPError as exc:
+        detail = f"OpenAI-compatible backend HTTP {exc.code}" if type(exc.code) is int else None
+    except Exception:
+        detail = None
+    if detail is not None:
+        raise OpenAICompatibleNativeFunctionError(detail) from None
+    if "raw" not in locals():
+        raise OpenAICompatibleNativeFunctionError(
+            "OpenAI-compatible native transport failed"
+        ) from None
+    return raw
+
+
+def _get_raw_http(
+    *,
+    url: str,
+    api_key: str,
+    user_agent: str,
+    timeout_seconds: float,
+) -> bytes:
+    """Read one authenticated catalog response without proxies or redirects."""
+
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": user_agent,
+        },
+        method="GET",
     )
     detail: str | None = None
     try:
@@ -439,6 +474,46 @@ class OpenAICompatibleNativeFunctionBackend:
             usage=usage,
             provider_identity_observation=identity,
         )
+
+    def list_models(self, *, timeout_seconds: float = 15.0) -> tuple[str, ...]:
+        """Return only exact advertised IDs through the direct-only transport."""
+
+        if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)):
+            raise TypeError("timeout_seconds must be numeric")
+        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be finite and positive")
+        raw = _get_raw_http(
+            url=self.base_url + "/models",
+            api_key=self.api_key,
+            user_agent=self.user_agent,
+            timeout_seconds=float(timeout_seconds),
+        )
+        response, error = _capture_parse(lambda: _decode_raw_response(raw))
+        if error is not None:
+            raise OpenAICompatibleNativeFunctionError("model catalog response is invalid") from None
+        assert response is not None
+        data = response.get("data")
+        if type(data) is not list:
+            raise OpenAICompatibleNativeFunctionError("model catalog response has no data list")
+        model_ids: list[str] = []
+        for item in data:
+            if type(item) is not dict:
+                raise OpenAICompatibleNativeFunctionError(
+                    "model catalog contains a malformed entry"
+                )
+            model_id = item.get("id")
+            if (
+                not isinstance(model_id, str)
+                or not model_id
+                or model_id != model_id.strip()
+                or any(ord(character) < 32 for character in model_id)
+            ):
+                raise OpenAICompatibleNativeFunctionError(
+                    "model catalog contains an invalid model ID"
+                )
+            _reject_surrogate_text(model_id)
+            model_ids.append(model_id)
+        return tuple(sorted(set(model_ids)))
 
     def _post_raw(
         self,

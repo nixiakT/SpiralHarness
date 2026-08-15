@@ -1124,6 +1124,113 @@ def test_raw_transport_is_direct_only_no_redirect_and_bounded(monkeypatch) -> No
     assert captured["read_limit"] == 1_048_577
 
 
+def test_model_catalog_uses_direct_only_get_and_returns_exact_ids(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+    raw_response = _raw_json(
+        {
+            "data": [
+                {"id": "dashscope/qwen36-35b-a3b", "owned_by": "lab"},
+                {"id": "MiniMax-M2.5"},
+                {"id": "dashscope/qwen36-35b-a3b"},
+            ]
+        }
+    )
+
+    class FakeResponse:
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            del args
+
+        def read(self, limit: int) -> bytes:
+            captured["read_limit"] = limit
+            return raw_response
+
+    class FakeOpener:
+        def open(self, request: object, *, timeout: float) -> FakeResponse:
+            captured["request"] = request
+            captured["timeout"] = timeout
+            return FakeResponse()
+
+    def build_opener(*handlers: object) -> FakeOpener:
+        captured["handlers"] = handlers
+        return FakeOpener()
+
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy-must-not-be-used.example:8888")
+    monkeypatch.setattr("urllib.request.build_opener", build_opener)
+    backend = OpenAICompatibleNativeFunctionBackend(
+        base_url="http://litellm.example/v1/",
+        api_key="catalog-fixture-secret",
+        user_agent="spiral-harness/catalog-test",
+    )
+
+    assert backend.list_models(timeout_seconds=4.5) == (
+        "MiniMax-M2.5",
+        "dashscope/qwen36-35b-a3b",
+    )
+    handlers = captured["handlers"]
+    proxy = next(item for item in handlers if isinstance(item, urllib.request.ProxyHandler))
+    redirect = next(
+        item for item in handlers if isinstance(item, urllib.request.HTTPRedirectHandler)
+    )
+    assert proxy.proxies == {}
+    assert redirect.redirect_request(None, None, 302, "secret", {}, "http://redirect") is None
+    request = captured["request"]
+    assert isinstance(request, urllib.request.Request)
+    assert request.full_url == "http://litellm.example/v1/models"
+    assert request.method == "GET"
+    assert request.data is None
+    assert request.get_header("Authorization") == "Bearer catalog-fixture-secret"
+    assert request.get_header("User-agent") == "spiral-harness/catalog-test"
+    assert captured["timeout"] == 4.5
+    assert captured["read_limit"] == 1_048_577
+
+
+@pytest.mark.parametrize("timeout", [True, 0.0, -1.0, float("nan"), float("inf")])
+def test_model_catalog_rejects_invalid_timeouts(timeout: object) -> None:
+    backend = OpenAICompatibleNativeFunctionBackend(
+        base_url="http://litellm.example/v1",
+        api_key="fixture-secret",
+    )
+    with pytest.raises((TypeError, ValueError)):
+        backend.list_models(timeout_seconds=timeout)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"data": {}},
+        {"data": ["bad"]},
+        {"data": [{"id": " spaced "}]},
+        {"data": [{"id": "bad\nmodel"}]},
+    ],
+)
+def test_model_catalog_rejects_malformed_entries(monkeypatch, payload: object) -> None:
+    class FakeResponse:
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            del args
+
+        def read(self, _limit: int) -> bytes:
+            return _raw_json(payload)
+
+    class FakeOpener:
+        def open(self, *_args: object, **_kwargs: object) -> FakeResponse:
+            return FakeResponse()
+
+    monkeypatch.setattr("urllib.request.build_opener", lambda *handlers: FakeOpener())
+    backend = OpenAICompatibleNativeFunctionBackend(
+        base_url="http://litellm.example/v1",
+        api_key="fixture-secret",
+    )
+    with pytest.raises(OpenAICompatibleNativeFunctionError):
+        backend.list_models()
+
+
 def test_http_errors_and_backend_repr_never_disclose_secrets(monkeypatch) -> None:
     backend = OpenAICompatibleNativeFunctionBackend.from_endpoint(
         base_url="http://litellm.example/v1",
