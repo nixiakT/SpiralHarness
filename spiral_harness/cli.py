@@ -29,6 +29,9 @@ from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.experiment import ProtocolPartition
 from spiral_harness.evolution.controlled_demo import run_controlled_demo
 from spiral_harness.providers.openai_compatible import OpenAICompatibleChatBackend
+from spiral_harness.providers.openai_native_function import (
+    OpenAICompatibleNativeFunctionBackend,
+)
 
 app = typer.Typer(
     name="spiral",
@@ -110,7 +113,10 @@ def list_models(
         raise typer.BadParameter(f"missing environment variable {base_url_env}")
     if not api_key:
         raise typer.BadParameter(f"missing environment variable {api_key_env}")
-    backend = OpenAICompatibleChatBackend.from_endpoint(base_url=base_url, api_key=api_key)
+    backend = OpenAICompatibleNativeFunctionBackend.from_endpoint(
+        base_url=base_url,
+        api_key=api_key,
+    )
     model_ids = backend.list_models(timeout_seconds=timeout_seconds)
     routes = {
         "dashscope": [model_id for model_id in model_ids if model_id.startswith("dashscope/")],

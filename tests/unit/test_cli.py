@@ -135,7 +135,7 @@ def test_list_models_is_availability_only_and_classifies_gateway_routes(monkeypa
     monkeypatch.setenv("TEST_LITELLM_URL", "http://gateway.example/v1")
     monkeypatch.setenv("TEST_LITELLM_KEY", "fixture-secret")
     monkeypatch.setattr(
-        cli_module.OpenAICompatibleChatBackend,
+        cli_module.OpenAICompatibleNativeFunctionBackend,
         "from_endpoint",
         fake_from_endpoint,
     )
