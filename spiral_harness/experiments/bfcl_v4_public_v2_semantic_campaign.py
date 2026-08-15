@@ -55,10 +55,12 @@ from spiral_harness.providers.openai_native_function import (
 )
 
 BFCL_V4_PUBLIC_V2_SEMANTIC_CAMPAIGN_REVISION = (
-    "semantic-review-v2-after-v1-json-conformance-failure@2026-08-15"
+    "semantic-review-v3-after-v2-transport-failure@2026-08-15"
 )
-BFCL_V4_PUBLIC_V2_SEMANTIC_PRIMARY_MODELS = ("GLM-5.2", "MiniMax-M2.5")
-BFCL_V4_PUBLIC_V2_SEMANTIC_ADJUDICATOR_MODEL = "Kimi-K2.6"
+BFCL_V4_PUBLIC_V2_SEMANTIC_PRIMARY_MODELS = ("MiniMax-M2.5", "Kimi-K2.6")
+BFCL_V4_PUBLIC_V2_SEMANTIC_ADJUDICATOR_MODEL = "DeepSeek-V4-Flash"
+BFCL_V4_PUBLIC_V2_SEMANTIC_CATALOG_TIMEOUT_SECONDS = 30.0
+BFCL_V4_PUBLIC_V2_SEMANTIC_REVIEW_TIMEOUT_SECONDS = 600.0
 BFCL_V4_PUBLIC_V2_SEMANTIC_REVIEW_SEEDS_U64 = (
     2_026_081_701,
     2_026_081_702,
@@ -357,8 +359,8 @@ def run_bfcl_v4_public_v2_semantic_campaign(
     runtime_hmac_secret: bytes,
     base_url: str,
     api_key: str,
-    catalog_timeout_seconds: float = 30.0,
-    review_timeout_seconds: float = 300.0,
+    catalog_timeout_seconds: float = BFCL_V4_PUBLIC_V2_SEMANTIC_CATALOG_TIMEOUT_SECONDS,
+    review_timeout_seconds: float = BFCL_V4_PUBLIC_V2_SEMANTIC_REVIEW_TIMEOUT_SECONDS,
     catalog_loader: _CatalogLoader = _load_catalog,
     transport: _RawTransport,
     session_sink: _SessionSink | None = None,
@@ -370,6 +372,15 @@ def run_bfcl_v4_public_v2_semantic_campaign(
 ) -> BfclV4PublicV2SemanticCampaignEvidence:
     """Run the frozen two-review/optional-adjudicator prerequisite exactly once."""
 
+    if (
+        type(catalog_timeout_seconds) is not float
+        or catalog_timeout_seconds != BFCL_V4_PUBLIC_V2_SEMANTIC_CATALOG_TIMEOUT_SECONDS
+        or type(review_timeout_seconds) is not float
+        or review_timeout_seconds != BFCL_V4_PUBLIC_V2_SEMANTIC_REVIEW_TIMEOUT_SECONDS
+    ):
+        raise BfclV4PublicV2SemanticCampaignError(
+            "semantic campaign timeouts differ from the frozen revision"
+        )
     try:
         v1 = load_bfcl_v4_public_pilot(checkout)
         v2 = load_bfcl_v4_public_development_v2(checkout)
