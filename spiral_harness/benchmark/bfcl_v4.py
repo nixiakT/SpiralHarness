@@ -19,12 +19,14 @@ from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
 
+from spiral_harness.benchmark.bfcl_v4_identity import (
+    BFCL_V4_RELEASE_VERSION,
+    BFCL_V4_UPSTREAM_COMMIT,
+    BFCL_V4_UPSTREAM_REPOSITORY,
+)
 from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.models import ImmutableModel, NonEmptyStr, Sha256
 
-BFCL_V4_UPSTREAM_REPOSITORY = "https://github.com/ShishirPatil/gorilla"
-BFCL_V4_UPSTREAM_COMMIT = "6ea57973c7a6097fd7c5915698c54c17c5b1b6c8"
-BFCL_V4_RELEASE_VERSION = "2026.3.23"
 # ``MAXIMUM_STEP_LIMIT`` is 20 upstream, but the loop checks ``count > 20``
 # only after issuing and executing the current call.  A non-terminating turn
 # can therefore issue 21 model requests (count values 0 through 20).
