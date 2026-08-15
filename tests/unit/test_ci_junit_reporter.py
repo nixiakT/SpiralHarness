@@ -33,6 +33,27 @@ def test_junit_reporter_fails_closed_when_report_is_missing(tmp_path: Path) -> N
     assert annotations[0].startswith("::error title=pytest JUnit unavailable::")
 
 
+def test_junit_reporter_preserves_the_failure_tail_within_github_limit(
+    tmp_path: Path,
+) -> None:
+    report = tmp_path / "pytest.xml"
+    oversized_prefix = "source line\n" * 1_000
+    report.write_text(
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<testsuites><testsuite failures="1">'
+        '<testcase classname="tests.test_demo" name="test_long">'
+        f"<failure>{oversized_prefix}FINAL ASSERTION: expected 1, got 0</failure>"
+        "</testcase></testsuite></testsuites>",
+        encoding="utf-8",
+    )
+
+    annotation = annotations_from_junit(report)[0]
+
+    assert len(annotation) < 4_096
+    assert "FINAL ASSERTION: expected 1, got 0" in annotation
+    assert oversized_prefix not in annotation
+
+
 def test_workflow_runs_reporter_only_after_a_real_pytest_failure() -> None:
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 

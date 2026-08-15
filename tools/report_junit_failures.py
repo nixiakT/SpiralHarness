@@ -12,6 +12,8 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+_ANNOTATION_DETAIL_LIMIT = 3_500
+
 
 def _escape_message(value: str) -> str:
     return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
@@ -38,8 +40,12 @@ def annotations_from_junit(path: Path) -> tuple[str, ...]:
             name = case.get("name", "unknown test")
             title = _escape_property(f"{classname}::{name}")
             raw_detail = (failure.text or failure.get("message") or "pytest failure").strip()
-            # Annotations are diagnostic summaries, not the durable test log.
-            detail = _escape_message(raw_detail[-8_000:])
+            # GitHub truncates annotation messages to roughly 4 KiB from the
+            # right, so sending an 8 KiB traceback discarded the assertion and
+            # exception at its tail.  Escape first, then retain the diagnostic
+            # tail under a conservative wire-size ceiling.
+            escaped_detail = _escape_message(raw_detail)
+            detail = escaped_detail[-_ANNOTATION_DETAIL_LIMIT:]
             annotations.append(f"::error title={title}::{detail}")
     if not annotations:
         annotations.append(
