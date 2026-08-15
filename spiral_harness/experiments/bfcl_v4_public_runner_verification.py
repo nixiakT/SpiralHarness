@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from spiral_harness.benchmark.bfcl_v4_public_grader_contracts import (
+    BfclV4PublicGraderReceipt,
+    BfclV4PublicPrediction,
+)
 from spiral_harness.benchmark.bfcl_v4_public_pilot import (
     adapt_bfcl_v4_public_pilot_task,
 )
 from spiral_harness.benchmark.bfcl_v4_public_pilot_contracts import (
     BFCL_V4_PUBLIC_PILOT_MANIFEST,
     BfclV4PublicPilotTask,
+    BfclV4PureAtBSample,
 )
 from spiral_harness.benchmark.bfcl_v4_public_pilot_plan import (
     build_bfcl_v4_public_pilot_call_plan,
@@ -41,6 +46,7 @@ from spiral_harness.execution.contracts import (
 )
 from spiral_harness.execution.native_function_contracts import (
     NativeFunctionExecution,
+    NativeFunctionExecutionRecord,
     load_canonical_native_artifact,
 )
 from spiral_harness.experiments.bfcl_v4_public_evolution_contracts import (
@@ -51,11 +57,14 @@ from spiral_harness.experiments.bfcl_v4_public_meta_native import (
     materialize_bfcl_v4_public_meta_native_request,
 )
 from spiral_harness.experiments.bfcl_v4_public_runner_contracts import (
+    BFCL_V4_RUNNER_GRADER_RECEIPT_MEDIA_TYPE,
     BFCL_V4_RUNNER_HARNESS_MEDIA_TYPE,
     BFCL_V4_RUNNER_HOLDOUT_EVIDENCE_MEDIA_TYPE,
     BFCL_V4_RUNNER_META_PROMPT_MEDIA_TYPE,
     BFCL_V4_RUNNER_METRICS_MEDIA_TYPE,
+    BFCL_V4_RUNNER_PREDICTION_MEDIA_TYPE,
     BFCL_V4_RUNNER_PUBLIC_TASK_MEDIA_TYPE,
+    BFCL_V4_RUNNER_PURE_AT_B_SAMPLE_MEDIA_TYPE,
     BFCL_V4_RUNNER_RESULT_MEDIA_TYPE,
     BFCL_V4_RUNNER_SELECTION_DECISION_MEDIA_TYPE,
     BFCL_V4_RUNNER_SELECTION_EVIDENCE_MEDIA_TYPE,
@@ -63,8 +72,12 @@ from spiral_harness.experiments.bfcl_v4_public_runner_contracts import (
     BfclV4PublicPilotRunVerification,
     BfclV4RunnerHarnessArtifact,
 )
+from spiral_harness.experiments.bfcl_v4_public_runner_lineage import (
+    verify_bfcl_v4_public_runner_evidence_lineage,
+)
 from spiral_harness.experiments.bfcl_v4_public_runner_support import (
     BfclV4PublicRunnerError,
+    BfclV4RunnerCallRecord,
     load_canonical_model,
     materialize_solver_request,
 )
@@ -166,6 +179,7 @@ def verify_bfcl_v4_public_pilot_result(
     identity_coordinates: list[tuple[str | None, str | None]] = []
     charged_tokens = 0
     backend_coordinates: set[tuple[str, str, str, str]] = set()
+    call_records: list[BfclV4RunnerCallRecord] = []
     for index, slot in enumerate(plan.calls):
         outcome_ref = result.attempt_outcome_refs[index]
         execution_ref = result.native_execution_refs[index]
@@ -319,6 +333,53 @@ def verify_bfcl_v4_public_pilot_result(
             outcome.disposition is AttemptDisposition.SETTLED
         ):
             raise BfclV4PublicRunnerError("provider failure was represented as successful")
+
+        prediction = None
+        grader_receipt = None
+        pure_at_b_sample = None
+        if completion.prediction_ref is not None:
+            if completion.model_output_ref != completion.prediction_ref:
+                raise BfclV4PublicRunnerError("gradable completion model output is not prediction")
+            prediction = load_canonical_model(
+                repository,
+                completion.prediction_ref,
+                BfclV4PublicPrediction,
+                media_type=BFCL_V4_RUNNER_PREDICTION_MEDIA_TYPE,
+            )
+            grader_receipt = load_canonical_model(
+                repository,
+                completion.grader_receipt_ref,  # type: ignore[arg-type]
+                BfclV4PublicGraderReceipt,
+                media_type=BFCL_V4_RUNNER_GRADER_RECEIPT_MEDIA_TYPE,
+            )
+        elif slot.kind is BfclV4PilotCallKind.PURE_AT_B_SAMPLE:
+            pure_at_b_sample = load_canonical_model(
+                repository,
+                completion.model_output_ref,
+                BfclV4PureAtBSample,
+                media_type=BFCL_V4_RUNNER_PURE_AT_B_SAMPLE_MEDIA_TYPE,
+            )
+        execution_record = NativeFunctionExecutionRecord(
+            execution=execution,
+            request_ref=execution.request_ref,
+            response_ref=execution.response_ref,
+            reservation_ref=outcome.reservation_ref,
+            execution_ref=execution_ref,
+            outcome_ref=outcome_ref,
+        )
+        call_records.append(
+            BfclV4RunnerCallRecord(
+                slot=slot,
+                materialization=materialization,
+                materialization_ref=completion.materialization_ref,
+                completion=completion,
+                completion_ref=completion_ref,
+                execution_record=execution_record,
+                prediction=prediction,
+                grader_receipt=grader_receipt,
+                pure_at_b_sample=pure_at_b_sample,
+            )
+        )
         response = execution.response
         if (
             execution.status is ExecutionStatus.COMPLETED
@@ -401,6 +462,18 @@ def verify_bfcl_v4_public_pilot_result(
         or metrics.holdout_evidence_fingerprint != holdout.fingerprint
     ):
         raise BfclV4PublicRunnerError("selection/HOLDOUT/metrics lineage changed")
+    verify_bfcl_v4_public_runner_evidence_lineage(
+        repository,
+        plan=plan,
+        result=result,
+        closure=closure,
+        records=tuple(call_records),
+        tasks_by_id=tasks_by_id,
+        evidence=evidence,
+        decision=decision,
+        holdout=holdout,
+        metrics=metrics,
+    )
     return BfclV4PublicPilotRunVerification(
         result_fingerprint=result.fingerprint,
         plan_fingerprint=plan.fingerprint,

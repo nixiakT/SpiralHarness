@@ -88,6 +88,7 @@ from spiral_harness.experiments.bfcl_v4_public_runner_holdout import (
 from spiral_harness.experiments.bfcl_v4_public_runner_support import (
     BfclV4PublicRunnerError,
     BfclV4RunnerCallRecord,
+    completed_native_response,
     load_canonical_model,
     make_harness_artifact,
     materialize_solver_request,
@@ -397,7 +398,8 @@ class BfclV4PublicPilotRunner:
             fallback_used=fallback,
             task_fingerprint=task.fingerprint,
         )
-        prediction = prediction_from_response(task.task_id, execution.execution.response)
+        response = completed_native_response(execution.execution)
+        prediction = prediction_from_response(task.task_id, response)
         prediction_ref = publish_model(
             self.repository,
             prediction,
@@ -452,7 +454,7 @@ class BfclV4PublicPilotRunner:
             fallback_used=False,
             task_fingerprint=prompt.fingerprint,
         )
-        response = execution.execution.response
+        response = completed_native_response(execution.execution)
         if isinstance(prompt, BfclV4DiagnosisPrompt):
             parsed = parse_bfcl_v4_diagnosis(prompt, response)
             media_type = BFCL_V4_RUNNER_DIAGNOSIS_MEDIA_TYPE
@@ -580,7 +582,8 @@ class BfclV4PublicPilotRunner:
             fallback_used=False,
             task_fingerprint=task.fingerprint,
         )
-        sample = pure_at_b_sample_from_response(slot, execution.execution.response)
+        response = completed_native_response(execution.execution)
+        sample = pure_at_b_sample_from_response(slot, response)
         sample_ref = publish_model(
             self.repository,
             sample,
@@ -684,7 +687,6 @@ def run_bfcl_v4_public_pilot_replicate(
     attempt_ledger_id: str = "bfcl-v4-public-pilot/replicate-001",
 ) -> BfclV4PublicPilotRunRecord:
     """Execute exactly one frozen public/development replicate with no retry."""
-
     return BfclV4PublicPilotRunner(
         repository,
         checkout=checkout,
@@ -694,6 +696,4 @@ def run_bfcl_v4_public_pilot_replicate(
         outer_seed_u64=outer_seed_u64,
         attempt_ledger_id=attempt_ledger_id,
     ).run()
-
-
 __all__ = ["BfclV4PublicPilotRunner", "run_bfcl_v4_public_pilot_replicate"]

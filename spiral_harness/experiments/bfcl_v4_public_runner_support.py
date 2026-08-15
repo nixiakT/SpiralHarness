@@ -37,6 +37,7 @@ from spiral_harness.core.models import ArtifactRef
 from spiral_harness.execution.contracts import ExecutionStatus, FrozenModelSpec
 from spiral_harness.execution.native_function_contracts import (
     NATIVE_FUNCTION_REQUEST_MEDIA_TYPE,
+    NativeFunctionExecution,
     NativeFunctionExecutionRecord,
 )
 from spiral_harness.experiments.bfcl_v4_public_native import (
@@ -225,6 +226,14 @@ def prediction_from_response(
     return make_bfcl_v4_public_prediction(task_id, calls)
 
 
+def completed_native_response(
+    execution: NativeFunctionExecution,
+) -> NativeFunctionCallResponse | None:
+    """Expose a retained response only when its provider attempt completed."""
+
+    return execution.response if execution.status is ExecutionStatus.COMPLETED else None
+
+
 def pure_at_b_sample_from_response(
     slot: BfclV4PilotCallSlot,
     response: NativeFunctionCallResponse | None,
@@ -275,6 +284,7 @@ def is_meta_slot(slot: BfclV4PilotCallSlot) -> bool:
 __all__ = [
     "BfclV4PublicRunnerError",
     "BfclV4RunnerCallRecord",
+    "completed_native_response",
     "is_meta_slot",
     "load_canonical_model",
     "make_harness_artifact",
