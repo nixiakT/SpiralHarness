@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Literal, Self
 
 from pydantic import model_validator
@@ -15,6 +16,10 @@ from spiral_harness.benchmark.bfcl_v4_public_development_v2_call_plan_contracts 
 )
 from spiral_harness.benchmark.bfcl_v4_public_development_v2_campaign_contracts import (
     BfclV4PublicDevelopmentV2CampaignPlan,
+)
+from spiral_harness.benchmark.bfcl_v4_public_v2_semantic_pairwise_v4_release_contracts import (
+    BFCL_V4_PUBLIC_V2_PAIRWISE_V4_DEVELOPMENT_RELEASE_MEDIA_TYPE,
+    BfclV4PublicV2PairwiseV4DevelopmentRelease,
 )
 from spiral_harness.benchmark.bfcl_v4_public_v2_semantic_release_contracts import (
     BFCL_V4_PUBLIC_V2_SEMANTIC_DEVELOPMENT_RELEASE_MEDIA_TYPE,
@@ -46,6 +51,13 @@ BFCL_V4_PUBLIC_V2_LIVE_ATTEMPT_BUDGET = AttemptBudget(
 )
 
 
+class BfclV4PublicV2SemanticReleaseEvidenceShape(StrEnum):
+    """Typed evidence shape accepted by the live campaign boundary."""
+
+    LEGACY_SINGLE_PACKET_V1 = "legacy-single-packet-v1"
+    CHUNKED_PAIRWISE_COMPOSITE_V4 = "chunked-pairwise-composite-v4"
+
+
 class BfclV4PublicV2LiveExecutionConfig(ImmutableModel):
     """Credential-free activation binding all five arms to one exact route."""
 
@@ -60,6 +72,9 @@ class BfclV4PublicV2LiveExecutionConfig(ImmutableModel):
     )
     semantic_release_ref: ArtifactRef
     semantic_release_fingerprint: Sha256
+    semantic_release_evidence_shape: BfclV4PublicV2SemanticReleaseEvidenceShape = (
+        BfclV4PublicV2SemanticReleaseEvidenceShape.LEGACY_SINGLE_PACKET_V1
+    )
     model_spec: FrozenModelSpec
     model_spec_fingerprint: Sha256
     backend_fingerprint: Sha256
@@ -106,9 +121,16 @@ class BfclV4PublicV2LiveExecutionConfig(ImmutableModel):
             or self.catalog_observation.fallback_used
         ):
             raise ValueError("BFCL v2 live activation lacks the exact direct model route")
+        expected_release_media_type = {
+            BfclV4PublicV2SemanticReleaseEvidenceShape.LEGACY_SINGLE_PACKET_V1: (
+                BFCL_V4_PUBLIC_V2_SEMANTIC_DEVELOPMENT_RELEASE_MEDIA_TYPE
+            ),
+            BfclV4PublicV2SemanticReleaseEvidenceShape.CHUNKED_PAIRWISE_COMPOSITE_V4: (
+                BFCL_V4_PUBLIC_V2_PAIRWISE_V4_DEVELOPMENT_RELEASE_MEDIA_TYPE
+            ),
+        }[self.semantic_release_evidence_shape]
         if (
-            self.semantic_release_ref.media_type
-            != BFCL_V4_PUBLIC_V2_SEMANTIC_DEVELOPMENT_RELEASE_MEDIA_TYPE
+            self.semantic_release_ref.media_type != expected_release_media_type
             or self.semantic_release_ref.sha256 != self.semantic_release_fingerprint
         ):
             raise ValueError("BFCL v2 live activation cites the wrong semantic release")
@@ -153,7 +175,9 @@ def freeze_bfcl_v4_public_v2_live_execution_config(
     *,
     catalog_observation: BfclV4PublicLiveModelCatalogObservation,
     campaign: BfclV4PublicDevelopmentV2CampaignPlan,
-    verified_semantic_release: BfclV4PublicV2SemanticDevelopmentRelease,
+    verified_semantic_release: (
+        BfclV4PublicV2SemanticDevelopmentRelease | BfclV4PublicV2PairwiseV4DevelopmentRelease
+    ),
     backend_name: str,
     backend_fingerprint: str,
     serializer_fingerprint: str,
@@ -170,10 +194,20 @@ def freeze_bfcl_v4_public_v2_live_execution_config(
         campaign,
         strict=True,
     )
-    checked_release = BfclV4PublicV2SemanticDevelopmentRelease.model_validate(
-        verified_semantic_release,
-        strict=True,
-    )
+    if type(verified_semantic_release) is BfclV4PublicV2SemanticDevelopmentRelease:
+        checked_release = BfclV4PublicV2SemanticDevelopmentRelease.model_validate(
+            verified_semantic_release,
+            strict=True,
+        )
+        release_shape = BfclV4PublicV2SemanticReleaseEvidenceShape.LEGACY_SINGLE_PACKET_V1
+    elif type(verified_semantic_release) is BfclV4PublicV2PairwiseV4DevelopmentRelease:
+        checked_release = BfclV4PublicV2PairwiseV4DevelopmentRelease.model_validate(
+            verified_semantic_release,
+            strict=True,
+        )
+        release_shape = BfclV4PublicV2SemanticReleaseEvidenceShape.CHUNKED_PAIRWISE_COMPOSITE_V4
+    else:
+        raise TypeError("verified semantic release has an unsupported evidence shape")
     if (
         checked_campaign.fingerprint != BFCL_V4_PUBLIC_DEVELOPMENT_V2_CAMPAIGN_FINGERPRINT
         or checked_campaign.node_schedule_content_sha256
@@ -197,6 +231,7 @@ def freeze_bfcl_v4_public_v2_live_execution_config(
         catalog_observation_fingerprint=checked_catalog.fingerprint,
         semantic_release_ref=checked_release.ref,
         semantic_release_fingerprint=checked_release.fingerprint,
+        semantic_release_evidence_shape=release_shape,
         model_spec=spec,
         model_spec_fingerprint=spec.fingerprint,
         backend_fingerprint=backend_fingerprint,

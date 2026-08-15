@@ -477,6 +477,24 @@ def verify_bfcl_v4_public_v2_semantic_distribution_integrity(
     )
 
 
+def verify_bfcl_v4_public_v2_semantic_packet_mapping_integrity(
+    reviewer_packet: BfclV4PublicV2SemanticReviewerPacket,
+    trusted_mapping: BfclV4PublicV2SemanticTrustedMapping,
+    *,
+    runtime_hmac_secret: bytes,
+) -> tuple[
+    BfclV4PublicV2SemanticReviewerPacket,
+    BfclV4PublicV2SemanticTrustedMapping,
+]:
+    """Verify the live HMAC-bound packet/mapping pair without inventing a session."""
+
+    return _verify_packet_mapping(
+        reviewer_packet,
+        trusted_mapping,
+        runtime_hmac_secret,
+    )
+
+
 def verify_bfcl_v4_public_v2_semantic_distribution_receipt(
     receipt: BfclV4PublicV2SemanticDistributionReceipt,
     reviewer_packet: BfclV4PublicV2SemanticReviewerPacket,
@@ -562,4 +580,5 @@ __all__ = [
     "validate_bfcl_v4_public_v2_semantic_reviewer_response",
     "verify_bfcl_v4_public_v2_semantic_distribution_integrity",
     "verify_bfcl_v4_public_v2_semantic_distribution_receipt",
+    "verify_bfcl_v4_public_v2_semantic_packet_mapping_integrity",
 ]

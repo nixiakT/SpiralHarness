@@ -24,6 +24,7 @@ from spiral_harness.experiments.bfcl_v4_public_live_config import (
 from spiral_harness.experiments.bfcl_v4_public_v2_live_config import (
     BFCL_V4_PUBLIC_V2_LIVE_ATTEMPT_BUDGET,
     BfclV4PublicV2LiveExecutionConfig,
+    BfclV4PublicV2SemanticReleaseEvidenceShape,
     freeze_bfcl_v4_public_v2_live_execution_config,
 )
 
@@ -81,6 +82,10 @@ def test_live_config_binds_one_model_inference_budget_plan_and_release() -> None
     assert config.attempt_budget.max_attempts == 1_086
     assert config.semantic_release_ref == _release().ref
     assert (
+        config.semantic_release_evidence_shape
+        is BfclV4PublicV2SemanticReleaseEvidenceShape.LEGACY_SINGLE_PACKET_V1
+    )
+    assert (
         config.semantic_release_ref.media_type
         == BFCL_V4_PUBLIC_V2_SEMANTIC_DEVELOPMENT_RELEASE_MEDIA_TYPE
     )
@@ -130,5 +135,26 @@ def test_release_ref_and_attempt_budget_tampering_fail_closed() -> None:
                 **config.model_dump(mode="python"),
                 "attempt_budget": smaller,
                 "attempt_budget_fingerprint": smaller.fingerprint,
+            }
+        )
+
+
+def test_release_shape_cannot_be_changed_independently_of_its_media_type() -> None:
+    config = _config()
+
+    with pytest.raises(ValidationError, match="wrong semantic release"):
+        BfclV4PublicV2LiveExecutionConfig(
+            **{
+                **config.model_dump(mode="python"),
+                "semantic_release_evidence_shape": (
+                    BfclV4PublicV2SemanticReleaseEvidenceShape.CHUNKED_PAIRWISE_COMPOSITE_V4
+                ),
+            }
+        )
+    with pytest.raises(ValidationError):
+        BfclV4PublicV2LiveExecutionConfig(
+            **{
+                **config.model_dump(mode="python"),
+                "semantic_release_evidence_shape": "unsupported-v5",
             }
         )
