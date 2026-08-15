@@ -109,6 +109,9 @@ def _session(
         requested_model=declaration.model_name,
         provider_reported_model=declaration.model_name,
         provider_seed_u64=declaration.model_generation_seed_u64,
+        input_tokens=1_000,
+        output_tokens=2_000,
+        total_tokens=3_000,
     )
     return BfclV4PublicV2SemanticReviewSessionEvidence(
         reviewer_declaration=declaration,

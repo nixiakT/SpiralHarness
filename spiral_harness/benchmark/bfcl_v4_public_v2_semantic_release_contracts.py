@@ -76,7 +76,11 @@ class BfclV4PublicV2SemanticReviewExecutionAttestation(ImmutableModel):
     provider_response_id: NonEmptyStr
     requested_model: NonEmptyStr
     provider_reported_model: NonEmptyStr
+    provider_system_fingerprint: NonEmptyStr | None = None
     provider_seed_u64: Annotated[int, Field(ge=0, le=2**64 - 1, strict=True)]
+    input_tokens: Annotated[int, Field(ge=0, strict=True)]
+    output_tokens: Annotated[int, Field(ge=0, strict=True)]
+    total_tokens: Annotated[int, Field(ge=0, strict=True)]
     provider_attempts: Literal[1] = 1
     http_status: Literal[200] = 200
     direct_openai_compatible_session_operator_attested: Literal[True] = True
@@ -90,6 +94,12 @@ class BfclV4PublicV2SemanticReviewExecutionAttestation(ImmutableModel):
     possible_answers_present: Literal[False] = False
     scores_present: Literal[False] = False
     model_campaign_started: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _bind_usage(self) -> Self:
+        if self.total_tokens != self.input_tokens + self.output_tokens:
+            raise ValueError("semantic review token usage is inconsistent")
+        return self
 
     @property
     def fingerprint(self) -> str:

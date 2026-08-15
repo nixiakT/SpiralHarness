@@ -62,8 +62,17 @@ false:
 
 The direct-session evidence is an operator attestation that binds credential-
 free hashes of the request and raw response plus the provider response ID,
-reported model, seed, HTTP status, and single-attempt policy. Credentials and
-raw secrets are never serialized.
+reported model, optional system fingerprint, exact input/output token usage,
+seed, HTTP status, and single-attempt policy. Credentials and raw secrets are
+never serialized.
+
+The live adapter freezes one label-invariant grouping prompt, requires strict
+JSON with exact packet-order coverage, disables redirects and environment
+proxies, and permits exactly one provider attempt. It rejects truncation,
+model-route mismatch, duplicate JSON keys, non-finite numbers, malformed token
+usage, reordered opaque IDs, and markdown-wrapped output. The review request
+contains the reviewer packet and protocol prompt only. The trusted mapping and
+HMAC secret never cross the provider boundary.
 
 This procedural authority is sufficient only for a transparent descriptive
 public-development run. Every released result must retain
