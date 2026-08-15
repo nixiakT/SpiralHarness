@@ -438,19 +438,12 @@ class BfclV4PublicV2TrustedGrader:
             )
         return checked
 
-    def _run_worker(
+    def _run_worker_calls(
         self,
         *,
         task: BfclV4PublicDevelopmentV2Task,
-        request: BfclV4PublicV2TrustedGradeRequest,
+        calls: tuple[dict[str, Any], ...],
     ) -> bool:
-        calls = tuple(
-            {
-                "arguments": json.loads(call.canonical_arguments_json),
-                "function_name": call.official_name,
-            }
-            for call in request.raw_response.tool_calls
-        )
         payload = {
             "calls": calls,
             "candidate_payload_sha256": task.candidate_payload_sha256,
@@ -507,6 +500,21 @@ class BfclV4PublicV2TrustedGrader:
             raise BfclV4PublicV2TrustedGraderError("isolated BFCL grader receipt binding changed")
         return output["correct"]
 
+    def _run_worker(
+        self,
+        *,
+        task: BfclV4PublicDevelopmentV2Task,
+        request: BfclV4PublicV2TrustedGradeRequest,
+    ) -> bool:
+        calls = tuple(
+            {
+                "arguments": json.loads(call.canonical_arguments_json),
+                "function_name": call.official_name,
+            }
+            for call in request.raw_response.tool_calls
+        )
+        return self._run_worker_calls(task=task, calls=calls)
+
     def grade(
         self,
         request: BfclV4PublicV2TrustedGradeRequest,
@@ -537,7 +545,6 @@ class BfclV4PublicV2TrustedGrader:
             },
             BfclV4PublicDevelopmentV2Split.HOLDOUT: {
                 BfclV4PublicDevelopmentV2NodeKind.HOLDOUT,
-                BfclV4PublicDevelopmentV2NodeKind.PURE_AT_B_SAMPLE,
             },
         }[split]
         if registered_node.kind not in expected_kinds:

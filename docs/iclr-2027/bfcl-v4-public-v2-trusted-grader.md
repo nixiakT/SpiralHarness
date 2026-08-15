@@ -39,13 +39,18 @@ The grader accepts only these split/kind combinations:
 | --- | --- |
 | FIT | `parent-fit`, `candidate-fit` |
 | GATE | `gate` |
-| HOLDOUT | `holdout`, `pure-at-b-sample` |
+| HOLDOUT | `holdout` |
 
 Diagnosis, proposal, nomination, and decision nodes are not gradeable. The
 submitted node must equal its unique campaign node, and its plan fingerprint,
 schedule hash, node hash, global call slot, provider seed, request fingerprint,
 native request/response adapter hashes, tool mapping, model route, inference
 configuration, and token ceilings are revalidated before any answer is read.
+
+`pure-at-b-sample` is deliberately absent from the single-response interface.
+Its 330 source calls must remain label-free: journal events carry no binary
+grade, trusted-grade request, trusted-grade receipt, or consumed grader
+attempt. PURE@B has a separate aggregate-only boundary described below.
 
 ## HOLDOUT authority
 
@@ -64,6 +69,34 @@ Changing any field invalidates the HMAC. Non-HOLDOUT calls reject an unlock.
 
 No production semantic release or authority secret is stored in this
 repository, so the checked-in default remains fail-closed.
+
+## PURE@B atomic aggregate grading
+
+PURE@B exposes no public single-cell or single-sample grade operation. The
+only entry point accepts one `BfclV4PublicV2PureAtBBatchGradeRequest` containing
+exactly 48 cells in frozen outer-seed × HOLDOUT-task order. Together those
+cells must reference all 330 unique `pure-at-b-sample` nodes and events.
+
+Each cell binds its exact 6-or-7-call allocation, complete source nodes and
+events, aggregation rule, recomputed modal result, selected canonical response,
+semantic release, decision barrier, and authenticated evaluation unlock. A
+provider-free builder can construct this request from the frozen campaign,
+complete journal events, and the 48 independently replayed aggregation records.
+
+The trusted runtime operates in two passes. First it strictly revalidates the
+complete batch, exact campaign nodes and provider-request lineage, every source
+event, every non-empty canonical response, and every recomputed modal result.
+No worker runs during this pass. Only after all 48 cells pass does the second
+pass grade each final selected modal response once. A selected no-response is
+deterministically false without starting the answer-reading worker. Thus the
+batch always records 48 final grader attempts, while isolated-worker execution
+count equals only the number of selected-response cells; individual-sample
+grade count remains zero.
+
+The batch receipt contains 48 minimal cell receipts and binds each selected
+canonical response itself, its complete source set, allocation, aggregation,
+release, barrier, unlock, and trusted implementation. It contains no upstream
+task ID, answer, answer-derived identity, or checker diagnostic.
 
 ## Minimal receipt
 
@@ -94,7 +127,16 @@ grader, call `issue_evaluation_unlock()` with independently replayed barrier
 evidence, and pass that unlock to `grade()`. Callers never submit an answer,
 split, task ID, expected label, or checker diagnostic.
 
+For PURE@B, build the complete request with
+`build_bfcl_v4_public_v2_pure_at_b_batch_grade_request(...)` and call
+`grade_bfcl_v4_public_v2_pure_at_b_batch(grader, batch)`. Passing fewer than
+48 cells, a graded sample event, or a forged modal result fails before answer
+access.
+
 The contract owner is
 `spiral_harness.benchmark.bfcl_v4_public_v2_trusted_grader_contracts`; runtime
 entry points are in
 `spiral_harness.benchmark.bfcl_v4_public_v2_trusted_grader`.
+PURE@B aggregate contracts and runtime are owned by the corresponding
+`bfcl_v4_public_v2_pure_at_b_trusted_grader_contracts` and
+`bfcl_v4_public_v2_pure_at_b_trusted_grader` leaves.

@@ -586,3 +586,20 @@ def test_unlock_instance_revalidation_rejects_barrier_fingerprint_tamper(
 
     with pytest.raises(ValueError, match="revalidation failed"):
         authorized_grader.grade(request, evaluation_unlock=malformed)
+
+
+def test_single_pure_at_b_sample_cannot_use_ordinary_grader(
+    authorized_grader: BfclV4PublicV2TrustedGrader,
+    campaign: BfclV4PublicDevelopmentV2CampaignPlan,
+    loaded: BfclV4LoadedPublicDevelopmentV2,
+) -> None:
+    unlock = authorized_grader.issue_evaluation_unlock(_barrier_evidence(authorized_grader))
+    request = _grade_request(
+        campaign,
+        loaded,
+        kind=BfclV4PublicDevelopmentV2NodeKind.PURE_AT_B_SAMPLE,
+        task_ref="holdout-00",
+    )
+
+    with pytest.raises(ValueError, match="node kind differs"):
+        authorized_grader.grade(request, evaluation_unlock=unlock)
