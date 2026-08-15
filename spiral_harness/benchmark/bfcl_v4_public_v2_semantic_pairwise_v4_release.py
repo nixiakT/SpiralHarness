@@ -224,6 +224,12 @@ def issue_bfcl_v4_public_v2_pairwise_v4_development_release(
         ):
             _reject(BfclV4PublicV2PairwiseV4ReleaseFailureStage.EVIDENCE_BINDING)
         _assert_independent((*primary, adjudicator))
+        adjudicated_relations = _relations(adjudicator)
+        if any(
+            pair not in disagreements and adjudicated_relations[pair] is not left[pair]
+            for pair in left
+        ):
+            _reject(BfclV4PublicV2PairwiseV4ReleaseFailureStage.DISAGREEMENT_ARBITRATION)
         final = adjudicator
     else:
         if adjudicator_composite_evidence is not None:

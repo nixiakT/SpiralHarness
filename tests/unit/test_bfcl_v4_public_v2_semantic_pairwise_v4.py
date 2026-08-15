@@ -531,12 +531,13 @@ def test_release_rejects_provider_response_reuse_across_reviewers(
 
 
 def test_disagreement_requires_independent_composite_adjudicator(projection, closure) -> None:
-    same_boundary = tuple(
+    holdout_items = tuple(
         entry.opaque_item_id
         for entry in projection.trusted_mapping.entries
         if entry.private_boundary_label
         is projection_subject.BfclV4PublicV2SemanticPrivateBoundary.HOLDOUT
-    )[:2]
+    )
+    same_boundary = holdout_items[:2]
     primary = (
         _composite(
             projection,
@@ -582,6 +583,27 @@ def test_disagreement_requires_independent_composite_adjudicator(projection, clo
     assert release.reviewer_count == 3
     assert release.composite_call_count == 45
     assert release.primary_pairwise_disagreement_count == 1
+
+    consensus_overriding_adjudicator = _composite(
+        projection,
+        closure,
+        BfclV4PublicV2PairwiseV4ReviewerRole.ADJUDICATOR,
+        23,
+        (holdout_items[2:4],),
+    )
+    with pytest.raises(BfclV4PublicV2PairwiseV4ReleaseError) as captured:
+        issue_bfcl_v4_public_v2_pairwise_v4_development_release(
+            projection.reviewer_packet,
+            projection.trusted_mapping,
+            closure,
+            primary,
+            runtime_hmac_secret=SECRET,
+            adjudicator_composite_evidence=consensus_overriding_adjudicator,
+        )
+    assert (
+        captured.value.failure_stage
+        is BfclV4PublicV2PairwiseV4ReleaseFailureStage.DISAGREEMENT_ARBITRATION
+    )
 
 
 def test_cross_boundary_family_and_mapping_tamper_fail_closed(projection, closure) -> None:

@@ -64,8 +64,11 @@ If any of their 780 decisions differs, a third independent 15-call adjudicator
 composite is mandatory; an unsolicited adjudicator is rejected when the
 primaries agree. Reviewer nonces, seed roots, declared reviewer/model/weight
 coordinates, and all provider response IDs must be distinct across the admitted
-composites. The selected final equivalence classes are remapped only in the
-trusted plane. Any class spanning a private semantic boundary rejects release.
+composites. The adjudicator must preserve every pair on which the primaries
+agree; only primary disagreements may change. Its complete relation therefore
+also proves that those resolutions remain jointly transitive. The selected
+final equivalence classes are remapped only in the trusted plane. Any class
+spanning a private semantic boundary rejects release.
 
 The release binds the packet, live-HMAC-verified trusted mapping, predecessor
 closure, composite evidence and relation references, disagreement count, final
