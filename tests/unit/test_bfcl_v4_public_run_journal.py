@@ -16,6 +16,9 @@ from spiral_harness.benchmark.bfcl_v4_public_grader import (
 from spiral_harness.benchmark.bfcl_v4_public_grader_contracts import (
     BfclV4GradingSlotBinding,
 )
+from spiral_harness.benchmark.bfcl_v4_public_pilot_plan import (
+    build_bfcl_v4_public_pilot_call_plan,
+)
 from spiral_harness.benchmark.bfcl_v4_public_pilot_plan_contracts import (
     BfclV4PilotArm,
     BfclV4PilotCallKind,
@@ -187,6 +190,19 @@ def test_candidate_contract_forces_exact_parent_fallback(tmp_path: Path) -> None
             candidate_valid=False,
             fallback_used=False,
         )
+
+
+def test_journal_accepts_each_repository_frozen_campaign_plan(tmp_path: Path) -> None:
+    for outer_seed in (2_026_081_501, 2_026_081_502, 2_026_081_503):
+        store = ArtifactStore(tmp_path / str(outer_seed))
+        plan = build_bfcl_v4_public_pilot_call_plan(outer_seed)
+        journal = BfclV4PublicRunJournal(store, plan=plan)
+
+        assert journal.plan == plan
+        tail = journal.open()
+        events, state = replay_bfcl_v4_public_run(store, tail, plan=plan)
+        assert len(events) == 1
+        assert state.plan_fingerprint == plan.fingerprint
 
 
 def test_semantic_barriers_cas_and_offline_100_call_closure(

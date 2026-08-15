@@ -124,7 +124,7 @@ def _plan(value: BfclV4PublicPilotCallPlan | None) -> BfclV4PublicPilotCallPlan:
         checked_plan = BfclV4PublicPilotCallPlan.model_validate(chosen, strict=True)
     except Exception as exc:
         raise BfclV4RunIntegrityError("BFCL call plan is not the frozen typed plan") from exc
-    expected = build_bfcl_v4_public_pilot_call_plan()
+    expected = build_bfcl_v4_public_pilot_call_plan(checked_plan.outer_seed_u64)
     if checked_plan != expected:
         raise BfclV4RunIntegrityError("BFCL call plan differs from the repository-frozen plan")
     return checked_plan
