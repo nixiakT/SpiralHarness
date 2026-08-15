@@ -1,0 +1,104 @@
+{
+  "schema_version": "2",
+  "upstream": {
+    "repository": "https://github.com/ShishirPatil/gorilla.git",
+    "commit": "6ea57973c7a6097fd7c5915698c54c17c5b1b6c8",
+    "archive_paths": [
+      "LICENSE",
+      "berkeley-function-call-leaderboard"
+    ],
+    "archive_tree": {
+      "file_count": 193,
+      "total_bytes": 13742385,
+      "sha256": "d85faf8b05fc8ccc9624f31d0c9692f4512553ac9f0c2e241b25dde5a3ea866b"
+    },
+    "package_root": "berkeley-function-call-leaderboard/bfcl_eval",
+    "package_tree": {
+      "file_count": 183,
+      "total_bytes": 13513439,
+      "sha256": "3753addd78c10a6e59e3488ffdc5fb38cb46929380925ccfaecfcdb1d8b533b2"
+    }
+  },
+  "distribution": {
+    "name": "bfcl-eval",
+    "version": "2026.3.23",
+    "index": "https://pypi.org/simple",
+    "wheel": {
+      "filename": "bfcl_eval-2026.3.23-py3-none-any.whl",
+      "sha256": "3bb6dfa5f0c68ad403c9ec50b00db2bb3b4cc9b38ab1ff33f48fe30d853d3a0a"
+    },
+    "sdist": {
+      "filename": "bfcl_eval-2026.3.23.tar.gz",
+      "sha256": "4a3869673721fa59be93d8f55ca92d69ab5797058aed792149c6adafda064bc1"
+    }
+  },
+  "lock": {
+    "sha256": "d8ab53a5381badb18ea63684bda79d17a8a46ca7b2b01d58a8af8ba1f5d9ffc3",
+    "package_resolution_record_count": 142,
+    "contains_multi_platform_candidates": true,
+    "contains_sdist_candidates": true,
+    "complete_wheelhouse_bound": false,
+    "installed_artifact_set_bound": false
+  },
+  "runtime": {
+    "python": "3.12.13",
+    "platform_observed": "linux-x86_64-glibc-2.35",
+    "python_executable_observation": {
+      "sha256": "cd6a26a9b2367f36eda6fa4381373d96c96f155b0ef8fae505f9f5e923b1c162",
+      "size": 30845896
+    },
+    "bootstrap_python_executable_observation": {
+      "sha256": "7d51cd6b48b521277f5caa4610a82126e315fa2be4df069823a8b1eeb5bd4a86",
+      "size": 5917224
+    },
+    "uv_executable_observation": {
+      "version_output": "uv 0.11.9 (x86_64-unknown-linux-gnu)",
+      "sha256": "5434c636a4a16dab782045f2da45a8279be21fa81deccaaabf8376b8562c5096",
+      "size": 59738104
+    },
+    "requested_link_mode": "copy",
+    "installed_link_mode_attested": false,
+    "bytecode_preflight_scope": "source-archive-and-project-virtualenv"
+  },
+  "control_files": {
+    ".python-version": {
+      "sha256": "aa0d6581054e6e4ff3f91839deca7a854ad37221b8784d060b42d0f847ff1a3b",
+      "mode": "0644"
+    },
+    "pyproject.toml": {
+      "sha256": "5bfd7a7fd32a16b28d523e02f3b0afd846fc2fa7d490b3600813f1f038065a17",
+      "mode": "0644"
+    },
+    "self_test.py": {
+      "sha256": "8914011cb68e5894380252c203d1a18d31bc2a2811c28d352892b4e9943c46d2",
+      "mode": "0755"
+    },
+    "setup.sh": {
+      "sha256": "aae5b4558b76079d0a6ab24534f83a3556a1d63b16fa2e9fc2dcc6737d6cadc3",
+      "mode": "0755"
+    },
+    "smoke_evaluator.py": {
+      "sha256": "f43589114f6a9e923d8fbdf4c97dc789e1ad422c5df8c5a4d285a09d72e1f5a1",
+      "mode": "0755"
+    },
+    "verify.sh": {
+      "sha256": "d760bc8d3ff0644a67114c6d55823a2ba0c667f99435e15786e2a53a9dce0e2b",
+      "mode": "0755"
+    },
+    "verify_snapshot.py": {
+      "sha256": "903e87f69f9275e14882929b4cef34c55a753b5546c40fdb0ca3e757819fb025",
+      "mode": "0755"
+    }
+  },
+  "attestations": {
+    "dependency_environment_attested": false,
+    "network_isolation_attested": false,
+    "syscall_sandbox_attested": false,
+    "full_cpython_runtime_attested": false,
+    "libc_attested": false,
+    "container_image_attested": false,
+    "provider_identity_attested": false,
+    "hidden_test_evidence": false,
+    "reportable_result": false
+  }
+}

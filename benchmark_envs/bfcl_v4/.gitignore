@@ -1,0 +1,5 @@
+.source/
+.source-stage.*/
+.venv/
+.venv-build-in-progress/
+receipts/
