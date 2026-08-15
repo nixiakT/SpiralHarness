@@ -10,10 +10,12 @@ from spiral_harness.benchmark.bfcl_v4_public_pilot_contracts import (
     BfclV4PilotSplit,
 )
 from spiral_harness.benchmark.bfcl_v4_public_pilot_plan_contracts import (
+    BFCL_V4_PILOT_OUTER_SEEDS_U64,
     BfclV4PilotArm,
     BfclV4PilotCallKind,
     BfclV4PilotCallSlot,
     BfclV4PilotFeedbackView,
+    BfclV4PilotOuterSeed,
     BfclV4PublicPilotCallPlan,
     bfcl_v4_pilot_schedule_content_sha256,
 )
@@ -23,12 +25,18 @@ _GATE_VARIANTS = ("parent", "candidate", "revert", "placebo")
 _SEED_MASK = (1 << 63) - 1
 
 
-def _seed_u63(*coordinate: object) -> int:
+def _checked_outer_seed(outer_seed_u64: int) -> BfclV4PilotOuterSeed:
+    if type(outer_seed_u64) is not int or outer_seed_u64 not in BFCL_V4_PILOT_OUTER_SEEDS_U64:
+        raise ValueError("outer seed is absent from the frozen three-replicate campaign")
+    return outer_seed_u64
+
+
+def _seed_u63(outer_seed_u64: BfclV4PilotOuterSeed, *coordinate: object) -> int:
     digest = hashlib.sha256(
         canonical_json_bytes(
             {
                 "domain": "spiral-bfcl-v4-public-pilot-model-seed/v1",
-                "outer_seed_u64": BFCL_V4_PILOT_OUTER_SEED_U64,
+                "outer_seed_u64": outer_seed_u64,
                 "coordinate": coordinate,
             }
         )
@@ -49,6 +57,7 @@ def _call_id(
 
 def _slot(
     *,
+    outer_seed_u64: BfclV4PilotOuterSeed,
     arm: BfclV4PilotArm,
     arm_slot: int,
     kind: BfclV4PilotCallKind,
@@ -70,7 +79,7 @@ def _slot(
         task_id=task_id,
         harness_variant=variant,
         feedback_view=feedback_view,
-        seed_u63=_seed_u63(*seed_coordinate),
+        seed_u63=_seed_u63(outer_seed_u64, *seed_coordinate),
         depends_on=depends_on,
         requires_both_candidate_artifacts=requires_both_candidate_artifacts,
         requires_both_selection_artifacts=requires_both_selection_artifacts,
@@ -94,9 +103,14 @@ def _all_gate_ids() -> tuple[str, ...]:
     )
 
 
-def _baseline_slots(arm: BfclV4PilotArm, variant: str) -> tuple[BfclV4PilotCallSlot, ...]:
+def _baseline_slots(
+    arm: BfclV4PilotArm,
+    variant: str,
+    outer_seed_u64: BfclV4PilotOuterSeed,
+) -> tuple[BfclV4PilotCallSlot, ...]:
     return tuple(
         _slot(
+            outer_seed_u64=outer_seed_u64,
             arm=arm,
             arm_slot=index,
             kind=BfclV4PilotCallKind.HOLDOUT,
@@ -110,7 +124,10 @@ def _baseline_slots(arm: BfclV4PilotArm, variant: str) -> tuple[BfclV4PilotCallS
     )
 
 
-def _adaptive_slots(arm: BfclV4PilotArm) -> tuple[BfclV4PilotCallSlot, ...]:
+def _adaptive_slots(
+    arm: BfclV4PilotArm,
+    outer_seed_u64: BfclV4PilotOuterSeed,
+) -> tuple[BfclV4PilotCallSlot, ...]:
     fit = _tasks(BfclV4PilotSplit.FIT)
     gate = _tasks(BfclV4PilotSplit.GATE)
     holdout = _tasks(BfclV4PilotSplit.HOLDOUT)
@@ -123,6 +140,7 @@ def _adaptive_slots(arm: BfclV4PilotArm) -> tuple[BfclV4PilotCallSlot, ...]:
     for index, item in enumerate(fit):
         calls.append(
             _slot(
+                outer_seed_u64=outer_seed_u64,
                 arm=arm,
                 arm_slot=index,
                 kind=BfclV4PilotCallKind.PARENT_FIT,
@@ -134,6 +152,7 @@ def _adaptive_slots(arm: BfclV4PilotArm) -> tuple[BfclV4PilotCallSlot, ...]:
     parent_ids = tuple(item.call_id for item in calls)
     calls.append(
         _slot(
+            outer_seed_u64=outer_seed_u64,
             arm=arm,
             arm_slot=5,
             kind=BfclV4PilotCallKind.DIAGNOSIS,
@@ -147,6 +166,7 @@ def _adaptive_slots(arm: BfclV4PilotArm) -> tuple[BfclV4PilotCallSlot, ...]:
     )
     calls.append(
         _slot(
+            outer_seed_u64=outer_seed_u64,
             arm=arm,
             arm_slot=6,
             kind=BfclV4PilotCallKind.PROPOSAL,
@@ -165,6 +185,7 @@ def _adaptive_slots(arm: BfclV4PilotArm) -> tuple[BfclV4PilotCallSlot, ...]:
     for index, item in enumerate(fit, start=7):
         calls.append(
             _slot(
+                outer_seed_u64=outer_seed_u64,
                 arm=arm,
                 arm_slot=index,
                 kind=BfclV4PilotCallKind.CANDIDATE_FIT,
@@ -183,6 +204,7 @@ def _adaptive_slots(arm: BfclV4PilotArm) -> tuple[BfclV4PilotCallSlot, ...]:
         for variant in _GATE_VARIANTS:
             calls.append(
                 _slot(
+                    outer_seed_u64=outer_seed_u64,
                     arm=arm,
                     arm_slot=gate_slot,
                     kind=BfclV4PilotCallKind.GATE,
@@ -197,6 +219,7 @@ def _adaptive_slots(arm: BfclV4PilotArm) -> tuple[BfclV4PilotCallSlot, ...]:
     for index, item in enumerate(holdout, start=20):
         calls.append(
             _slot(
+                outer_seed_u64=outer_seed_u64,
                 arm=arm,
                 arm_slot=index,
                 kind=BfclV4PilotCallKind.HOLDOUT,
@@ -210,7 +233,9 @@ def _adaptive_slots(arm: BfclV4PilotArm) -> tuple[BfclV4PilotCallSlot, ...]:
     return tuple(calls)
 
 
-def _pure_at_b_slots() -> tuple[BfclV4PilotCallSlot, ...]:
+def _pure_at_b_slots(
+    outer_seed_u64: BfclV4PilotOuterSeed,
+) -> tuple[BfclV4PilotCallSlot, ...]:
     calls: list[BfclV4PilotCallSlot] = []
     for task_index, item in enumerate(_tasks(BfclV4PilotSplit.HOLDOUT)):
         count = 4 if task_index < 4 else 3
@@ -218,6 +243,7 @@ def _pure_at_b_slots() -> tuple[BfclV4PilotCallSlot, ...]:
             arm_slot = len(calls)
             calls.append(
                 _slot(
+                    outer_seed_u64=outer_seed_u64,
                     arm=BfclV4PilotArm.PURE_AT_B,
                     arm_slot=arm_slot,
                     kind=BfclV4PilotCallKind.PURE_AT_B_SAMPLE,
@@ -231,14 +257,17 @@ def _pure_at_b_slots() -> tuple[BfclV4PilotCallSlot, ...]:
     return tuple(calls)
 
 
-def build_bfcl_v4_public_pilot_call_plan() -> BfclV4PublicPilotCallPlan:
-    """Build the fixed, nonadaptive 100-call schedule and dependency barriers."""
+def build_bfcl_v4_public_pilot_call_plan(
+    outer_seed_u64: int = BFCL_V4_PILOT_OUTER_SEED_U64,
+) -> BfclV4PublicPilotCallPlan:
+    """Build one frozen 100-call replicate and its dependency barriers."""
 
-    pure = _baseline_slots(BfclV4PilotArm.PURE, "bare")
-    static = _baseline_slots(BfclV4PilotArm.STATIC, "static-frozen")
-    score = _adaptive_slots(BfclV4PilotArm.SCORE)
-    full = _adaptive_slots(BfclV4PilotArm.FULL)
-    pure_at_b = _pure_at_b_slots()
+    checked_outer_seed = _checked_outer_seed(outer_seed_u64)
+    pure = _baseline_slots(BfclV4PilotArm.PURE, "bare", checked_outer_seed)
+    static = _baseline_slots(BfclV4PilotArm.STATIC, "static-frozen", checked_outer_seed)
+    score = _adaptive_slots(BfclV4PilotArm.SCORE, checked_outer_seed)
+    full = _adaptive_slots(BfclV4PilotArm.FULL, checked_outer_seed)
+    pure_at_b = _pure_at_b_slots(checked_outer_seed)
     topological = (
         *score[:5],
         *full[:5],
@@ -265,8 +294,12 @@ def build_bfcl_v4_public_pilot_call_plan() -> BfclV4PublicPilotCallPlan:
     )
     return BfclV4PublicPilotCallPlan(
         manifest_fingerprint=BFCL_V4_PUBLIC_PILOT_MANIFEST.fingerprint,
+        outer_seed_u64=checked_outer_seed,
         calls=calls,
-        schedule_content_sha256=bfcl_v4_pilot_schedule_content_sha256(calls),
+        schedule_content_sha256=bfcl_v4_pilot_schedule_content_sha256(
+            calls,
+            outer_seed_u64=checked_outer_seed,
+        ),
     )
 
 

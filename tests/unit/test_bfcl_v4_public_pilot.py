@@ -19,6 +19,11 @@ from spiral_harness.benchmark.bfcl_v4_public_pilot import (
     select_bfcl_v4_pure_at_b_plurality,
     verify_bfcl_v4_adapter_sources,
 )
+from spiral_harness.benchmark.bfcl_v4_public_pilot_campaign import (
+    BFCL_V4_PUBLIC_PILOT_CAMPAIGN_FINGERPRINT,
+    BFCL_V4_PUBLIC_PILOT_REPLICATE_IDS,
+    build_bfcl_v4_public_pilot_campaign,
+)
 from spiral_harness.benchmark.bfcl_v4_public_pilot_contracts import (
     BFCL_V4_PILOT_EXTERNAL_ROSTER_COMMITMENT,
     BFCL_V4_PILOT_EXTERNAL_SEED_COMMITMENT,
@@ -35,7 +40,9 @@ from spiral_harness.benchmark.bfcl_v4_public_pilot_plan import (
     build_bfcl_v4_public_pilot_call_plan,
 )
 from spiral_harness.benchmark.bfcl_v4_public_pilot_plan_contracts import (
+    BFCL_V4_PILOT_OUTER_SEEDS_U64,
     BFCL_V4_PILOT_SCHEDULE_CONTENT_SHA256,
+    BFCL_V4_PILOT_SCHEDULE_CONTENT_SHA256_BY_OUTER_SEED,
     BfclV4PilotArm,
     BfclV4PilotCallKind,
     BfclV4PilotFeedbackView,
@@ -126,6 +133,7 @@ def test_call_plan_closes_the_frozen_100_call_five_arm_budget() -> None:
     assert plan.external_seed_commitment_sha256 == BFCL_V4_PILOT_EXTERNAL_SEED_COMMITMENT
     assert plan.schedule_content_sha256 == bfcl_v4_pilot_schedule_content_sha256(plan.calls)
     assert plan.schedule_content_sha256 == BFCL_V4_PILOT_SCHEDULE_CONTENT_SHA256
+    assert plan.fingerprint == "2ad745b6d6dfda2c2a91eed0e583ae4d00712bff63993634eb1d9b76809ced4b"
     assert plan.external_seed_derivation_attested is False
     assert all(0 <= call.seed_u63 <= (1 << 63) - 1 for call in plan.calls)
     holdout_ids = {
@@ -136,6 +144,100 @@ def test_call_plan_closes_the_frozen_100_call_five_arm_budget() -> None:
     assert all(call.task_id not in holdout_ids for call in plan.calls[:40])
     assert all(call.task_id in holdout_ids for call in plan.calls[40:])
     assert all(call.requires_both_selection_artifacts for call in plan.calls[40:])
+
+
+def test_campaign_preregisters_three_complete_ordered_search_replicates() -> None:
+    campaign = build_bfcl_v4_public_pilot_campaign()
+    plans = tuple(item.call_plan for item in campaign.replicates)
+
+    assert campaign.fingerprint == BFCL_V4_PUBLIC_PILOT_CAMPAIGN_FINGERPRINT
+    assert tuple(item.replicate_id for item in campaign.replicates) == (
+        BFCL_V4_PUBLIC_PILOT_REPLICATE_IDS
+    )
+    assert tuple(item.outer_seed_u64 for item in campaign.replicates) == (
+        BFCL_V4_PILOT_OUTER_SEEDS_U64
+    )
+    assert tuple(plan.outer_seed_u64 for plan in plans) == BFCL_V4_PILOT_OUTER_SEEDS_U64
+    assert tuple(plan.schedule_content_sha256 for plan in plans) == tuple(
+        BFCL_V4_PILOT_SCHEDULE_CONTENT_SHA256_BY_OUTER_SEED[seed]
+        for seed in BFCL_V4_PILOT_OUTER_SEEDS_U64
+    )
+    assert plans[0] == build_bfcl_v4_public_pilot_call_plan()
+    assert sum(len(plan.calls) for plan in plans) == 300
+    assert campaign.replicate_count == 3
+    assert campaign.model_calls_per_replicate == 100
+    assert campaign.total_model_call_ceiling == 300
+    assert campaign.post_result_seed_addition_allowed is False
+    assert campaign.post_result_seed_removal_allowed is False
+    assert campaign.post_result_seed_reordering_allowed is False
+    assert campaign.replicate_level_adaptive_stopping_allowed is False
+    assert campaign.model_outputs_present is False
+    assert campaign.scores_present is False
+    assert campaign.runtime_execution_attested is False
+
+
+def test_campaign_changes_only_independently_derived_provider_seeds_between_plans() -> None:
+    plans = tuple(item.call_plan for item in build_bfcl_v4_public_pilot_campaign().replicates)
+
+    for call_index in range(100):
+        calls = tuple(plan.calls[call_index] for plan in plans)
+        assert len({call.seed_u63 for call in calls}) == 3
+        assert (
+            len(
+                {
+                    tuple(
+                        (key, value)
+                        for key, value in call.model_dump(mode="python").items()
+                        if key != "seed_u63"
+                    )
+                    for call in calls
+                }
+            )
+            == 1
+        )
+
+    provider_seed_sets = tuple({call.seed_u63 for call in plan.calls} for plan in plans)
+    assert all(
+        provider_seed_sets[left].isdisjoint(provider_seed_sets[right])
+        for left in range(3)
+        for right in range(left + 1, 3)
+    )
+
+
+def test_campaign_rejects_seed_reordering_and_unregistered_outer_seeds() -> None:
+    campaign = build_bfcl_v4_public_pilot_campaign()
+    payload = campaign.model_dump(mode="python")
+    payload["replicates"] = tuple(reversed(payload["replicates"]))
+
+    with pytest.raises(ValidationError, match="IDs, seeds, or order"):
+        type(campaign).model_validate(payload, strict=True)
+    with pytest.raises(ValueError, match="absent from the frozen three-replicate campaign"):
+        build_bfcl_v4_public_pilot_call_plan(2_026_081_504)
+    with pytest.raises(ValueError, match="absent from the frozen three-replicate campaign"):
+        build_bfcl_v4_public_pilot_call_plan(True)
+
+
+def test_registered_replicate_rejects_a_self_consistently_rehashed_seed_mutation() -> None:
+    plan = build_bfcl_v4_public_pilot_call_plan(2_026_081_502)
+    calls = list(plan.calls)
+    used_seeds = {call.seed_u63 for call in calls}
+    replacement_seed = next(seed for seed in range(2**63) if seed not in used_seeds)
+    calls[-1] = type(calls[-1]).model_validate(
+        {
+            **calls[-1].model_dump(mode="python"),
+            "seed_u63": replacement_seed,
+        },
+        strict=True,
+    )
+    payload = plan.model_dump(mode="python")
+    payload["calls"] = tuple(calls)
+    payload["schedule_content_sha256"] = bfcl_v4_pilot_schedule_content_sha256(
+        tuple(calls),
+        outer_seed_u64=plan.outer_seed_u64,
+    )
+
+    with pytest.raises(ValidationError, match="schedule content fingerprint"):
+        type(plan).model_validate(payload, strict=True)
 
 
 def test_score_and_full_have_identical_task_dag_and_paired_seeds() -> None:

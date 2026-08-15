@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Annotated, Literal, Self
 
 from pydantic import Field, model_validator
@@ -17,8 +18,21 @@ from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.models import ImmutableModel, NonEmptyStr, Sha256
 
 _GATE_VARIANTS = ("parent", "candidate", "revert", "placebo")
+BFCL_V4_PILOT_OUTER_SEEDS_U64 = (
+    BFCL_V4_PILOT_OUTER_SEED_U64,
+    2_026_081_502,
+    2_026_081_503,
+)
+BfclV4PilotOuterSeed = Literal[2_026_081_501, 2_026_081_502, 2_026_081_503]
 BFCL_V4_PILOT_SCHEDULE_CONTENT_SHA256 = (
     "d92f9061e2baf224d3aea8cbb1d9ca367345ab0a453ce4b106e3e5a8e2dd783e"
+)
+BFCL_V4_PILOT_SCHEDULE_CONTENT_SHA256_BY_OUTER_SEED = MappingProxyType(
+    {
+        BFCL_V4_PILOT_OUTER_SEED_U64: BFCL_V4_PILOT_SCHEDULE_CONTENT_SHA256,
+        2_026_081_502: "2fb4edb596c1aaf44850038b6fb245e26eb93c779e72f14e417eb66baf7a0fc4",
+        2_026_081_503: "107d2d45fe248836c3d24b9ff5ecd15b6b665213a6e6f424b38a109a762692f0",
+    }
 )
 
 
@@ -92,13 +106,17 @@ class BfclV4PilotCallSlot(ImmutableModel):
 
 def bfcl_v4_pilot_schedule_content_sha256(
     calls: tuple[BfclV4PilotCallSlot, ...],
+    *,
+    outer_seed_u64: BfclV4PilotOuterSeed = BFCL_V4_PILOT_OUTER_SEED_U64,
 ) -> str:
     """Hash exact typed slots under the implementation-owned schedule formula."""
 
+    if type(outer_seed_u64) is not int or outer_seed_u64 not in BFCL_V4_PILOT_OUTER_SEEDS_U64:
+        raise ValueError("outer seed is absent from the frozen three-replicate campaign")
     return canonical_sha256(
         {
             "domain": "spiral-bfcl-v4-public-pilot-call-schedule/v1",
-            "outer_seed_u64": BFCL_V4_PILOT_OUTER_SEED_U64,
+            "outer_seed_u64": outer_seed_u64,
             "calls": calls,
         }
     )
@@ -153,17 +171,17 @@ def _normalized_dependencies(item: BfclV4PilotCallSlot) -> tuple[str, ...]:
 
 
 class BfclV4PublicPilotCallPlan(ImmutableModel):
-    """The exact 100-call five-arm prospective plan."""
+    """One exact 100-call five-arm replicate in the prospective campaign."""
 
     schema_version: Literal["1"] = "1"
     manifest_fingerprint: Sha256
-    outer_seed_u64: Literal[BFCL_V4_PILOT_OUTER_SEED_U64] = BFCL_V4_PILOT_OUTER_SEED_U64
+    outer_seed_u64: BfclV4PilotOuterSeed = BFCL_V4_PILOT_OUTER_SEED_U64
     external_seed_commitment_sha256: Literal[BFCL_V4_PILOT_EXTERNAL_SEED_COMMITMENT] = (
         BFCL_V4_PILOT_EXTERNAL_SEED_COMMITMENT
     )
     external_seed_derivation_attested: Literal[False] = False
     calls: Annotated[tuple[BfclV4PilotCallSlot, ...], Field(min_length=100, max_length=100)]
-    schedule_content_sha256: Literal[BFCL_V4_PILOT_SCHEDULE_CONTENT_SHA256]
+    schedule_content_sha256: Sha256
     total_model_call_ceiling: Literal[100] = 100
     max_provider_attempts_per_call: Literal[1] = 1
     adaptive_stopping: Literal[False] = False
@@ -368,7 +386,17 @@ class BfclV4PublicPilotCallPlan(ImmutableModel):
             raise ValueError("evaluation calls must not receive grader feedback")
         if len({item.seed_u63 for item in pure_at_b}) != 28:
             raise ValueError("PURE@B sample seeds must be distinct")
-        if self.schedule_content_sha256 != bfcl_v4_pilot_schedule_content_sha256(self.calls):
+        computed_schedule_sha256 = bfcl_v4_pilot_schedule_content_sha256(
+            self.calls,
+            outer_seed_u64=self.outer_seed_u64,
+        )
+        expected_schedule_sha256 = BFCL_V4_PILOT_SCHEDULE_CONTENT_SHA256_BY_OUTER_SEED[
+            self.outer_seed_u64
+        ]
+        if (
+            self.schedule_content_sha256 != computed_schedule_sha256
+            or self.schedule_content_sha256 != expected_schedule_sha256
+        ):
             raise ValueError("pilot schedule content fingerprint differs from typed calls")
         return self
 
@@ -378,11 +406,14 @@ class BfclV4PublicPilotCallPlan(ImmutableModel):
 
 
 __all__ = [
+    "BFCL_V4_PILOT_OUTER_SEEDS_U64",
     "BFCL_V4_PILOT_SCHEDULE_CONTENT_SHA256",
+    "BFCL_V4_PILOT_SCHEDULE_CONTENT_SHA256_BY_OUTER_SEED",
     "BfclV4PilotArm",
     "BfclV4PilotCallKind",
     "BfclV4PilotCallSlot",
     "BfclV4PilotFeedbackView",
+    "BfclV4PilotOuterSeed",
     "BfclV4PublicPilotCallPlan",
     "bfcl_v4_pilot_schedule_content_sha256",
 ]
