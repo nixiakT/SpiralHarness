@@ -18,6 +18,10 @@ from typing import Any
 
 _JSON_OBJECT_RE = re.compile(r"\{", re.S)
 _WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
+_EXCERPT_CONTEXT_LINES = 12
+_EXCERPT_MAX_LINES = 48
+_EXCERPT_MAX_SEGMENTS_PER_FILE = 2
+_EXCERPT_MAX_SEGMENTS_TOTAL = 4
 
 
 class SwebenchVerifiedDevError(RuntimeError):
@@ -257,9 +261,32 @@ def _keywords(task: SwebenchVerifiedTask) -> tuple[str, ...]:
     return tuple(preferred[:8])
 
 
+def _excerpt_windows(line_numbers: list[int], total_lines: int) -> tuple[tuple[int, int], ...]:
+    windows: list[tuple[int, int]] = []
+    for line_no in sorted(set(line_numbers)):
+        start = max(line_no - _EXCERPT_CONTEXT_LINES, 1)
+        end = min(line_no + _EXCERPT_CONTEXT_LINES, total_lines)
+        if windows and start <= windows[-1][1] + 4:
+            prior_start, prior_end = windows[-1]
+            merged_end = min(max(prior_end, end), prior_start + _EXCERPT_MAX_LINES - 1)
+            windows[-1] = (prior_start, merged_end)
+            continue
+        if len(windows) >= _EXCERPT_MAX_SEGMENTS_PER_FILE:
+            break
+        windows.append((start, min(end, start + _EXCERPT_MAX_LINES - 1)))
+    return tuple(windows)
+
+
+def _path_priority(path_text: str, line_numbers: list[int], keywords: tuple[str, ...]) -> tuple[int, int, int, str]:
+    lower_path = path_text.lower()
+    keyword_hits = sum(1 for keyword in keywords if keyword.lower() in lower_path)
+    return (-keyword_hits, -len(set(line_numbers)), len(path_text), path_text)
+
+
 def _collect_excerpts(repo_dir: Path, task: SwebenchVerifiedTask) -> tuple[dict[str, object], ...]:
     candidates: dict[str, list[int]] = {}
-    for keyword in _keywords(task):
+    keywords = _keywords(task)
+    for keyword in keywords:
         result = subprocess.run(
             ["rg", "-n", "-m", "2", keyword, "src", "tests"],
             cwd=str(repo_dir),
@@ -276,21 +303,27 @@ def _collect_excerpts(repo_dir: Path, task: SwebenchVerifiedTask) -> tuple[dict[
                 continue
             candidates.setdefault(path_text, []).append(line_no)
     excerpts: list[dict[str, object]] = []
-    for path_text, line_numbers in sorted(candidates.items())[:3]:
+    for path_text, line_numbers in sorted(
+        candidates.items(),
+        key=lambda item: _path_priority(item[0], item[1], keywords),
+    ):
+        if len(excerpts) >= _EXCERPT_MAX_SEGMENTS_TOTAL:
+            break
         path = repo_dir / path_text
         if not path.is_file():
             continue
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        start = max(min(line_numbers) - 8, 1)
-        end = min(max(line_numbers) + 8, len(lines))
-        excerpts.append(
-            {
-                "path": path_text,
-                "start_line": start,
-                "end_line": end,
-                "text": "\n".join(lines[start - 1 : end]),
-            }
-        )
+        for start, end in _excerpt_windows(line_numbers, len(lines)):
+            excerpts.append(
+                {
+                    "path": path_text,
+                    "start_line": start,
+                    "end_line": end,
+                    "text": "\n".join(lines[start - 1 : end]),
+                }
+            )
+            if len(excerpts) >= _EXCERPT_MAX_SEGMENTS_TOTAL:
+                break
     if not excerpts:
         raise SwebenchVerifiedDevError("failed to find any relevant repository excerpts")
     return tuple(excerpts)
