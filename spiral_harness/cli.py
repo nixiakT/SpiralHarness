@@ -17,6 +17,7 @@ from spiral_harness.benchmark.datasets import (
 )
 from spiral_harness.benchmark.gsm8k import GSM8KBenchmarkAdapter
 from spiral_harness.benchmark.gsm8k_smoke import default_smoke_output_dir, run_gsm8k_smoke
+from spiral_harness.benchmark.gaia_validation_dev import run_gaia_validation_dev
 from spiral_harness.benchmark.meta_harness_law import run_law_evaluation
 from spiral_harness.benchmark.meta_harness_symptom import run_symptom_evaluation
 from spiral_harness.benchmark.penguin_public import (
@@ -24,6 +25,7 @@ from spiral_harness.benchmark.penguin_public import (
     verify_penguin_source,
 )
 from spiral_harness.benchmark.skillsbench_smoke import run_dialogue_parser_smoke
+from spiral_harness.benchmark.swebench_verified_dev import run_swebench_verified_dev
 from spiral_harness.cli_bfcl_v4_public_live import bfcl_v4_public_live
 from spiral_harness.cli_development_four_arm import dev_four_arm
 from spiral_harness.core.canonical import canonical_sha256
@@ -355,6 +357,67 @@ def meta_harness_law(
     )
 
 
+@benchmark_app.command("gaia-validation-dev")
+def gaia_validation_dev(
+    dataset_root: Annotated[Path, typer.Option("--dataset-root")] = Path("data/benchmarks/gaia"),
+    split: Annotated[str, typer.Option("--split")] = "validation",
+    subset: Annotated[str, typer.Option("--subset")] = "2023_all",
+    model: Annotated[str, typer.Option("--model")] = "qwen36-35b-a3b",
+    output: Annotated[Path, typer.Option("--output", "-o")] = Path("runs/gaia-validation-dev"),
+    level: Annotated[int | None, typer.Option("--level")] = None,
+    limit: Annotated[int, typer.Option("--limit")] = 8,
+    max_output_tokens: Annotated[int, typer.Option("--max-output-tokens")] = 512,
+    timeout_seconds: Annotated[float, typer.Option("--timeout-seconds")] = 180.0,
+    hf_token_env: Annotated[str, typer.Option("--hf-token-env")] = "HF_TOKEN",
+    base_url_env: Annotated[str, typer.Option("--base-url-env")] = "LITELLM_BASE_URL",
+    api_key_env: Annotated[str, typer.Option("--api-key-env")] = "LITELLM_API_KEY",
+) -> None:
+    """Run a development-only GAIA validation slice once lawful dataset access is configured."""
+
+    base_url = os.environ.get(base_url_env)
+    api_key = os.environ.get(api_key_env)
+    if not base_url or not api_key:
+        raise typer.BadParameter("missing LiteLLM endpoint or API key environment variable")
+    backend = OpenAICompatibleChatBackend.from_endpoint(base_url=base_url, api_key=api_key)
+    payload = run_gaia_validation_dev(
+        output=output,
+        dataset_root=dataset_root,
+        backend=backend,
+        model=model,
+        split=split,
+        subset=subset,
+        level=level,
+        limit=limit,
+        max_output_tokens=max_output_tokens,
+        timeout_seconds=timeout_seconds,
+        hf_token_env=hf_token_env,
+    )
+    typer.echo(
+        json.dumps(
+            {
+                key: payload[key]
+                for key in (
+                    "benchmark",
+                    "subset",
+                    "split",
+                    "model",
+                    "limit",
+                    "level",
+                    "attempted",
+                    "skipped",
+                    "correct",
+                    "accuracy",
+                    "reportable",
+                    "artifact_sha256",
+                    "disclaimer",
+                )
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
 @benchmark_app.command("smoke-bbh")
 def smoke_bbh(
     model: Annotated[str, typer.Option("--model")] = "dashscope/qwen-flash",
@@ -404,6 +467,62 @@ def smoke_bbh(
     summary["artifact_ref"] = result.artifact_ref.model_dump(mode="json")
     summary["output"] = str(output.resolve())
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+
+
+@benchmark_app.command("swebench-verified-dev")
+def swebench_verified_dev(
+    instance_id: Annotated[str, typer.Option("--instance-id")] = "pallets__flask-5014",
+    source: Annotated[str, typer.Option("--source")] = "gold",
+    model: Annotated[str | None, typer.Option("--model")] = None,
+    output: Annotated[Path, typer.Option("--output", "-o")] = Path(
+        "runs/swebench-verified-dev"
+    ),
+    timeout_seconds: Annotated[float, typer.Option("--timeout-seconds")] = 240.0,
+    max_output_tokens: Annotated[int, typer.Option("--max-output-tokens")] = 2048,
+    base_url_env: Annotated[str, typer.Option("--base-url-env")] = "LITELLM_BASE_URL",
+    api_key_env: Annotated[str, typer.Option("--api-key-env")] = "LITELLM_API_KEY",
+) -> None:
+    """Run a development-only local SWE-bench Verified slice on a supported instance."""
+
+    payload = run_swebench_verified_dev(
+        output=output,
+        instance_id=instance_id,
+        model=model,
+        source=source,
+        timeout_seconds=timeout_seconds,
+        max_output_tokens=max_output_tokens,
+        base_url_env=base_url_env,
+        api_key_env=api_key_env,
+    )
+    typer.echo(
+        json.dumps(
+            {
+                key: payload[key]
+                for key in (
+                    "benchmark",
+                    "instance_id",
+                    "repo",
+                    "difficulty",
+                    "source",
+                    "model",
+                    "reportable",
+                    "disclaimer",
+                )
+            }
+            | {
+                "baseline_fail_to_pass_passed": payload["baseline"]["fail_to_pass"]["passed"],
+                "candidate_fail_to_pass_passed": payload["candidate"]["fail_to_pass"]["passed"],
+                "baseline_pass_to_pass_sample_passed": payload["baseline"]["pass_to_pass_sample"][
+                    "passed"
+                ],
+                "candidate_pass_to_pass_sample_passed": payload["candidate"][
+                    "pass_to_pass_sample"
+                ]["passed"],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 @benchmark_app.command("smoke-skillsbench")
