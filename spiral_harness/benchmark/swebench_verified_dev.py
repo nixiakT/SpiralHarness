@@ -18,6 +18,14 @@ from typing import Any
 
 _JSON_OBJECT_RE = re.compile(r"\{", re.S)
 _WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
+_LABELED_PATCH_PLAN_RE = re.compile(
+    r"`?file_path`?\s*:\s*`(?P<file_path>[^`\n]+)`"
+    r".*?"
+    r"`?before`?\s*:\s*```(?:[A-Za-z0-9_+-]+)?\n(?P<before>.*?)```"
+    r".*?"
+    r"`?after`?\s*:\s*```(?:[A-Za-z0-9_+-]+)?\n(?P<after>.*?)```",
+    re.S,
+)
 _EXCERPT_CONTEXT_LINES = 12
 _EXCERPT_MAX_LINES = 48
 _EXCERPT_MAX_SEGMENTS_PER_FILE = 2
@@ -147,6 +155,14 @@ def extract_patch_plan(text: str) -> SwebenchPatchPlan:
                 after=after,
                 explanation=explanation,
             )
+    labeled_match = _LABELED_PATCH_PLAN_RE.search(text)
+    if labeled_match is not None:
+        return SwebenchPatchPlan(
+            file_path=labeled_match.group("file_path").strip(),
+            before=labeled_match.group("before"),
+            after=labeled_match.group("after"),
+            explanation=None,
+        )
     raise SwebenchVerifiedDevError("model output did not contain a valid patch-plan JSON object")
 
 
@@ -338,7 +354,10 @@ def _patch_plan_prompt(task: SwebenchVerifiedTask, excerpts: tuple[dict[str, obj
         "You are fixing a SWE-bench Verified instance.\n"
         "Return exactly one JSON object with keys file_path, before, after, explanation.\n"
         "The before snippet must be copied exactly from one provided excerpt, and the after snippet "
-        "must be the replacement text. Do not output a unified diff. Do not use markdown fences.\n\n"
+        "must be the replacement text. Prefer the smallest self-contained replacement inside a "
+        "function body. Do not replace a partial function signature, unmatched parentheses, or any "
+        "truncated block. If an existing validation block and following assignment are present, edit "
+        "that local block instead. Do not output a unified diff. Do not use markdown fences.\n\n"
         f"Issue:\n{task.problem_statement}\n\nHints:\n{task.hints_text or '(none)'}\n\n"
         f"Relevant repository excerpts:\n{rendered_excerpts}\n"
     )

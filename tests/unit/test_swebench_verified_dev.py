@@ -41,6 +41,27 @@ def test_extract_patch_plan_reads_json_embedded_in_reasoning() -> None:
     assert plan.after == "new"
 
 
+def test_extract_patch_plan_reads_labeled_markdown_blocks() -> None:
+    text = (
+        "Reasoning...\n"
+        "`file_path`: `src/flask/blueprints.py`\n"
+        "`before`:\n"
+        "```python\n"
+        "        self.name = name\n"
+        "```\n"
+        "`after`:\n"
+        "```python\n"
+        "        if not name:\n"
+        "            raise ValueError(\"empty\")\n"
+        "        self.name = name\n"
+        "```\n"
+    )
+    plan = extract_patch_plan(text)
+    assert plan.file_path == "src/flask/blueprints.py"
+    assert plan.before == "        self.name = name\n"
+    assert "raise ValueError" in plan.after
+
+
 def test_excerpt_windows_cap_span_length() -> None:
     windows = _excerpt_windows([12, 180, 220], total_lines=400)
     assert windows == ((1, 24), (168, 192))
