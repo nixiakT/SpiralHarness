@@ -22,6 +22,7 @@ from spiral_harness.benchmark.meta_harness_law import run_law_evaluation
 from spiral_harness.benchmark.meta_harness_symptom import run_symptom_evaluation
 from spiral_harness.benchmark.skillsbench_smoke import run_dialogue_parser_smoke
 from spiral_harness.benchmark.swebench_verified_dev import run_swebench_verified_dev
+from spiral_harness.cli_bfcl_multi_agent import bfcl_multi_agent_compare
 from spiral_harness.cli_bfcl_v4_public_live import bfcl_v4_public_live
 from spiral_harness.cli_development_four_arm import dev_four_arm
 from spiral_harness.cli_penguin_public import penguin_public
@@ -44,6 +45,7 @@ benchmark_app = typer.Typer(
 )
 app.add_typer(benchmark_app, name="benchmark")
 benchmark_app.command("bfcl-v4-public-live")(bfcl_v4_public_live)
+benchmark_app.command("bfcl-multi-agent-compare")(bfcl_multi_agent_compare)
 benchmark_app.command("dev-four-arm")(dev_four_arm)
 benchmark_app.command("penguin-public")(penguin_public)
 

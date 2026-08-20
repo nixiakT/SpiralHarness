@@ -144,6 +144,30 @@ def test_chat_backend_posts_frozen_chat_completion_payload_and_usage() -> None:
     ]
 
 
+def test_chat_backend_binds_and_sends_explicit_thinking_control() -> None:
+    backend = CapturingBackend(
+        {
+            "choices": [{"message": {"content": "[]"}}],
+            "usage": {"prompt_tokens": 2, "completion_tokens": 1},
+        }
+    )
+    object.__setattr__(backend, "enable_thinking", False)
+
+    backend.invoke(spec=spec_for(backend), request=request())
+
+    assert backend.calls[0][1]["enable_thinking"] is False
+    default = OpenAICompatibleChatBackend.from_endpoint(
+        base_url="http://litellm.example/v1",
+        api_key="secret",
+    )
+    no_thinking = OpenAICompatibleChatBackend.from_endpoint(
+        base_url="http://litellm.example/v1",
+        api_key="secret",
+        enable_thinking=False,
+    )
+    assert default.fingerprint != no_thinking.fingerprint
+
+
 def test_pure_backend_posts_only_one_user_message_and_no_harness_fields() -> None:
     backend = CapturingBackend(
         {

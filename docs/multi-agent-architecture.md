@@ -1,8 +1,9 @@
 # Multi-agent self-evolution architecture
 
 > **Status:** implemented score-free kernel with deterministic sequential
-> execution and atomic single-agent instruction evolution. It is an execution
-> and mutation foundation, not evidence that a team improves a benchmark.
+> execution, receipt-backed LiteLLM turns, atomic single-agent instruction
+> evolution, and one non-reportable BFCL public-development comparison. It is
+> not yet confirmatory evidence that a team generally improves benchmarks.
 
 ## Goal
 
@@ -108,7 +109,11 @@ The current kernel establishes:
 - backend identity and response-lineage checks;
 - hard logical byte, turn, and reported-token limits;
 - one-component, one-agent instruction mutation;
-- compatibility with the existing evidence-gated candidate path.
+- compatibility with the existing evidence-gated candidate path;
+- receipt-backed real-model turns through `FixedModelRunner`, the attempt
+  ledger, and the content-addressed artifact repository;
+- an exact-call-count baseline/Harness BFCL development comparison whose result
+  directly closes all 54 execution references and nine team transcripts.
 
 It does not yet establish:
 
@@ -122,16 +127,14 @@ It does not yet establish:
 
 ## Planned increments
 
-1. Add a fixed-model adapter that translates `AgentTurnRequest` into the
-   existing receipt-backed execution plane without weakening score isolation.
-2. Persist each turn through the attempt ledger and artifact repository rather
-   than publishing only the complete transcript.
-3. Add matched team-level parent/candidate schedules and per-agent mechanism
+1. Add matched team-level parent/candidate schedules and per-agent mechanism
    probes for activation, information use, critique adherence, and synthesis.
-4. Add a bounded topology grammar: add/remove one edge, reorder one independent
+2. Add token- and cost-matched controls alongside the implemented exact-call
+   baseline comparison.
+3. Add a bounded topology grammar: add/remove one edge, reorder one independent
    turn, or add/remove one role under an explicit call-budget equivalence rule.
-5. Add process-isolated parallel execution with deterministic join ordering.
-6. Only then permit tool, memory, or model-routing mutations, each with a new
+4. Add process-isolated parallel execution with deterministic join ordering.
+5. Only then permit tool, memory, or model-routing mutations, each with a new
    capability policy and negative-control study.
 
 The promotion rule remains unchanged throughout: a team cannot grade or

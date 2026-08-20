@@ -45,6 +45,7 @@ class OpenAICompatibleChatBackend:
     api_key: str
     fingerprint: str
     user_agent: str = "spiral-harness/openai-compatible-backend"
+    enable_thinking: bool | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.base_url, str) or not self.base_url.strip():
@@ -55,22 +56,32 @@ class OpenAICompatibleChatBackend:
             raise ValueError("fingerprint must be a non-empty string")
         if not isinstance(self.user_agent, str) or not self.user_agent.strip():
             raise ValueError("user_agent must be a non-empty string")
+        if self.enable_thinking is not None and type(self.enable_thinking) is not bool:
+            raise TypeError("enable_thinking must be an exact Boolean or None")
 
     @classmethod
-    def from_endpoint(cls, *, base_url: str, api_key: str) -> OpenAICompatibleChatBackend:
+    def from_endpoint(
+        cls,
+        *,
+        base_url: str,
+        api_key: str,
+        enable_thinking: bool | None = None,
+    ) -> OpenAICompatibleChatBackend:
         """Build a backend with a credential-free endpoint fingerprint."""
 
         normalized_base_url = normalize_openai_base_url(base_url)
+        fingerprint_payload: dict[str, object] = {
+            "schema": "spiral-harness/openai-compatible-backend/v1",
+            "base_url": normalized_base_url,
+            "endpoint": "/chat/completions",
+        }
+        if enable_thinking is not None:
+            fingerprint_payload["enable_thinking"] = enable_thinking
         return cls(
             base_url=normalized_base_url,
             api_key=api_key,
-            fingerprint=canonical_sha256(
-                {
-                    "schema": "spiral-harness/openai-compatible-backend/v1",
-                    "base_url": normalized_base_url,
-                    "endpoint": "/chat/completions",
-                }
-            ),
+            fingerprint=canonical_sha256(fingerprint_payload),
+            enable_thinking=enable_thinking,
         )
 
     def invoke(self, *, spec: FrozenModelSpec, request: ModelRequest) -> BackendResponse:
@@ -94,6 +105,8 @@ class OpenAICompatibleChatBackend:
         }
         if checked_spec.inference.stop_sequences:
             payload["stop"] = list(checked_spec.inference.stop_sequences)
+        if self.enable_thinking is not None:
+            payload["enable_thinking"] = self.enable_thinking
 
         response = self._post_json(
             "/chat/completions",
@@ -134,6 +147,8 @@ class OpenAICompatibleChatBackend:
         }
         if checked_spec.inference.stop_sequences:
             payload["stop"] = list(checked_spec.inference.stop_sequences)
+        if self.enable_thinking is not None:
+            payload["enable_thinking"] = self.enable_thinking
 
         response = self._post_json(
             "/chat/completions",

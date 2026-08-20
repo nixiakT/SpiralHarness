@@ -389,6 +389,11 @@ repeat the same eight public HOLDOUT tasks, so its 24 task-by-seed cells are not
   across 24 repeated task-by-seed cells. All six adaptive candidates rolled back; FULL trailed
   STATIC/SCORE and exceeded budget-matched PURE@B by only 8.33 points, so this is an explicit
   negative self-evolution result;
+- [Fresh BFCL V4 multi-agent comparison](docs/bfcl-v4-multi-agent-comparison-results.md):
+  under `dashscope/qwen3-30b-a3b`, the call-count-matched bare-model baseline
+  reached 6/9 while the Analyst → Critic → Coordinator Harness reached 7/9.
+  This is a one-win/eight-tie public-development result, not hidden-test or
+  confirmatory evidence, and the Harness used substantially more tokens;
 - [Earlier Meta-Harness data compatibility port](docs/same-model-self-evolution-results.md):
   Spiral-native prompts and adapters, retained with an explicit non-native protocol warning.
 
@@ -459,6 +464,19 @@ does not estimate the paper's joint feedback-plus-promotion-policy treatment.
 Eight public holdout tasks cannot support confirmatory inference or a `>10 pp`
 claim. Provider-declared identity metadata also cannot establish one exact
 served model revision without signed receipts.
+
+To validate the fresh BFCL multi-agent comparison plan without model calls or
+answer access:
+
+```bash
+uv run spiral benchmark bfcl-multi-agent-compare \
+  --checkout data/benchmarks/bfcl-v4/gorilla \
+  --dry-run
+```
+
+Live mode reads `LITELLM_BASE_URL` and `LITELLM_API_KEY`, refuses paid
+OpenAI/Anthropic routes unless explicitly enabled, matches 27 bare-model calls
+against 27 multi-agent calls, and keeps the 16-task HOLDOUT closed.
 
 When present, top-level provider response fields such as `model` and
 `system_fingerprint` are persisted with each execution as

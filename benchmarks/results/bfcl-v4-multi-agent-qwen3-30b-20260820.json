@@ -1,0 +1,68 @@
+{
+  "arms": {
+    "baseline_budget_matched": {
+      "correct": 6,
+      "input_tokens": 7797,
+      "model_calls": 27,
+      "output_tokens": 1097,
+      "total": 9
+    },
+    "baseline_single": {
+      "correct": 6,
+      "model_calls_used_for_score": 9,
+      "total": 9
+    },
+    "multi_agent_harness": {
+      "correct": 7,
+      "input_tokens": 20658,
+      "model_calls": 27,
+      "output_tokens": 6367,
+      "total": 9
+    }
+  },
+  "backend_fingerprint": "6936e33d38bf800afed8bf5206c7b5e829afd004f3ebca3a321a1a8d7ce30d01",
+  "date": "2026-08-20",
+  "execution": {
+    "completed_model_calls": 54,
+    "failed_model_calls": 0,
+    "provider_declared_model_consistent": true,
+    "provider_weights_attested": false,
+    "scheduled_model_calls": 54,
+    "total_reported_tokens": 35919
+  },
+  "hidden_test_evidence": false,
+  "holdout_opened": false,
+  "model_fingerprint": "c87bfbfbc5e414495716f509a13ddeb8382037e9d1456a50c52cd75dcf221405",
+  "model_route": "dashscope/qwen3-30b-a3b",
+  "model_spec_fingerprint": "bf6edf355b3cc406a9ed99fc3607f54b26b8667333c7aad73689d7a7de7b22be",
+  "paired_budget_matched_contrast": {
+    "baseline_wins": 0,
+    "harness_minus_baseline_exact": {"denominator": 9, "numerator": 1},
+    "harness_minus_baseline_percentage_points": "+11.11",
+    "harness_wins": 1,
+    "ties": 8
+  },
+  "protocol_id": "bfcl-v4-public-v2-fresh-fit-gate-ma-v1",
+  "reportable_result": false,
+  "result_ref": {
+    "media_type": "application/vnd.spiral-harness.bfcl-v4-multi-agent-comparison.v1+json",
+    "sha256": "896130ed192dff957363afd3012bf9bb0b8703cf093effcc952d61d16f3a156d",
+    "size": 27318
+  },
+  "roster_manifest_fingerprint": "3f6e410bd26466381090ced0c6144515281a9653e5d36429685ad898f168eae7",
+  "runtime_fingerprint": "266954728641db2907fc224d40285774f256966dc0aee4007b3f294a47f9a478",
+  "task_outcomes": [
+    {"baseline_budget_matched": true, "baseline_single": true, "harness": true, "split": "fit", "task_id": "simple_python_198"},
+    {"baseline_budget_matched": true, "baseline_single": true, "harness": true, "split": "fit", "task_id": "simple_python_162"},
+    {"baseline_budget_matched": true, "baseline_single": true, "harness": true, "split": "fit", "task_id": "multiple_30"},
+    {"baseline_budget_matched": true, "baseline_single": true, "harness": true, "split": "fit", "task_id": "parallel_24"},
+    {"baseline_budget_matched": false, "baseline_single": false, "harness": true, "split": "fit", "task_id": "parallel_multiple_2"},
+    {"baseline_budget_matched": true, "baseline_single": true, "harness": true, "split": "gate", "task_id": "simple_python_179"},
+    {"baseline_budget_matched": true, "baseline_single": true, "harness": true, "split": "gate", "task_id": "multiple_71"},
+    {"baseline_budget_matched": false, "baseline_single": false, "harness": false, "split": "gate", "task_id": "parallel_26"},
+    {"baseline_budget_matched": false, "baseline_single": false, "harness": false, "split": "gate", "task_id": "parallel_multiple_52"}
+  ],
+  "task_roster_fingerprint": "46db14db4923f9ebadf98295ddcd52e1042a9d2e4ef80191adb46a6e618321e2",
+  "team_fingerprint": "372e9af7c1f75044db10804feca48b3b1792890fffefca67584551a5993d12eb",
+  "workflow_fingerprint": "3cd06edb16a35ee00357054b610834e84516f6898d342a619d621b0600a2709d"
+}
