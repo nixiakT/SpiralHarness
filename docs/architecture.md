@@ -91,6 +91,7 @@ limits are stated immediately below it.
 | Domain schemas | Trusted/shared | versioned value objects and state enums; no I/O | validated canonical payloads |
 | Artifact repository | Trusted | content-addressed blobs and append-only provenance edges | artifact references |
 | Harness registry | Trusted | snapshot resolution, typed patch application, structural validation | child snapshot or validation failure |
+| Agent harness | Shared boundary | immutable teams, workflows, explicit message visibility and score-free transcripts | bounded control-flow candidate |
 | Evolution engine | Mutable | failure localization, hypotheses, mutation strategies, search archive | candidate drafts and nominations |
 | Execution controller | Trusted | trial scheduling, fingerprints, limits, worker reset | run and trajectory records |
 | Candidate runtime | Mutable/untrusted | resolved prompt/skill behavior for one trial | structured events and final output |
@@ -519,12 +520,15 @@ proposal catalogue and strategy grammar remain prompt-only. Arbitrary Python,
 tool implementation changes, package metadata rewrites, and combined
 prompt+skill edits are not classified as this M1 skill operation.
 
-Memory, tools, middleware, and control flow remain planned for M2. They add,
-respectively, persistent/private state, side effects and credentials,
-observation-path interference, and topology/concurrency changes. Each needs a
-new policy validator, instrumentation contract, and threat-model fixture.
-Prompt+skill edits also remain disabled by default until an explicit
-interaction experiment can attribute their joint effect.
+General memory, tool, middleware, and topology/concurrency mutations remain
+planned for M2. The implemented multi-agent slice serializes a complete team as
+one `control_flow` component, but admits only one agent-instruction replacement;
+it cannot change the roster, workflow edges, roles, model routes, capabilities,
+budgets, or coordinator. The remaining surfaces add persistent/private state,
+side effects and credentials, observation-path interference, or scheduling
+changes. Each needs a new policy validator, instrumentation contract, and
+threat-model fixture. Prompt+skill edits also remain disabled by default until
+an explicit interaction experiment can attribute their joint effect.
 
 ## 8. Python package layout
 
@@ -534,6 +538,7 @@ spiral_harness/
   core/            # implemented: immutable state, experiment and lifecycle schemas
   storage/         # implemented: CAS objects and content-addressed linked journal
   evidence/        # implemented: trajectory, span, packet and diagnosis contracts
+  agents/          # immutable teams/workflows, score-free orchestration, bounded evolution
   verification/    # implemented: paired gate, bound trial batches, closure artifacts
   benchmark/       # controlled fixture + pinned GSM8K registry, split and trusted grader
   harness/         # implemented: atomic policy validation/snapshot application

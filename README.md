@@ -12,6 +12,14 @@ clear optimization signal, while an independent verification gate decides
 whether a proposed harness change is a real, generalizable improvement rather
 than noise, overfitting, or reward hacking.
 
+The current framework also includes the first **multi-agent harness kernel**:
+an immutable team manifest, an explicit ordered-DAG workflow, per-turn message
+visibility, score-free deterministic orchestration, hard logical budgets, and
+an atomic one-agent instruction mutation that enters the existing
+evidence-gated candidate path. See
+[`docs/multi-agent-architecture.md`](docs/multi-agent-architecture.md) for its
+implemented trust boundary and roadmap.
+
 ## Research thesis
 
 Harness self-evolution should be treated as a sequence of falsifiable,
@@ -35,9 +43,12 @@ are later extensions, not part of the initial claim.
 
 - `spiral_harness/`: the single importable package, grouped by domain; there is
   no duplicate `src/spiral_harness/` tree or forwarding package.
+- `spiral_harness/agents/`: immutable multi-agent team/workflow contracts,
+  score-free orchestration, and bounded instruction evolution.
 - `tests/`: unit, integration, and architecture contracts at one visible level.
 - `docs/`: research protocols, architecture decisions, and the pinned
   open-source architecture study.
+- `examples/`: small provider-free examples for public framework APIs.
 - `tools/`: small repository verification utilities.
 - `.github/workflows/`: CI only; GitHub Actions requires this exact path.
 
@@ -49,6 +60,18 @@ Previously exposed benchmark results remain explicitly exploratory until a new
 study satisfies that frozen protocol.
 
 ## Status
+
+At a glance, the repository now has three cooperating kernels:
+
+1. the immutable artifact, lifecycle, execution, and verification control
+   plane;
+2. benchmark-specific research slices, currently led by BFCL V4 public-v2;
+3. the multi-agent harness kernel, currently limited to deterministic
+   sequential workflows and instruction-only evolution.
+
+The multi-agent kernel is executable infrastructure, not a benchmark result.
+Agent topology, tools, memory, model routing, parallel sessions, and promotion
+remain fail-closed until their own mutation and evidence contracts are added.
 
 The M0.2 verification and experiment-control kernel includes:
 
@@ -467,6 +490,20 @@ The fixture validates plumbing and adversarial gate behavior only. It is not a
 real benchmark, does not call an LLM, and is not evidence of model or agent
 capability improvement. Its trusted grader is an in-process boundary, not an
 out-of-process service or a worker sandbox.
+
+## Run the multi-agent kernel
+
+The provider-free example freezes a three-agent
+analysis → critique → synthesis workflow, applies one hypothesis-bound critic
+instruction mutation, executes the candidate, and emits an unscored transcript:
+
+```bash
+.venv/bin/python examples/multi_agent_harness.py
+```
+
+Replace `ExampleBackend` with a trusted adapter to your model execution plane.
+Do not use an agent response as its own grade: parent/candidate transcripts must
+still pass the independent paired benchmark gate before promotion.
 
 ## Core principle
 
