@@ -29,6 +29,11 @@ from spiral_harness.benchmark.bfcl_v4_public_development_v2_contracts import (
     BfclV4PublicDevelopmentV2Split,
     BfclV4PublicDevelopmentV2Task,
 )
+from spiral_harness.benchmark.bfcl_v4_public_v2_barrier_capability import (
+    BfclV4PublicV2VerifiedDecisionBarrierCapability,
+    BfclV4PublicV2VerifiedDecisionBarrierReceipt,
+    _mint_bfcl_v4_public_v2_verified_decision_barrier,
+)
 from spiral_harness.benchmark.bfcl_v4_public_v2_trusted_grader import (
     BfclV4PublicV2EvaluationAuthorizationError,
     BfclV4PublicV2TrustedGrader,
@@ -232,6 +237,27 @@ def _barrier_evidence(
     )
 
 
+def _mint_test_verified_barrier(
+    grader: BfclV4PublicV2TrustedGrader,
+    *,
+    evidence: BfclV4PublicV2DecisionBarrierEvidence | None = None,
+) -> BfclV4PublicV2VerifiedDecisionBarrierCapability:
+    """Test-only mint for grader tests that do not own a durable executor journal."""
+
+    replayed_evidence = _barrier_evidence(grader) if evidence is None else evidence
+    receipt = BfclV4PublicV2VerifiedDecisionBarrierReceipt(
+        evidence=replayed_evidence,
+        evidence_fingerprint=replayed_evidence.fingerprint,
+        journal_snapshot_fingerprint=canonical_sha256("test-only-journal-snapshot"),
+        journal_prefix_event_count=1_000,
+        journal_tail_event_fingerprint=replayed_evidence.final_decision_event_fingerprint,
+        runtime_fingerprint=canonical_sha256("test-only-runtime"),
+        semantic_release_fingerprint=replayed_evidence.semantic_release_fingerprint,
+        replay_state_fingerprint=canonical_sha256("test-only-independent-replay"),
+    )
+    return _mint_bfcl_v4_public_v2_verified_decision_barrier(receipt)
+
+
 def _recursive_strings(value: Any) -> tuple[str, ...]:
     if isinstance(value, dict):
         return tuple(
@@ -348,7 +374,8 @@ def test_hmac_unlock_binds_six_decisions_and_authorizes_holdout(
     campaign: BfclV4PublicDevelopmentV2CampaignPlan,
     loaded: BfclV4LoadedPublicDevelopmentV2,
 ) -> None:
-    unlock = authorized_grader.issue_evaluation_unlock(_barrier_evidence(authorized_grader))
+    capability = _mint_test_verified_barrier(authorized_grader)
+    unlock = authorized_grader.issue_evaluation_unlock(capability)
     request = _grade_request(
         campaign,
         loaded,
@@ -361,6 +388,7 @@ def test_hmac_unlock_binds_six_decisions_and_authorizes_holdout(
     assert receipt.correct is False
     assert receipt.split_role is BfclV4PublicDevelopmentV2Split.HOLDOUT
     assert receipt.evaluation_unlock_fingerprint == unlock.fingerprint
+    assert unlock.verified_barrier_receipt_fingerprint == capability.receipt.fingerprint
 
 
 def test_tampered_unlock_and_wrong_decision_barrier_fail_closed(
@@ -369,7 +397,8 @@ def test_tampered_unlock_and_wrong_decision_barrier_fail_closed(
     loaded: BfclV4LoadedPublicDevelopmentV2,
 ) -> None:
     evidence = _barrier_evidence(authorized_grader)
-    unlock = authorized_grader.issue_evaluation_unlock(evidence)
+    capability = _mint_test_verified_barrier(authorized_grader, evidence=evidence)
+    unlock = authorized_grader.issue_evaluation_unlock(capability)
     request = _grade_request(
         campaign,
         loaded,
@@ -377,8 +406,13 @@ def test_tampered_unlock_and_wrong_decision_barrier_fail_closed(
         task_ref="holdout-00",
     )
     tampered = unlock.model_copy(update={"authentication_tag_hmac_sha256": "0" * 64})
+    wrong_receipt = unlock.model_copy(update={"verified_barrier_receipt_fingerprint": "9" * 64})
     wrong_references = ("0" * 64, *authorized_grader.decision_node_references[1:])
     wrong_evidence = evidence.model_copy(update={"decision_node_references": wrong_references})
+    wrong_capability = _mint_test_verified_barrier(
+        authorized_grader,
+        evidence=wrong_evidence,
+    )
 
     with pytest.raises(
         BfclV4PublicV2EvaluationAuthorizationError,
@@ -387,9 +421,26 @@ def test_tampered_unlock_and_wrong_decision_barrier_fail_closed(
         authorized_grader.grade(request, evaluation_unlock=tampered)
     with pytest.raises(
         BfclV4PublicV2EvaluationAuthorizationError,
+        match="authentication failed",
+    ):
+        authorized_grader.grade(request, evaluation_unlock=wrong_receipt)
+    with pytest.raises(
+        BfclV4PublicV2EvaluationAuthorizationError,
         match="does not match",
     ):
-        authorized_grader.issue_evaluation_unlock(wrong_evidence)
+        authorized_grader.issue_evaluation_unlock(wrong_capability)
+
+
+def test_ordinary_decision_evidence_cannot_issue_unlock(
+    authorized_grader: BfclV4PublicV2TrustedGrader,
+) -> None:
+    evidence = _barrier_evidence(authorized_grader)
+
+    with pytest.raises(
+        BfclV4PublicV2EvaluationAuthorizationError,
+        match="process-local verified replay capability",
+    ):
+        authorized_grader.issue_evaluation_unlock(evidence)  # type: ignore[arg-type]
 
 
 def test_non_holdout_rejects_even_authentic_unlock(
@@ -397,7 +448,9 @@ def test_non_holdout_rejects_even_authentic_unlock(
     campaign: BfclV4PublicDevelopmentV2CampaignPlan,
     loaded: BfclV4LoadedPublicDevelopmentV2,
 ) -> None:
-    unlock = authorized_grader.issue_evaluation_unlock(_barrier_evidence(authorized_grader))
+    unlock = authorized_grader.issue_evaluation_unlock(
+        _mint_test_verified_barrier(authorized_grader)
+    )
     request = _grade_request(
         campaign,
         loaded,
@@ -502,7 +555,9 @@ def test_receipt_contract_rejects_diagnostic_or_answer_fields() -> None:
 def test_unlock_contract_never_contains_secret_or_answers(
     authorized_grader: BfclV4PublicV2TrustedGrader,
 ) -> None:
-    unlock = authorized_grader.issue_evaluation_unlock(_barrier_evidence(authorized_grader))
+    unlock = authorized_grader.issue_evaluation_unlock(
+        _mint_test_verified_barrier(authorized_grader)
+    )
     payload = unlock.model_dump(mode="json")
     serialized = canonical_json(payload)
 
@@ -570,7 +625,9 @@ def test_unlock_instance_revalidation_rejects_barrier_fingerprint_tamper(
     campaign: BfclV4PublicDevelopmentV2CampaignPlan,
     loaded: BfclV4LoadedPublicDevelopmentV2,
 ) -> None:
-    unlock = authorized_grader.issue_evaluation_unlock(_barrier_evidence(authorized_grader))
+    unlock = authorized_grader.issue_evaluation_unlock(
+        _mint_test_verified_barrier(authorized_grader)
+    )
     malformed = BfclV4PublicV2EvaluationUnlock.model_construct(
         **{
             **unlock.model_dump(mode="python"),
@@ -593,7 +650,9 @@ def test_single_pure_at_b_sample_cannot_use_ordinary_grader(
     campaign: BfclV4PublicDevelopmentV2CampaignPlan,
     loaded: BfclV4LoadedPublicDevelopmentV2,
 ) -> None:
-    unlock = authorized_grader.issue_evaluation_unlock(_barrier_evidence(authorized_grader))
+    unlock = authorized_grader.issue_evaluation_unlock(
+        _mint_test_verified_barrier(authorized_grader)
+    )
     request = _grade_request(
         campaign,
         loaded,

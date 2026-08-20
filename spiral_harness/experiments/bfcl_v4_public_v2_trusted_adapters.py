@@ -28,6 +28,11 @@ from spiral_harness.benchmark.bfcl_v4_public_development_v2_campaign_contracts i
 from spiral_harness.benchmark.bfcl_v4_public_development_v2_contracts import (
     BfclV4PublicDevelopmentV2Split,
 )
+from spiral_harness.benchmark.bfcl_v4_public_v2_barrier_capability import (
+    BfclV4PublicV2VerifiedBarrierError,
+    BfclV4PublicV2VerifiedDecisionBarrierCapability,
+    validate_bfcl_v4_public_v2_verified_decision_barrier,
+)
 from spiral_harness.benchmark.bfcl_v4_public_v2_pure_at_b_trusted_grader import (
     grade_bfcl_v4_public_v2_pure_at_b_batch,
 )
@@ -36,7 +41,6 @@ from spiral_harness.benchmark.bfcl_v4_public_v2_pure_at_b_trusted_grader_contrac
     BfclV4PublicV2PureAtBBatchGradeRequest,
 )
 from spiral_harness.benchmark.bfcl_v4_public_v2_trusted_grader_contracts import (
-    BfclV4PublicV2DecisionBarrierEvidence,
     BfclV4PublicV2EvaluationUnlock,
     BfclV4PublicV2TrustedGradeRequest,
     BfclV4PublicV2TrustedGraderReceipt,
@@ -78,7 +82,7 @@ class BfclV4PublicV2FullTrustedGrader(Protocol):
 
     def issue_evaluation_unlock(
         self,
-        evidence: BfclV4PublicV2DecisionBarrierEvidence,
+        capability: BfclV4PublicV2VerifiedDecisionBarrierCapability,
     ) -> BfclV4PublicV2EvaluationUnlock: ...
 
     def grade(
@@ -359,13 +363,16 @@ class BfclV4PublicV2TrustedGraderAdapter:
 
     def issue_evaluation_unlock(
         self,
-        evidence: BfclV4PublicV2DecisionBarrierEvidence,
+        capability: BfclV4PublicV2VerifiedDecisionBarrierCapability,
     ) -> BfclV4PublicV2EvaluationUnlock:
-        checked_evidence = _checked(
-            evidence,
-            BfclV4PublicV2DecisionBarrierEvidence,
-            "decision barrier evidence",
-        )
+        try:
+            checked_capability = validate_bfcl_v4_public_v2_verified_decision_barrier(capability)
+        except BfclV4PublicV2VerifiedBarrierError as error:
+            raise BfclV4PublicV2TrustedAdapterError(
+                "evaluation authorization requires a verified replay capability"
+            ) from error
+        verified_receipt = checked_capability.receipt
+        checked_evidence = verified_receipt.evidence
         decision_nodes = tuple(
             node
             for node in self._campaign.nodes
@@ -383,15 +390,18 @@ class BfclV4PublicV2TrustedGraderAdapter:
                 "decision barrier differs from the frozen campaign or release"
             )
         try:
-            raw_unlock = self._grader.issue_evaluation_unlock(checked_evidence)
+            raw_unlock = self._grader.issue_evaluation_unlock(checked_capability)
         except Exception as error:
             raise BfclV4PublicV2TrustedAdapterError(
                 "full trusted grader rejected evaluation authorization"
             ) from error
         unlock = _checked(raw_unlock, BfclV4PublicV2EvaluationUnlock, "evaluation unlock")
-        if unlock.barrier_evidence != checked_evidence:
+        if (
+            unlock.barrier_evidence != checked_evidence
+            or unlock.verified_barrier_receipt_fingerprint != verified_receipt.fingerprint
+        ):
             raise BfclV4PublicV2TrustedAdapterError(
-                "full trusted grader authorized another decision barrier"
+                "full trusted grader authorized another verified decision barrier"
             )
         with self._lock:
             prior = self._unlocks.get(unlock.fingerprint)

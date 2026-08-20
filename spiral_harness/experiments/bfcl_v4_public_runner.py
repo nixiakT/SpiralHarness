@@ -686,7 +686,6 @@ def run_bfcl_v4_public_pilot_replicate(
     outer_seed_u64: int = 2_026_081_501,
     attempt_ledger_id: str = "bfcl-v4-public-pilot/replicate-001",
 ) -> BfclV4PublicPilotRunRecord:
-    """Execute exactly one frozen public/development replicate with no retry."""
     return BfclV4PublicPilotRunner(
         repository,
         checkout=checkout,
@@ -696,4 +695,6 @@ def run_bfcl_v4_public_pilot_replicate(
         outer_seed_u64=outer_seed_u64,
         attempt_ledger_id=attempt_ledger_id,
     ).run()
+
+
 __all__ = ["BfclV4PublicPilotRunner", "run_bfcl_v4_public_pilot_replicate"]

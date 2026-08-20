@@ -15,6 +15,9 @@ from spiral_harness.benchmark.bfcl_v4_public_development_v2_call_plan_contracts 
 )
 from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.models import ImmutableModel, NonEmptyStr, Sha256
+from spiral_harness.experiments.bfcl_v4_public_v2_dispatch_contracts import (
+    BfclV4PublicV2DispatchReceipt,
+)
 
 
 class BfclV4PublicV2AttemptDisposition(StrEnum):
@@ -89,6 +92,7 @@ class BfclV4PublicV2ProviderAttempt(ImmutableModel):
     """Sanitized result returned by an injected one-shot provider transport."""
 
     schema_version: Literal["1"] = "1"
+    dispatch_fingerprint: Sha256
     disposition: BfclV4PublicV2AttemptDisposition
     canonical_response: str | None = None
     provider_response_fingerprint: Sha256 | None = None
@@ -165,6 +169,11 @@ class BfclV4PublicV2JournalEvent(ImmutableModel):
     event_kind: BfclV4PublicV2EventKind
     request_fingerprint: Sha256
     request_payload_sha256: Sha256
+    dispatch_fingerprint: Sha256 | None = None
+    journal_prefix_fingerprint: Sha256 | None = None
+    request_materialization_fingerprint: Sha256 | None = None
+    native_request_fingerprint: Sha256 | None = None
+    proposal_batch_set_fingerprint: Sha256 | None = None
     provider_attempt_disposition: BfclV4PublicV2AttemptDisposition | None = None
     provider_attempts_consumed: Annotated[int, Field(ge=0, le=1, strict=True)]
     executed_harness_variant: NonEmptyStr | None = None
@@ -203,6 +212,20 @@ class BfclV4PublicV2JournalEvent(ImmutableModel):
                 raise ValueError("call event provider-attempt count differs from disposition")
             if self.control_value is not None:
                 raise ValueError("call event cannot carry a deterministic control value")
+            if (
+                any(
+                    value is None
+                    for value in (
+                        self.dispatch_fingerprint,
+                        self.journal_prefix_fingerprint,
+                        self.request_materialization_fingerprint,
+                        self.native_request_fingerprint,
+                        self.proposal_batch_set_fingerprint,
+                    )
+                )
+                or self.native_request_fingerprint != self.request_payload_sha256
+            ):
+                raise ValueError("call event lacks exact dispatch materialization lineage")
             if self.provider_attempt_disposition in {
                 BfclV4PublicV2AttemptDisposition.PROVIDER_FAILURE,
                 BfclV4PublicV2AttemptDisposition.CRASH_RECOVERY_BURN,
@@ -243,6 +266,11 @@ class BfclV4PublicV2JournalEvent(ImmutableModel):
                     self.evaluation_unlock_fingerprint,
                     self.proposal_disposition,
                     self.candidate_artifact_sha256,
+                    self.dispatch_fingerprint,
+                    self.journal_prefix_fingerprint,
+                    self.request_materialization_fingerprint,
+                    self.native_request_fingerprint,
+                    self.proposal_batch_set_fingerprint,
                 )
             ):
                 raise ValueError("control event cannot carry provider or grader output")
@@ -267,6 +295,11 @@ class BfclV4PublicV2CallReservation(ImmutableModel):
     node_reference_sha256: Sha256
     request: BfclV4PublicV2ProviderRequest
     request_fingerprint: Sha256
+    dispatch_fingerprint: Sha256
+    journal_prefix_fingerprint: Sha256
+    request_materialization_fingerprint: Sha256
+    native_request_fingerprint: Sha256
+    proposal_batch_set_fingerprint: Sha256
     slot_reserved_before_provider_call: Literal[True] = True
     provider_call_started_attested: Literal[False] = False
     recovery_action: Literal["burn-without-provider-retry"] = "burn-without-provider-retry"
@@ -275,6 +308,21 @@ class BfclV4PublicV2CallReservation(ImmutableModel):
     def _bind_reserved_call(self) -> Self:
         node = self.node
         request = self.request
+        dispatch = BfclV4PublicV2DispatchReceipt(
+            node=node,
+            node_reference_sha256=self.node_reference_sha256,
+            journal_prefix_fingerprint=self.journal_prefix_fingerprint,
+            journal_prefix_event_count=self.sequence,
+            journal_prefix_tail_event_sha256=self.expected_tail_event_sha256,
+            campaign_plan_fingerprint=request.campaign_plan_fingerprint,
+            node_schedule_content_sha256=request.node_schedule_content_sha256,
+            runtime_fingerprint=request.runtime_fingerprint,
+            semantic_release_fingerprint=request.semantic_release_fingerprint,
+            request_materialization_fingerprint=self.request_materialization_fingerprint,
+            native_request_fingerprint=self.native_request_fingerprint,
+            request_payload_sha256=request.request_payload_sha256,
+            proposal_batch_set_fingerprint=self.proposal_batch_set_fingerprint,
+        )
         if (
             not node.consumes_model_call
             or node.node_slot != self.sequence
@@ -284,6 +332,8 @@ class BfclV4PublicV2CallReservation(ImmutableModel):
             or request.node_reference_sha256 != self.node_reference_sha256
             or request.campaign_call_slot != node.campaign_call_slot
             or request.provider_seed_u63 != node.provider_seed_u63
+            or self.native_request_fingerprint != request.request_payload_sha256
+            or self.dispatch_fingerprint != dispatch.fingerprint
         ):
             raise ValueError("call reservation differs from its frozen node or request")
         if (self.expected_tail_event_sha256 is None) is not (self.sequence == 0):
@@ -415,6 +465,10 @@ class BfclV4PublicV2ReplayState(ImmutableModel):
         ):
             raise ValueError("complete v2 replay lacks exact calls, controls, or aggregations")
         return self
+
+    @property
+    def fingerprint(self) -> str:
+        return canonical_sha256(self)
 
 
 class BfclV4PublicV2JournalSnapshot(ImmutableModel):

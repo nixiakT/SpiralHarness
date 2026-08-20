@@ -1,17 +1,36 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 import spiral_harness.benchmark.bfcl_v4_public_v2_semantic_projection as projection_subject
+from spiral_harness.benchmark.bfcl_v4_public_development_v2 import (
+    load_bfcl_v4_public_development_v2,
+)
 from spiral_harness.benchmark.bfcl_v4_public_development_v2_call_plan import (
     build_bfcl_v4_public_development_v2_campaign_plan,
 )
 from spiral_harness.benchmark.bfcl_v4_public_development_v2_call_plan_contracts import (
     BFCL_V4_PUBLIC_DEVELOPMENT_V2_MODEL_ROUTE,
+    BfclV4PublicDevelopmentV2Arm,
+    BfclV4PublicDevelopmentV2NodeKind,
+)
+from spiral_harness.benchmark.bfcl_v4_public_development_v2_campaign_contracts import (
+    derive_bfcl_v4_public_development_v2_node_request_lineage,
+)
+from spiral_harness.benchmark.bfcl_v4_public_v2_request_materializer import (
+    materialize_bfcl_v4_public_v2_request,
+)
+from spiral_harness.benchmark.bfcl_v4_public_v2_request_materializer_contracts import (
+    BfclV4PublicV2FrozenArmTreatment,
+)
+from spiral_harness.benchmark.bfcl_v4_public_v2_semantic_authority import (
+    verify_bfcl_v4_public_v2_pairwise_v4_semantic_authority,
 )
 from spiral_harness.benchmark.bfcl_v4_public_v2_semantic_pairwise_v4 import (
     BFCL_V4_PUBLIC_V2_PAIRWISE_V4_PROMPT_SHA256,
@@ -368,9 +387,9 @@ def test_strict_parser_rejects_malformed_completion_without_repair(
             provider_origin_sha256=_digest("origin"),
             provider_response_id="malformed-response",
             provider_reported_model=declaration.model_name,
-                input_tokens=1,
-                output_tokens=1,
-                operator_attests_single_provider_attempt=True,
+            input_tokens=1,
+            output_tokens=1,
+            operator_attests_single_provider_attempt=True,
         )
 
 
@@ -466,11 +485,24 @@ def consensus_release(projection, closure, consensus_evidence):
     )
 
 
+@pytest.fixture(scope="module")
+def consensus_authority(projection, closure, consensus_evidence, consensus_release):
+    return verify_bfcl_v4_public_v2_pairwise_v4_semantic_authority(
+        consensus_release,
+        projection.reviewer_packet,
+        projection.trusted_mapping,
+        closure,
+        consensus_evidence,
+        runtime_hmac_secret=SECRET,
+    )
+
+
 def test_composite_release_is_hmac_bound_and_not_a_single_attestation(
     projection,
     closure,
     consensus_evidence,
     consensus_release,
+    consensus_authority,
 ) -> None:
     checked = verify_bfcl_v4_public_v2_pairwise_v4_development_release(
         consensus_release,
@@ -487,6 +519,48 @@ def test_composite_release_is_hmac_bound_and_not_a_single_attestation(
     assert checked.reviewed_unordered_pair_decision_count == 1_560
     assert checked.single_call_review_attestation_present is False
     assert checked.ref.media_type == BFCL_V4_PUBLIC_V2_PAIRWISE_V4_DEVELOPMENT_RELEASE_MEDIA_TYPE
+    assert consensus_authority.release_ref == checked.ref
+    assert consensus_authority.release_fingerprint == checked.fingerprint
+
+
+def test_pairwise_authority_replays_evidence_and_rejects_forgery(
+    projection,
+    closure,
+    consensus_evidence,
+    consensus_release,
+) -> None:
+    forged_release = consensus_release.model_copy(
+        update={"release_authority_hmac_sha256": "0" * 64}
+    )
+    with pytest.raises(BfclV4PublicV2PairwiseV4ReleaseError):
+        verify_bfcl_v4_public_v2_pairwise_v4_semantic_authority(
+            forged_release,
+            projection.reviewer_packet,
+            projection.trusted_mapping,
+            closure,
+            consensus_evidence,
+            runtime_hmac_secret=SECRET,
+        )
+
+    left, right = consensus_evidence
+    sessions = list(left.call_sessions)
+    sessions[1] = sessions[1].model_copy(
+        update={
+            "attempt_evidence": sessions[1].attempt_evidence.model_copy(
+                update={"provider_response_id": (sessions[0].attempt_evidence.provider_response_id)}
+            )
+        }
+    )
+    replay_forged = left.model_copy(update={"call_sessions": tuple(sessions)})
+    with pytest.raises(BfclV4PublicV2PairwiseV4ReleaseError):
+        verify_bfcl_v4_public_v2_pairwise_v4_semantic_authority(
+            consensus_release,
+            projection.reviewer_packet,
+            projection.trusted_mapping,
+            closure,
+            (replay_forged, right),
+            runtime_hmac_secret=SECRET,
+        )
 
 
 def test_release_rejects_provider_response_reuse_across_reviewers(
@@ -666,7 +740,7 @@ def test_cross_boundary_family_and_mapping_tamper_fail_closed(projection, closur
 
 
 def test_live_config_consumes_typed_composite_release(
-    consensus_release,
+    consensus_authority,
 ) -> None:
     config = freeze_bfcl_v4_public_v2_live_execution_config(
         catalog_observation=observe_bfcl_v4_public_live_model_catalog(
@@ -674,7 +748,7 @@ def test_live_config_consumes_typed_composite_release(
             observed_at_utc="2026-08-15T12:00:00Z",
         ),
         campaign=build_bfcl_v4_public_development_v2_campaign_plan(),
-        verified_semantic_release=consensus_release,
+        semantic_authority=consensus_authority,
         backend_name="openai-compatible-native-function",
         backend_fingerprint=_digest("backend"),
         serializer_fingerprint=_digest("serializer"),
@@ -686,10 +760,50 @@ def test_live_config_consumes_typed_composite_release(
         config.semantic_release_evidence_shape
         is BfclV4PublicV2SemanticReleaseEvidenceShape.CHUNKED_PAIRWISE_COMPOSITE_V4
     )
-    assert config.semantic_release_ref == consensus_release.ref
+    assert config.semantic_release_ref == consensus_authority.release_ref
     assert config.semantic_release_ref.media_type == (
         BFCL_V4_PUBLIC_V2_PAIRWISE_V4_DEVELOPMENT_RELEASE_MEDIA_TYPE
     )
+
+
+def test_solver_request_materializer_consumes_composite_authority(
+    consensus_authority,
+) -> None:
+    configured = os.environ.get("BFCL_V4_PINNED_CHECKOUT")
+    checkout = Path(configured) if configured else Path("/tmp/spiral-bfcl-upstream")
+    if not checkout.is_dir():
+        pytest.skip("pinned BFCL checkout unavailable for composite materializer test")
+    loaded = load_bfcl_v4_public_development_v2(checkout)
+    campaign = build_bfcl_v4_public_development_v2_campaign_plan()
+    node = next(
+        item
+        for item in campaign.nodes
+        if item.arm is BfclV4PublicDevelopmentV2Arm.PURE
+        and item.kind is BfclV4PublicDevelopmentV2NodeKind.HOLDOUT
+        and item.harness_variant == "bare"
+    )
+    lineage = derive_bfcl_v4_public_development_v2_node_request_lineage(
+        campaign=campaign,
+        node_id=node.node_id,
+    )
+    materialized = materialize_bfcl_v4_public_v2_request(
+        loaded=loaded,
+        campaign=campaign,
+        lineage=lineage,
+        semantic_authority=consensus_authority,
+        treatment=BfclV4PublicV2FrozenArmTreatment(
+            arm=node.arm,
+            harness_variant=node.harness_variant,
+        ),
+    )
+
+    assert materialized.semantic_release_ref == consensus_authority.release_ref
+    assert materialized.semantic_release_fingerprint == consensus_authority.release_fingerprint
+    assert (
+        materialized.semantic_release_evidence_shape
+        is BfclV4PublicV2SemanticReleaseEvidenceShape.CHUNKED_PAIRWISE_COMPOSITE_V4
+    )
+    assert materialized.semantic_release_authority_verified is True
 
 
 def test_predecessor_closure_binds_v1_v2_v3_failures_in_order(closure) -> None:
@@ -709,8 +823,6 @@ def test_predecessor_closure_binds_v1_v2_v3_failures_in_order(closure) -> None:
         }
     )
     with pytest.raises(ValidationError, match="wrong failure artifact type"):
-        BfclV4PublicV2PairwiseV4PredecessorClosure(
-            attempts=(wrong_type, *closure.attempts[1:])
-        )
+        BfclV4PublicV2PairwiseV4PredecessorClosure(attempts=(wrong_type, *closure.attempts[1:]))
 
     assert len(BFCL_V4_PUBLIC_V2_PAIRWISE_V4_PROMPT_SHA256) == 64

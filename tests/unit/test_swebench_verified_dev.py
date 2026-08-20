@@ -52,7 +52,7 @@ def test_extract_patch_plan_reads_labeled_markdown_blocks() -> None:
         "`after`:\n"
         "```python\n"
         "        if not name:\n"
-        "            raise ValueError(\"empty\")\n"
+        '            raise ValueError("empty")\n'
         "        self.name = name\n"
         "```\n"
     )
@@ -87,7 +87,9 @@ def test_collect_excerpts_keeps_prompt_local(tmp_path: Path) -> None:
     app_lines[179] = "Blueprint registration also mentioned here"
     (src_dir / "blueprints.py").write_text(blueprints, encoding="utf-8")
     (src_dir / "app.py").write_text("\n".join(app_lines), encoding="utf-8")
-    (tests_dir / "test_blueprints.py").write_text("def test_blueprint_name():\n    pass\n", encoding="utf-8")
+    (tests_dir / "test_blueprints.py").write_text(
+        "def test_blueprint_name():\n    pass\n", encoding="utf-8"
+    )
     task = SwebenchVerifiedTask(
         repo="pallets/flask",
         instance_id="demo",

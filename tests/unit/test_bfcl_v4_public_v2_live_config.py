@@ -55,14 +55,14 @@ def _release() -> BfclV4PublicV2SemanticDevelopmentRelease:
     )
 
 
-def _config():
+def _config(semantic_authority):
     return freeze_bfcl_v4_public_v2_live_execution_config(
         catalog_observation=observe_bfcl_v4_public_live_model_catalog(
             (BFCL_V4_PUBLIC_DEVELOPMENT_V2_MODEL_ROUTE,),
             observed_at_utc="2026-08-15T12:00:00Z",
         ),
         campaign=build_bfcl_v4_public_development_v2_campaign_plan(),
-        verified_semantic_release=_release(),
+        semantic_authority=semantic_authority,
         backend_name="openai-compatible-native-function",
         backend_fingerprint=_digest("backend"),
         serializer_fingerprint=_digest("serializer"),
@@ -71,8 +71,11 @@ def _config():
     )
 
 
-def test_live_config_binds_one_model_inference_budget_plan_and_release() -> None:
-    config = _config()
+def test_live_config_binds_one_model_inference_budget_plan_and_release(
+    bfcl_v2_verified_legacy_authority,
+) -> None:
+    authority = bfcl_v2_verified_legacy_authority.capability
+    config = _config(authority)
 
     assert config.campaign_plan_fingerprint == BFCL_V4_PUBLIC_DEVELOPMENT_V2_CAMPAIGN_FINGERPRINT
     assert config.selected_model_route == BFCL_V4_PUBLIC_DEVELOPMENT_V2_MODEL_ROUTE
@@ -80,7 +83,11 @@ def test_live_config_binds_one_model_inference_budget_plan_and_release() -> None
     assert config.model_spec.inference == BFCL_V4_PUBLIC_DEVELOPMENT_V2_INFERENCE
     assert config.attempt_budget == BFCL_V4_PUBLIC_V2_LIVE_ATTEMPT_BUDGET
     assert config.attempt_budget.max_attempts == 1_086
-    assert config.semantic_release_ref == _release().ref
+    assert config.semantic_release_ref == authority.release_ref
+    assert config.semantic_release_fingerprint == authority.release_fingerprint
+    assert config.semantic_authority_verification_input_fingerprint == (
+        authority.verification_input_fingerprint
+    )
     assert (
         config.semantic_release_evidence_shape
         is BfclV4PublicV2SemanticReleaseEvidenceShape.LEGACY_SINGLE_PACKET_V1
@@ -98,7 +105,9 @@ def test_live_config_binds_one_model_inference_budget_plan_and_release() -> None
     assert len(config.fingerprint) == 64
 
 
-def test_fallback_route_cannot_silently_replace_the_frozen_direct_route() -> None:
+def test_fallback_route_cannot_silently_replace_the_frozen_direct_route(
+    bfcl_v2_verified_legacy_authority,
+) -> None:
     fallback = observe_bfcl_v4_public_live_model_catalog(
         ("dashscope/qwen36-35b-a3b",),
         observed_at_utc="2026-08-15T12:00:00Z",
@@ -107,7 +116,7 @@ def test_fallback_route_cannot_silently_replace_the_frozen_direct_route() -> Non
         freeze_bfcl_v4_public_v2_live_execution_config(
             catalog_observation=fallback,
             campaign=build_bfcl_v4_public_development_v2_campaign_plan(),
-            verified_semantic_release=_release(),
+            semantic_authority=bfcl_v2_verified_legacy_authority.capability,
             backend_name="openai-compatible-native-function",
             backend_fingerprint=_digest("backend"),
             serializer_fingerprint=_digest("serializer"),
@@ -116,8 +125,10 @@ def test_fallback_route_cannot_silently_replace_the_frozen_direct_route() -> Non
         )
 
 
-def test_release_ref_and_attempt_budget_tampering_fail_closed() -> None:
-    config = _config()
+def test_release_ref_and_attempt_budget_tampering_fail_closed(
+    bfcl_v2_verified_legacy_authority,
+) -> None:
+    config = _config(bfcl_v2_verified_legacy_authority.capability)
     bad_ref = _ref("wrong-release", "application/x-wrong")
     with pytest.raises(ValidationError, match="wrong semantic release"):
         BfclV4PublicV2LiveExecutionConfig(
@@ -125,6 +136,15 @@ def test_release_ref_and_attempt_budget_tampering_fail_closed() -> None:
                 **config.model_dump(mode="python"),
                 "semantic_release_ref": bad_ref,
                 "semantic_release_fingerprint": bad_ref.sha256,
+            }
+        )
+
+    empty_ref = config.semantic_release_ref.model_copy(update={"size": 0})
+    with pytest.raises(ValidationError, match="wrong semantic release"):
+        BfclV4PublicV2LiveExecutionConfig(
+            **{
+                **config.model_dump(mode="python"),
+                "semantic_release_ref": empty_ref,
             }
         )
 
@@ -139,8 +159,10 @@ def test_release_ref_and_attempt_budget_tampering_fail_closed() -> None:
         )
 
 
-def test_release_shape_cannot_be_changed_independently_of_its_media_type() -> None:
-    config = _config()
+def test_release_shape_cannot_be_changed_independently_of_its_media_type(
+    bfcl_v2_verified_legacy_authority,
+) -> None:
+    config = _config(bfcl_v2_verified_legacy_authority.capability)
 
     with pytest.raises(ValidationError, match="wrong semantic release"):
         BfclV4PublicV2LiveExecutionConfig(
@@ -157,4 +179,21 @@ def test_release_shape_cannot_be_changed_independently_of_its_media_type() -> No
                 **config.model_dump(mode="python"),
                 "semantic_release_evidence_shape": "unsupported-v5",
             }
+        )
+
+
+def test_freeze_rejects_an_ordinary_handmade_release() -> None:
+    with pytest.raises(ValueError, match="process-local verified capability"):
+        freeze_bfcl_v4_public_v2_live_execution_config(
+            catalog_observation=observe_bfcl_v4_public_live_model_catalog(
+                (BFCL_V4_PUBLIC_DEVELOPMENT_V2_MODEL_ROUTE,),
+                observed_at_utc="2026-08-15T12:00:00Z",
+            ),
+            campaign=build_bfcl_v4_public_development_v2_campaign_plan(),
+            semantic_authority=_release(),
+            backend_name="openai-compatible-native-function",
+            backend_fingerprint=_digest("backend"),
+            serializer_fingerprint=_digest("serializer"),
+            parser_fingerprint=_digest("parser"),
+            transport_fingerprint=_digest("transport"),
         )

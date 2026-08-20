@@ -24,6 +24,11 @@ from spiral_harness.benchmark.bfcl_v4_public_development_v2_identities import (
     BFCL_V4_PUBLIC_DEVELOPMENT_V2_ROW_IDENTITIES,
     BFCL_V4_PUBLIC_DEVELOPMENT_V2_SELECTED_TASK_IDS,
 )
+from spiral_harness.benchmark.bfcl_v4_public_v2_barrier_capability import (
+    BfclV4PublicV2VerifiedDecisionBarrierCapability,
+    BfclV4PublicV2VerifiedDecisionBarrierReceipt,
+    _mint_bfcl_v4_public_v2_verified_decision_barrier,
+)
 from spiral_harness.benchmark.bfcl_v4_public_v2_mutations import (
     BfclV4PublicV2MutationId,
     BfclV4PublicV2MutationProposal,
@@ -42,9 +47,6 @@ from spiral_harness.benchmark.bfcl_v4_public_v2_request_materializer_contracts i
     BfclV4PublicV2ModelVisibleRequest,
     BfclV4PublicV2RequestMaterialization,
     BfclV4PublicV2ResolvedTaskReceipt,
-)
-from spiral_harness.benchmark.bfcl_v4_public_v2_semantic_release_contracts import (
-    BfclV4PublicV2SemanticDevelopmentRelease,
 )
 from spiral_harness.benchmark.bfcl_v4_public_v2_trusted_grader_contracts import (
     BfclV4PublicV2DecisionBarrierEvidence,
@@ -69,6 +71,11 @@ from spiral_harness.execution.native_function_contracts import (
 )
 from spiral_harness.experiments.bfcl_v4_public_live_config import (
     observe_bfcl_v4_public_live_model_catalog,
+)
+from spiral_harness.experiments.bfcl_v4_public_v2_dispatch_contracts import (
+    BFCL_V4_PUBLIC_V2_EMPTY_PROPOSAL_BATCH_SET_FINGERPRINT,
+    BfclV4PublicV2DispatchReceipt,
+    bfcl_v4_public_v2_journal_prefix_fingerprint,
 )
 from spiral_harness.experiments.bfcl_v4_public_v2_executor_contracts import (
     BfclV4PublicV2AttemptDisposition,
@@ -114,34 +121,43 @@ GRADER_SOURCE = "d" * 64
 PURE_GRADER_SOURCE = "e" * 64
 
 
-def _ref(label: str, media_type: str = "application/x-test") -> ArtifactRef:
-    payload = label.encode()
-    return ArtifactRef(
-        sha256=sha256_bytes(payload),
-        size=len(payload),
-        media_type=media_type,
-    )
-
-
-def _semantic_release() -> BfclV4PublicV2SemanticDevelopmentRelease:
-    return BfclV4PublicV2SemanticDevelopmentRelease(
-        source_universe_fingerprint=canonical_sha256("universe"),
-        reviewer_packet_ref=_ref("packet"),
-        trusted_mapping_ref=_ref("mapping"),
-        primary_review_refs=(_ref("review-one"), _ref("review-two")),
-        primary_execution_attestation_refs=(
-            _ref("attestation-one"),
-            _ref("attestation-two"),
+def _dispatch_receipt(
+    campaign: BfclV4PublicDevelopmentV2CampaignPlan,
+    node,
+    *,
+    runtime_fingerprint: str,
+    semantic_release_fingerprint: str,
+    request_payload_sha256: str,
+    previous_event_sha256: str | None,
+) -> BfclV4PublicV2DispatchReceipt:
+    return BfclV4PublicV2DispatchReceipt(
+        node=node,
+        node_reference_sha256=canonical_sha256(node),
+        journal_prefix_fingerprint=bfcl_v4_public_v2_journal_prefix_fingerprint(
+            campaign_plan_fingerprint=campaign.fingerprint,
+            node_schedule_content_sha256=campaign.node_schedule_content_sha256,
+            runtime_fingerprint=runtime_fingerprint,
+            semantic_release_fingerprint=semantic_release_fingerprint,
+            event_count=node.node_slot,
+            tail_event_sha256=previous_event_sha256,
         ),
-        final_partition_sha256=canonical_sha256("partition"),
-        final_semantic_family_count=40,
-        primary_pairwise_disagreement_count=0,
-        reviewer_count=2,
-        release_authority_hmac_sha256=canonical_sha256("release-hmac"),
+        journal_prefix_event_count=node.node_slot,
+        journal_prefix_tail_event_sha256=previous_event_sha256,
+        campaign_plan_fingerprint=campaign.fingerprint,
+        node_schedule_content_sha256=campaign.node_schedule_content_sha256,
+        runtime_fingerprint=runtime_fingerprint,
+        semantic_release_fingerprint=semantic_release_fingerprint,
+        request_materialization_fingerprint=canonical_sha256(
+            {
+                "domain": "bfcl-v2-test-materialization/v1",
+                "node_id": node.node_id,
+                "payload": request_payload_sha256,
+            }
+        ),
+        native_request_fingerprint=request_payload_sha256,
+        request_payload_sha256=request_payload_sha256,
+        proposal_batch_set_fingerprint=BFCL_V4_PUBLIC_V2_EMPTY_PROPOSAL_BATCH_SET_FINGERPRINT,
     )
-
-
-SEMANTIC_RELEASE = _semantic_release().fingerprint
 
 
 @pytest.fixture(scope="module")
@@ -152,6 +168,7 @@ def campaign() -> BfclV4PublicDevelopmentV2CampaignPlan:
 @pytest.fixture(scope="module")
 def live_config(
     campaign: BfclV4PublicDevelopmentV2CampaignPlan,
+    bfcl_v2_verified_legacy_authority,
 ) -> BfclV4PublicV2LiveExecutionConfig:
     return freeze_bfcl_v4_public_v2_live_execution_config(
         catalog_observation=observe_bfcl_v4_public_live_model_catalog(
@@ -159,7 +176,7 @@ def live_config(
             observed_at_utc="2026-08-15T12:00:00Z",
         ),
         campaign=campaign,
-        verified_semantic_release=_semantic_release(),
+        semantic_authority=bfcl_v2_verified_legacy_authority.capability,
         backend_name="openai-compatible-native-function",
         backend_fingerprint=canonical_sha256("backend"),
         serializer_fingerprint=canonical_sha256("serializer"),
@@ -182,7 +199,7 @@ def prompts():
 def _decision_evidence(
     campaign: BfclV4PublicDevelopmentV2CampaignPlan,
     *,
-    semantic_release: str = SEMANTIC_RELEASE,
+    semantic_release: str,
 ) -> BfclV4PublicV2DecisionBarrierEvidence:
     decision_nodes = tuple(
         node
@@ -201,15 +218,43 @@ def _decision_evidence(
 def _unlock(
     campaign: BfclV4PublicDevelopmentV2CampaignPlan,
     *,
-    semantic_release: str = SEMANTIC_RELEASE,
+    semantic_release: str,
+    verified_barrier: BfclV4PublicV2VerifiedDecisionBarrierCapability | None = None,
 ) -> BfclV4PublicV2EvaluationUnlock:
     evidence = _decision_evidence(campaign, semantic_release=semantic_release)
+    capability = (
+        _mint_test_verified_barrier(campaign, semantic_release=semantic_release)
+        if verified_barrier is None
+        else verified_barrier
+    )
     return BfclV4PublicV2EvaluationUnlock(
         barrier_evidence=evidence,
         barrier_evidence_fingerprint=evidence.fingerprint,
+        verified_barrier_receipt_fingerprint=capability.receipt.fingerprint,
         authority_key_id="1" * 64,
         authentication_tag_hmac_sha256="2" * 64,
     )
+
+
+def _mint_test_verified_barrier(
+    campaign: BfclV4PublicDevelopmentV2CampaignPlan,
+    *,
+    semantic_release: str,
+) -> BfclV4PublicV2VerifiedDecisionBarrierCapability:
+    """Test-only mint for adapter tests that do not own a durable executor journal."""
+
+    evidence = _decision_evidence(campaign, semantic_release=semantic_release)
+    receipt = BfclV4PublicV2VerifiedDecisionBarrierReceipt(
+        evidence=evidence,
+        evidence_fingerprint=evidence.fingerprint,
+        journal_snapshot_fingerprint=canonical_sha256("test-only-journal-snapshot"),
+        journal_prefix_event_count=1_000,
+        journal_tail_event_fingerprint=evidence.final_decision_event_fingerprint,
+        runtime_fingerprint=RUNTIME,
+        semantic_release_fingerprint=semantic_release,
+        replay_state_fingerprint=canonical_sha256("test-only-independent-replay"),
+    )
+    return _mint_bfcl_v4_public_v2_verified_decision_barrier(receipt)
 
 
 @dataclass(frozen=True)
@@ -341,6 +386,11 @@ def _request_materialization(
     )
     return BfclV4PublicV2RequestMaterialization(
         semantic_release_ref=live.semantic_release_ref,
+        semantic_release_fingerprint=live.semantic_release_fingerprint,
+        semantic_release_evidence_shape=live.semantic_release_evidence_shape,
+        semantic_authority_verification_input_fingerprint=(
+            live.semantic_authority_verification_input_fingerprint
+        ),
         lineage=lineage,
         node=node,
         resolved_task=resolved,
@@ -495,9 +545,11 @@ class _FullGrader:
     grade_calls: int = 0
     authorization_calls: int = 0
     observed_unlock: BfclV4PublicV2EvaluationUnlock | None = None
+    observed_capability: BfclV4PublicV2VerifiedDecisionBarrierCapability | None = None
 
-    def issue_evaluation_unlock(self, evidence):
+    def issue_evaluation_unlock(self, capability):
         self.authorization_calls += 1
+        self.observed_capability = capability
         if self.unlock is None:
             raise AssertionError("test grader has no unlock")
         return self.unlock
@@ -695,7 +747,12 @@ def test_producer_rejects_prompt_materialization_and_release_tampering(
         size=1,
         media_type=live_config.semantic_release_ref.media_type,
     )
-    wrong_release = materialization.model_copy(update={"semantic_release_ref": wrong_ref})
+    wrong_release = materialization.model_copy(
+        update={
+            "semantic_release_ref": wrong_ref,
+            "semantic_release_fingerprint": wrong_ref.sha256,
+        }
+    )
     with pytest.raises(BfclV4PublicV2TrustedCallProducerError, match="production"):
         produced.producer.produce(
             request_materialization=wrong_release,
@@ -743,7 +800,16 @@ def test_holdout_adapter_requires_exact_issued_unlock(
     prompts,
     monkeypatch,
 ) -> None:
-    unlock = _unlock(campaign)
+    semantic_release = live_config.semantic_release_fingerprint
+    capability = _mint_test_verified_barrier(
+        campaign,
+        semantic_release=semantic_release,
+    )
+    unlock = _unlock(
+        campaign,
+        semantic_release=semantic_release,
+        verified_barrier=capability,
+    )
     produced = _ordinary_call(
         campaign,
         live_config,
@@ -769,7 +835,7 @@ def test_holdout_adapter_requires_exact_issued_unlock(
             evaluation_unlock_fingerprint="9" * 64,
         )
     assert registry.pending_count == 1
-    issued = adapter.issue_evaluation_unlock(unlock.barrier_evidence)
+    issued = adapter.issue_evaluation_unlock(capability)
     projection = _grade_with_executor_surface(
         adapter,
         call,
@@ -778,6 +844,7 @@ def test_holdout_adapter_requires_exact_issued_unlock(
     assert projection.evaluation_unlock_fingerprint == issued.fingerprint
     assert grader.authorization_calls == grader.grade_calls == 1
     assert grader.observed_unlock == unlock
+    assert grader.observed_capability is capability
 
 
 def test_unlock_release_mismatch_fails_before_trusted_authority(
@@ -786,7 +853,10 @@ def test_unlock_release_mismatch_fails_before_trusted_authority(
     prompts,
     monkeypatch,
 ) -> None:
-    unlock = _unlock(campaign)
+    unlock = _unlock(
+        campaign,
+        semantic_release=live_config.semantic_release_fingerprint,
+    )
     produced = _ordinary_call(campaign, live_config, prompts, monkeypatch)
     call = produced.record
     adapter, _, grader = _ordinary_adapter(
@@ -796,9 +866,18 @@ def test_unlock_release_mismatch_fails_before_trusted_authority(
         _ordinary_receipt(call),
         unlock=unlock,
     )
-    wrong = _decision_evidence(campaign, semantic_release="9" * 64)
+    wrong = _mint_test_verified_barrier(campaign, semantic_release="9" * 64)
     with pytest.raises(BfclV4PublicV2TrustedAdapterError, match="decision barrier"):
         adapter.issue_evaluation_unlock(wrong)
+    assert grader.authorization_calls == 0
+
+    with pytest.raises(BfclV4PublicV2TrustedAdapterError, match="verified replay capability"):
+        adapter.issue_evaluation_unlock(  # type: ignore[arg-type]
+            _decision_evidence(
+                campaign,
+                semantic_release=live_config.semantic_release_fingerprint,
+            )
+        )
     assert grader.authorization_calls == 0
 
 
@@ -807,18 +886,22 @@ def _source_events(
     unlock: BfclV4PublicV2EvaluationUnlock,
 ) -> tuple[BfclV4PublicV2JournalEvent, ...]:
     events: list[BfclV4PublicV2JournalEvent] = []
+    semantic_release = unlock.barrier_evidence.semantic_release_fingerprint
     for node in campaign.nodes:
         if node.kind is not BfclV4PublicDevelopmentV2NodeKind.PURE_AT_B_SAMPLE:
             continue
         assert node.campaign_call_slot is not None
         assert node.provider_seed_u63 is not None
         payload_sha256 = canonical_sha256({"node_id": node.node_id})
+        previous_event_sha256 = canonical_sha256(
+            {"domain": "bfcl-v2-test-prefix-tail/v1", "node_slot": node.node_slot}
+        )
         provider_request = BfclV4PublicV2ProviderRequest(
             campaign_plan_fingerprint=campaign.fingerprint,
             node_schedule_content_sha256=campaign.node_schedule_content_sha256,
             mutation_catalog_fingerprint=campaign.mutation_catalog_fingerprint,
             runtime_fingerprint=RUNTIME,
-            semantic_release_fingerprint=SEMANTIC_RELEASE,
+            semantic_release_fingerprint=semantic_release,
             node_id=node.node_id,
             node_reference_sha256=canonical_sha256(node),
             campaign_call_slot=node.campaign_call_slot,
@@ -827,21 +910,34 @@ def _source_events(
             decision_barrier_evidence_fingerprint=unlock.barrier_evidence_fingerprint,
             evaluation_unlock_fingerprint=unlock.fingerprint,
         )
+        dispatch = _dispatch_receipt(
+            campaign,
+            node,
+            runtime_fingerprint=RUNTIME,
+            semantic_release_fingerprint=semantic_release,
+            request_payload_sha256=payload_sha256,
+            previous_event_sha256=previous_event_sha256,
+        )
         events.append(
             BfclV4PublicV2JournalEvent(
                 sequence=node.node_slot,
-                previous_event_sha256=None,
+                previous_event_sha256=previous_event_sha256,
                 campaign_plan_fingerprint=campaign.fingerprint,
                 node_schedule_content_sha256=campaign.node_schedule_content_sha256,
                 mutation_catalog_fingerprint=campaign.mutation_catalog_fingerprint,
                 runtime_fingerprint=RUNTIME,
-                semantic_release_fingerprint=SEMANTIC_RELEASE,
+                semantic_release_fingerprint=semantic_release,
                 node_id=node.node_id,
                 node_slot=node.node_slot,
                 node_reference_sha256=canonical_sha256(node),
                 event_kind=BfclV4PublicV2EventKind.CALL,
                 request_fingerprint=provider_request.fingerprint,
                 request_payload_sha256=payload_sha256,
+                dispatch_fingerprint=dispatch.fingerprint,
+                journal_prefix_fingerprint=dispatch.journal_prefix_fingerprint,
+                request_materialization_fingerprint=dispatch.request_materialization_fingerprint,
+                native_request_fingerprint=dispatch.native_request_fingerprint,
+                proposal_batch_set_fingerprint=dispatch.proposal_batch_set_fingerprint,
                 provider_attempt_disposition=(BfclV4PublicV2AttemptDisposition.PROVIDER_FAILURE),
                 provider_attempts_consumed=1,
                 executed_harness_variant="bare",
@@ -885,15 +981,17 @@ def _aggregations(
 
 def _batch_request(
     campaign: BfclV4PublicDevelopmentV2CampaignPlan,
+    *,
+    semantic_release: str,
 ) -> BfclV4PublicV2PureAtBBatchGradeRequest:
-    unlock = _unlock(campaign)
+    unlock = _unlock(campaign, semantic_release=semantic_release)
     events = _source_events(campaign, unlock)
     return build_bfcl_v4_public_v2_pure_at_b_batch_grade_request(
         campaign=campaign,
         events=events,
         aggregations=_aggregations(campaign, events),
         evaluation_unlock=unlock,
-        semantic_release_fingerprint=SEMANTIC_RELEASE,
+        semantic_release_fingerprint=semantic_release,
     )
 
 
@@ -961,8 +1059,11 @@ class _FullBatchGrader:
 
 
 @pytest.fixture(scope="module")
-def batch_artifacts(campaign):
-    request = _batch_request(campaign)
+def batch_artifacts(campaign, live_config):
+    request = _batch_request(
+        campaign,
+        semantic_release=live_config.semantic_release_fingerprint,
+    )
     return request, _batch_receipt(request)
 
 
@@ -975,7 +1076,7 @@ def test_batch_adapter_projects_48_full_receipts_without_sample_grades(
     adapter = BfclV4PublicV2PureAtBBatchGraderAdapter(
         grader=object(),
         campaign=campaign,
-        semantic_release_fingerprint=SEMANTIC_RELEASE,
+        semantic_release_fingerprint=request.semantic_release_fingerprint,
         full_batch_grader=full_grader,
     )
 
@@ -1024,7 +1125,7 @@ def test_batch_projection_rejects_request_and_cell_receipt_mismatch(
     with pytest.raises(BfclV4PublicV2TrustedAdapterError, match="batch request"):
         project_bfcl_v4_public_v2_pure_at_b_batch_grade(
             campaign=campaign,
-            semantic_release_fingerprint=SEMANTIC_RELEASE,
+            semantic_release_fingerprint=request.semantic_release_fingerprint,
             request=request,
             receipt=wrong_request,
         )
@@ -1042,7 +1143,7 @@ def test_batch_projection_rejects_request_and_cell_receipt_mismatch(
     with pytest.raises(BfclV4PublicV2TrustedAdapterError, match="cell receipt"):
         project_bfcl_v4_public_v2_pure_at_b_batch_grade(
             campaign=campaign,
-            semantic_release_fingerprint=SEMANTIC_RELEASE,
+            semantic_release_fingerprint=request.semantic_release_fingerprint,
             request=request,
             receipt=wrong_cell,
         )

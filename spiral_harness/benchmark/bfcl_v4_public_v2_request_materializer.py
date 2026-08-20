@@ -2,7 +2,7 @@
 
 The resolver consumes an already loaded, trusted question-only bundle.  It
 does not open benchmark files, inspect answers or results, invoke a provider,
-or turn an opaque semantic-release reference into execution authority.
+or persist the process-local capability required to authorize materialization.
 """
 
 from __future__ import annotations
@@ -30,11 +30,11 @@ from spiral_harness.benchmark.bfcl_v4_public_v2_request_materializer_contracts i
     BfclV4PublicV2RequestMaterialization,
     BfclV4PublicV2ResolvedTaskReceipt,
 )
-from spiral_harness.benchmark.bfcl_v4_public_v2_semantic_release_contracts import (
-    BFCL_V4_PUBLIC_V2_SEMANTIC_DEVELOPMENT_RELEASE_MEDIA_TYPE,
+from spiral_harness.benchmark.bfcl_v4_public_v2_semantic_authority import (
+    BfclV4PublicV2VerifiedSemanticReleaseCapability,
+    validate_bfcl_v4_public_v2_verified_semantic_release_capability,
 )
 from spiral_harness.core.canonical import canonical_sha256, sha256_bytes
-from spiral_harness.core.models import ArtifactRef
 
 _TASK_REF = re.compile(r"^(fit|gate|holdout)-([0-9]{2})$")
 _SPLIT_COUNTS = {
@@ -99,19 +99,13 @@ def _checked_treatment(
         _reject("treatment differs from the frozen BFCL v2 prompt runtime")
 
 
-def _checked_release_ref(semantic_release_ref: ArtifactRef) -> ArtifactRef:
-    if type(semantic_release_ref) is not ArtifactRef:
-        _reject("semantic release must be an exact ArtifactRef")
+def _checked_authority(
+    semantic_authority: BfclV4PublicV2VerifiedSemanticReleaseCapability,
+) -> BfclV4PublicV2VerifiedSemanticReleaseCapability:
     try:
-        checked = ArtifactRef.model_validate(semantic_release_ref, strict=True)
-    except (TypeError, ValidationError, ValueError):
-        _reject("semantic release ref is malformed")
-    if (
-        checked.media_type != BFCL_V4_PUBLIC_V2_SEMANTIC_DEVELOPMENT_RELEASE_MEDIA_TYPE
-        or checked.size <= 0
-    ):
-        _reject("semantic release ref has the wrong media type or empty content")
-    return checked
+        return validate_bfcl_v4_public_v2_verified_semantic_release_capability(semantic_authority)
+    except (TypeError, ValueError):
+        _reject("semantic authority is not a live verified capability")
 
 
 def _parse_task_ref(
@@ -184,7 +178,7 @@ def materialize_bfcl_v4_public_v2_request(
     loaded: BfclV4LoadedPublicDevelopmentV2,
     campaign: BfclV4PublicDevelopmentV2CampaignPlan,
     lineage: BfclV4PublicDevelopmentV2NodeRequestLineage,
-    semantic_release_ref: ArtifactRef,
+    semantic_authority: BfclV4PublicV2VerifiedSemanticReleaseCapability,
     treatment: BfclV4PublicV2FrozenArmTreatment,
 ) -> BfclV4PublicV2RequestMaterialization:
     """Build one minimal task-bound request without calling a provider."""
@@ -192,7 +186,7 @@ def materialize_bfcl_v4_public_v2_request(
     checked_loaded = _checked_loaded(loaded)
     checked_campaign = _checked_campaign(campaign)
     checked_lineage = _checked_lineage(lineage)
-    checked_release_ref = _checked_release_ref(semantic_release_ref)
+    checked_authority = _checked_authority(semantic_authority)
     checked_treatment = _checked_treatment(treatment)
 
     if checked_loaded.manifest.fingerprint != checked_campaign.manifest_fingerprint:
@@ -236,7 +230,12 @@ def materialize_bfcl_v4_public_v2_request(
             function_schemas_json=task.function_schemas_json,
         )
         return BfclV4PublicV2RequestMaterialization(
-            semantic_release_ref=checked_release_ref,
+            semantic_release_ref=checked_authority.release_ref,
+            semantic_release_fingerprint=checked_authority.release_fingerprint,
+            semantic_release_evidence_shape=checked_authority.evidence_shape,
+            semantic_authority_verification_input_fingerprint=(
+                checked_authority.verification_input_fingerprint
+            ),
             lineage=checked_lineage,
             node=node,
             resolved_task=resolved_task,

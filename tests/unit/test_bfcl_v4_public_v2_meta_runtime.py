@@ -21,14 +21,15 @@ from spiral_harness.benchmark.bfcl_v4_public_development_v2_call_plan_contracts 
 from spiral_harness.benchmark.bfcl_v4_public_v2_mutations import (
     BfclV4PublicV2MutationId,
 )
-from spiral_harness.benchmark.bfcl_v4_public_v2_semantic_release_contracts import (
-    BfclV4PublicV2SemanticDevelopmentRelease,
-)
 from spiral_harness.core.canonical import canonical_json, canonical_sha256, sha256_bytes
-from spiral_harness.core.models import ArtifactRef
 from spiral_harness.execution.contracts import BackendTokenUsage
 from spiral_harness.experiments.bfcl_v4_public_live_config import (
     observe_bfcl_v4_public_live_model_catalog,
+)
+from spiral_harness.experiments.bfcl_v4_public_v2_dispatch_contracts import (
+    BFCL_V4_PUBLIC_V2_EMPTY_PROPOSAL_BATCH_SET_FINGERPRINT,
+    BfclV4PublicV2DispatchReceipt,
+    bfcl_v4_public_v2_journal_prefix_fingerprint,
 )
 from spiral_harness.experiments.bfcl_v4_public_v2_executor_contracts import (
     BfclV4PublicV2AttemptDisposition,
@@ -74,22 +75,34 @@ def _digest(label: str) -> str:
     return hashlib.sha256(label.encode()).hexdigest()
 
 
-def _ref(label: str, media_type: str = "application/x-test") -> ArtifactRef:
-    return ArtifactRef(sha256=_digest(label), size=len(label), media_type=media_type)
-
-
-def _release() -> BfclV4PublicV2SemanticDevelopmentRelease:
-    return BfclV4PublicV2SemanticDevelopmentRelease(
-        source_universe_fingerprint=_digest("universe"),
-        reviewer_packet_ref=_ref("packet"),
-        trusted_mapping_ref=_ref("mapping"),
-        primary_review_refs=(_ref("review-one"), _ref("review-two")),
-        primary_execution_attestation_refs=(_ref("attestation-one"), _ref("attestation-two")),
-        final_partition_sha256=_digest("partition"),
-        final_semantic_family_count=40,
-        primary_pairwise_disagreement_count=0,
-        reviewer_count=2,
-        release_authority_hmac_sha256=_digest("release-hmac"),
+def _dispatch_receipt(campaign, runtime, node, request_payload_sha256, previous_event_sha256):
+    return BfclV4PublicV2DispatchReceipt(
+        node=node,
+        node_reference_sha256=canonical_sha256(node),
+        journal_prefix_fingerprint=bfcl_v4_public_v2_journal_prefix_fingerprint(
+            campaign_plan_fingerprint=campaign.fingerprint,
+            node_schedule_content_sha256=campaign.node_schedule_content_sha256,
+            runtime_fingerprint=runtime.fingerprint,
+            semantic_release_fingerprint=runtime.semantic_release_fingerprint,
+            event_count=node.node_slot,
+            tail_event_sha256=previous_event_sha256,
+        ),
+        journal_prefix_event_count=node.node_slot,
+        journal_prefix_tail_event_sha256=previous_event_sha256,
+        campaign_plan_fingerprint=campaign.fingerprint,
+        node_schedule_content_sha256=campaign.node_schedule_content_sha256,
+        runtime_fingerprint=runtime.fingerprint,
+        semantic_release_fingerprint=runtime.semantic_release_fingerprint,
+        request_materialization_fingerprint=canonical_sha256(
+            {
+                "domain": "bfcl-v2-test-materialization/v1",
+                "node_id": node.node_id,
+                "payload": request_payload_sha256,
+            }
+        ),
+        native_request_fingerprint=request_payload_sha256,
+        request_payload_sha256=request_payload_sha256,
+        proposal_batch_set_fingerprint=BFCL_V4_PUBLIC_V2_EMPTY_PROPOSAL_BATCH_SET_FINGERPRINT,
     )
 
 
@@ -99,14 +112,17 @@ def campaign():
 
 
 @pytest.fixture(scope="module")
-def runtime(campaign) -> BfclV4PublicV2LiveExecutionConfig:
+def runtime(
+    campaign,
+    bfcl_v2_verified_legacy_authority,
+) -> BfclV4PublicV2LiveExecutionConfig:
     return freeze_bfcl_v4_public_v2_live_execution_config(
         catalog_observation=observe_bfcl_v4_public_live_model_catalog(
             (BFCL_V4_PUBLIC_DEVELOPMENT_V2_MODEL_ROUTE,),
             observed_at_utc="2026-08-15T12:00:00Z",
         ),
         campaign=campaign,
-        verified_semantic_release=_release(),
+        semantic_authority=bfcl_v2_verified_legacy_authority.capability,
         backend_name="synthetic-native-backend",
         backend_fingerprint=_digest("backend"),
         serializer_fingerprint=_digest("serializer"),
@@ -159,12 +175,20 @@ def _parent_events(campaign, runtime, diagnosis_node):
         request = expected_provider_request(campaign, runtime, source, payload)
         response = canonical_json({"calls": [{"name": "synthetic", "index": index}]})
         response_fingerprint = _digest(f"parent-response-{source.node_id}")
+        previous_event_sha256 = (
+            None if source.node_slot == 0 else _digest(f"previous-{source.node_slot}")
+        )
+        dispatch = _dispatch_receipt(
+            campaign,
+            runtime,
+            source,
+            payload,
+            previous_event_sha256,
+        )
         events.append(
             BfclV4PublicV2JournalEvent(
                 sequence=source.node_slot,
-                previous_event_sha256=(
-                    None if source.node_slot == 0 else _digest(f"previous-{source.node_slot}")
-                ),
+                previous_event_sha256=previous_event_sha256,
                 campaign_plan_fingerprint=BFCL_V4_PUBLIC_DEVELOPMENT_V2_CAMPAIGN_FINGERPRINT,
                 node_schedule_content_sha256=campaign.node_schedule_content_sha256,
                 mutation_catalog_fingerprint=campaign.mutation_catalog_fingerprint,
@@ -176,6 +200,11 @@ def _parent_events(campaign, runtime, diagnosis_node):
                 event_kind=BfclV4PublicV2EventKind.CALL,
                 request_fingerprint=request.fingerprint,
                 request_payload_sha256=payload,
+                dispatch_fingerprint=dispatch.fingerprint,
+                journal_prefix_fingerprint=dispatch.journal_prefix_fingerprint,
+                request_materialization_fingerprint=dispatch.request_materialization_fingerprint,
+                native_request_fingerprint=dispatch.native_request_fingerprint,
+                proposal_batch_set_fingerprint=dispatch.proposal_batch_set_fingerprint,
                 provider_attempt_disposition=BfclV4PublicV2AttemptDisposition.SUCCEEDED,
                 provider_attempts_consumed=1,
                 executed_harness_variant="parent",
@@ -278,9 +307,17 @@ def _text_response(request, text="plain text"):
 def _diagnosis_event(campaign, runtime, node, call, result):
     provider = expected_provider_request(campaign, runtime, node, call.native_request.fingerprint)
     succeeded = result.native_response_fingerprint is not None
+    previous_event_sha256 = _digest(f"previous-{node.node_slot}")
+    dispatch = _dispatch_receipt(
+        campaign,
+        runtime,
+        node,
+        call.native_request.fingerprint,
+        previous_event_sha256,
+    )
     return BfclV4PublicV2JournalEvent(
         sequence=node.node_slot,
-        previous_event_sha256=_digest(f"previous-{node.node_slot}"),
+        previous_event_sha256=previous_event_sha256,
         campaign_plan_fingerprint=BFCL_V4_PUBLIC_DEVELOPMENT_V2_CAMPAIGN_FINGERPRINT,
         node_schedule_content_sha256=campaign.node_schedule_content_sha256,
         mutation_catalog_fingerprint=campaign.mutation_catalog_fingerprint,
@@ -292,6 +329,11 @@ def _diagnosis_event(campaign, runtime, node, call, result):
         event_kind=BfclV4PublicV2EventKind.CALL,
         request_fingerprint=provider.fingerprint,
         request_payload_sha256=call.native_request.fingerprint,
+        dispatch_fingerprint=dispatch.fingerprint,
+        journal_prefix_fingerprint=dispatch.journal_prefix_fingerprint,
+        request_materialization_fingerprint=dispatch.request_materialization_fingerprint,
+        native_request_fingerprint=dispatch.native_request_fingerprint,
+        proposal_batch_set_fingerprint=dispatch.proposal_batch_set_fingerprint,
         provider_attempt_disposition=(
             BfclV4PublicV2AttemptDisposition.SUCCEEDED
             if succeeded

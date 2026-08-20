@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import csv
 import io
-import json
 import math
 import os
 import re
@@ -136,8 +135,10 @@ def load_gaia_validation_tasks(
         question = row.get("Question")
         final_answer = row.get("Final answer")
         level = row.get("Level")
-        if not isinstance(task_id, str) or not isinstance(question, str) or not isinstance(
-            final_answer, str
+        if (
+            not isinstance(task_id, str)
+            or not isinstance(question, str)
+            or not isinstance(final_answer, str)
         ):
             raise GaiaValidationDevError("GAIA row schema changed")
         if not isinstance(level, int):
@@ -193,10 +194,9 @@ def _gaia_prompt(task: GaiaValidationTask, attachment_text: str | None) -> str:
             f"{attachment_text}"
         )
     return (
-        "Solve the GAIA task. Reason privately if needed, but end with exactly one line of the form "
-        "'FINAL ANSWER: <answer>'.\n\nQuestion:\n"
-        + task.question
-        + attachment_block
+        "Solve the GAIA task. Reason privately if needed, but end with exactly one "
+        "line of the form "
+        "'FINAL ANSWER: <answer>'.\n\nQuestion:\n" + task.question + attachment_block
     )
 
 
@@ -233,7 +233,9 @@ def run_gaia_validation_dev(
     )
     harness = ResolvedHarness.from_prompt(
         harness_ref=harness_ref,
-        system_prompt="You are a careful benchmark assistant. Follow the final-answer contract exactly.",
+        system_prompt=(
+            "You are a careful benchmark assistant. Follow the final-answer contract exactly."
+        ),
     )
     spec = build_live_gsm8k_spec(
         backend_fingerprint=backend.fingerprint,

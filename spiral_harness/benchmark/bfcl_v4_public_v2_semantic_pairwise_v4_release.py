@@ -116,9 +116,7 @@ def _assert_independent(
         or len({item.lineage.ref for item in evidence}) != len(evidence)
         or len({item.lineage.reviewer_nonce_sha256 for item in evidence}) != len(evidence)
         or len({item.lineage.seed_root_sha256 for item in evidence}) != len(evidence)
-        or len(
-            {session.attempt_evidence.provider_response_id for session in call_sessions}
-        )
+        or len({session.attempt_evidence.provider_response_id for session in call_sessions})
         != len(call_sessions)
     ):
         _reject(BfclV4PublicV2PairwiseV4ReleaseFailureStage.REVIEW_INDEPENDENCE)

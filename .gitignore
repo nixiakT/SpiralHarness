@@ -17,6 +17,7 @@ coverage.xml
 htmlcov/
 .venv/
 .venv-*/
+.bench_envs/
 dist/
 build/
 *.egg-info/

@@ -45,11 +45,10 @@ from spiral_harness.benchmark.bfcl_v4_public_v2_request_materializer_contracts i
     BfclV4PublicV2FrozenArmTreatment,
     BfclV4PublicV2RequestMaterialization,
 )
-from spiral_harness.benchmark.bfcl_v4_public_v2_semantic_release_contracts import (
-    BFCL_V4_PUBLIC_V2_SEMANTIC_DEVELOPMENT_RELEASE_MEDIA_TYPE,
+from spiral_harness.benchmark.bfcl_v4_public_v2_semantic_authority_contracts import (
+    BfclV4PublicV2SemanticReleaseEvidenceShape,
 )
 from spiral_harness.core.canonical import canonical_json, canonical_sha256
-from spiral_harness.core.models import ArtifactRef
 from spiral_harness.experiments.bfcl_v4_public_v2_mutation_runtime import (
     BfclV4PublicV2MutationTreatmentRole,
     materialize_bfcl_v4_public_v2_mutation_runtime_batch,
@@ -193,12 +192,8 @@ def prompts():
 
 
 @pytest.fixture(scope="module")
-def semantic_release_ref() -> ArtifactRef:
-    return ArtifactRef(
-        sha256="a" * 64,
-        size=1,
-        media_type=BFCL_V4_PUBLIC_V2_SEMANTIC_DEVELOPMENT_RELEASE_MEDIA_TYPE,
-    )
+def semantic_authority(bfcl_v2_verified_legacy_authority):
+    return bfcl_v2_verified_legacy_authority.capability
 
 
 def _node(campaign, *, arm, kind, variant=None):
@@ -248,7 +243,7 @@ def _materialize(
     campaign,
     node,
     prompts,
-    semantic_release_ref,
+    semantic_authority,
     fallback=False,
 ):
     lineage = derive_bfcl_v4_public_development_v2_node_request_lineage(
@@ -259,7 +254,7 @@ def _materialize(
         loaded=loaded,
         campaign=campaign,
         lineage=lineage,
-        semantic_release_ref=semantic_release_ref,
+        semantic_authority=semantic_authority,
         treatment=_treatment(node, prompts, fallback=fallback),
     )
 
@@ -362,7 +357,7 @@ def test_materializer_covers_every_task_bound_treatment_shape(
     synthetic_loaded,
     campaign,
     prompts,
-    semantic_release_ref,
+    semantic_authority,
     arm,
     kind,
     variant,
@@ -374,7 +369,7 @@ def test_materializer_covers_every_task_bound_treatment_shape(
         campaign=campaign,
         node=node,
         prompts=prompts,
-        semantic_release_ref=semantic_release_ref,
+        semantic_authority=semantic_authority,
         fallback=fallback,
     )
 
@@ -383,8 +378,8 @@ def test_materializer_covers_every_task_bound_treatment_shape(
     assert request.fingerprint == materialized.request_payload_sha256
     assert materialized.node == node
     assert materialized.treatment.parent_fallback_used is fallback
-    assert materialized.semantic_release_authority_verified is False
-    assert materialized.score_bearing_execution_allowed is False
+    assert materialized.semantic_release_authority_verified is True
+    assert materialized.score_bearing_execution_allowed is True
     assert materialized.provider_calls == 0
 
 
@@ -458,7 +453,7 @@ def test_materializer_rejects_non_task_calls_and_control_node_lineage(
     synthetic_loaded,
     campaign,
     prompts,
-    semantic_release_ref,
+    semantic_authority,
 ) -> None:
     diagnosis = next(
         node for node in campaign.nodes if node.kind is BfclV4PublicDevelopmentV2NodeKind.DIAGNOSIS
@@ -478,7 +473,7 @@ def test_materializer_rejects_non_task_calls_and_control_node_lineage(
             loaded=synthetic_loaded,
             campaign=campaign,
             lineage=lineage,
-            semantic_release_ref=semantic_release_ref,
+            semantic_authority=semantic_authority,
             treatment=_treatment(parent, prompts),
         )
 
@@ -489,7 +484,7 @@ def test_materializer_rejects_non_task_calls_and_control_node_lineage(
             loaded=synthetic_loaded,
             campaign=campaign,
             lineage=forged,
-            semantic_release_ref=semantic_release_ref,
+            semantic_authority=semantic_authority,
             treatment=_treatment(parent, prompts),
         )
 
@@ -498,7 +493,7 @@ def test_exact_contract_types_and_tampered_lineage_are_rejected(
     synthetic_loaded,
     campaign,
     prompts,
-    semantic_release_ref,
+    semantic_authority,
 ) -> None:
     node = _node(
         campaign,
@@ -515,7 +510,7 @@ def test_exact_contract_types_and_tampered_lineage_are_rejected(
         loaded=synthetic_loaded,
         campaign=campaign,
         lineage=lineage,
-        semantic_release_ref=semantic_release_ref,
+        semantic_authority=semantic_authority,
         treatment=treatment,
     )
     for field_name, value in (
@@ -546,7 +541,7 @@ def test_request_dump_is_minimal_and_contains_no_private_roster_or_other_task(
     synthetic_loaded,
     campaign,
     prompts,
-    semantic_release_ref,
+    semantic_authority,
 ) -> None:
     node = _node(
         campaign,
@@ -559,7 +554,7 @@ def test_request_dump_is_minimal_and_contains_no_private_roster_or_other_task(
         campaign=campaign,
         node=node,
         prompts=prompts,
-        semantic_release_ref=semantic_release_ref,
+        semantic_authority=semantic_authority,
     )
     visible = materialized.model_visible_request.model_dump(mode="json")
     assert set(visible) == {
@@ -599,7 +594,7 @@ def test_question_schema_and_treatment_substitution_fail_closed(
     synthetic_loaded,
     campaign,
     prompts,
-    semantic_release_ref,
+    semantic_authority,
 ) -> None:
     node = _node(
         campaign,
@@ -612,7 +607,7 @@ def test_question_schema_and_treatment_substitution_fail_closed(
         campaign=campaign,
         node=node,
         prompts=prompts,
-        semantic_release_ref=semantic_release_ref,
+        semantic_authority=semantic_authority,
     )
     other_task = synthetic_loaded.tasks[(materialized.resolved_task.manifest_ordinal + 1) % 25]
     wrong_question = materialized.model_visible_request.model_copy(
@@ -636,11 +631,12 @@ def test_question_schema_and_treatment_substitution_fail_closed(
             BfclV4PublicV2RequestMaterialization.model_validate(forged, strict=True)
 
 
-def test_semantic_release_ref_is_opaque_typed_and_never_claims_authority(
+def test_materializer_requires_live_authority_and_binds_its_exact_release(
     synthetic_loaded,
     campaign,
     prompts,
-    semantic_release_ref,
+    semantic_authority,
+    bfcl_v2_verified_legacy_authority,
 ) -> None:
     node = _node(
         campaign,
@@ -658,38 +654,47 @@ def test_semantic_release_ref_is_opaque_typed_and_never_claims_authority(
         lineage=lineage,
         treatment=_treatment(node, prompts),
     )
-    wrong_refs = (
-        semantic_release_ref.model_copy(update={"media_type": "application/json"}),
-        semantic_release_ref.model_copy(update={"size": 0}),
-        ArtifactRef.model_construct(
-            sha256="not-a-sha256",
-            size=1,
-            media_type=BFCL_V4_PUBLIC_V2_SEMANTIC_DEVELOPMENT_RELEASE_MEDIA_TYPE,
-        ),
-    )
-    for wrong_ref in wrong_refs:
-        with pytest.raises(BfclV4PublicV2RequestMaterializationError, match="semantic release"):
+    for ordinary_value in (
+        bfcl_v2_verified_legacy_authority.release,
+        bfcl_v2_verified_legacy_authority.release.ref,
+        object(),
+    ):
+        with pytest.raises(BfclV4PublicV2RequestMaterializationError, match="authority"):
             materialize_bfcl_v4_public_v2_request(
                 **base,
-                semantic_release_ref=wrong_ref,
+                semantic_authority=ordinary_value,
             )
 
     materialized = materialize_bfcl_v4_public_v2_request(
         **base,
-        semantic_release_ref=semantic_release_ref,
+        semantic_authority=semantic_authority,
     )
-    assert materialized.semantic_release_ref == semantic_release_ref
+    assert materialized.semantic_release_ref == semantic_authority.release_ref
+    assert materialized.semantic_release_fingerprint == semantic_authority.release_fingerprint
+    assert materialized.semantic_authority_verification_input_fingerprint == (
+        semantic_authority.verification_input_fingerprint
+    )
     assert materialized.semantic_release_media_type_verified
-    assert not materialized.semantic_release_authority_verified
+    assert materialized.semantic_release_authority_verified
     assert not materialized.semantic_release_content_loaded
-    assert not materialized.score_bearing_execution_allowed
+    assert materialized.score_bearing_execution_allowed
+
+    cross_shape = materialized.model_copy(
+        update={
+            "semantic_release_evidence_shape": (
+                BfclV4PublicV2SemanticReleaseEvidenceShape.CHUNKED_PAIRWISE_COMPOSITE_V4
+            )
+        }
+    )
+    with pytest.raises(ValidationError, match="shape, ref, or fingerprint"):
+        BfclV4PublicV2RequestMaterialization.model_validate(cross_shape, strict=True)
 
 
 def test_treatment_arm_variant_and_fallback_must_match_exact_node(
     synthetic_loaded,
     campaign,
     prompts,
-    semantic_release_ref,
+    semantic_authority,
 ) -> None:
     node = _node(
         campaign,
@@ -711,7 +716,7 @@ def test_treatment_arm_variant_and_fallback_must_match_exact_node(
             loaded=synthetic_loaded,
             campaign=campaign,
             lineage=lineage,
-            semantic_release_ref=semantic_release_ref,
+            semantic_authority=semantic_authority,
             treatment=static_treatment,
         )
     with pytest.raises(ValidationError):
@@ -726,7 +731,7 @@ def test_materialization_is_deterministic_and_never_invokes_network_or_provider(
     synthetic_loaded,
     campaign,
     prompts,
-    semantic_release_ref,
+    semantic_authority,
     monkeypatch,
 ) -> None:
     def invocation_trap(*_args, **_kwargs):
@@ -745,14 +750,14 @@ def test_materialization_is_deterministic_and_never_invokes_network_or_provider(
         campaign=campaign,
         node=node,
         prompts=prompts,
-        semantic_release_ref=semantic_release_ref,
+        semantic_authority=semantic_authority,
     )
     second = _materialize(
         loaded=synthetic_loaded,
         campaign=campaign,
         node=node,
         prompts=prompts,
-        semantic_release_ref=semantic_release_ref,
+        semantic_authority=semantic_authority,
     )
     assert first == second
     assert first.fingerprint == second.fingerprint

@@ -306,9 +306,7 @@ def test_scripted_replicate_consumes_100_slots_and_offline_replays(
     pure_at_b_index = 32
     pure_at_b = holdout.observations[pure_at_b_index]
     assert pure_at_b.pure_at_b_selection_fingerprint != "f" * 64
-    forged_pure_at_b = pure_at_b.model_copy(
-        update={"pure_at_b_selection_fingerprint": "f" * 64}
-    )
+    forged_pure_at_b = pure_at_b.model_copy(update={"pure_at_b_selection_fingerprint": "f" * 64})
     pure_at_b_holdout = BfclV4HoldoutEvidence(
         plan_fingerprint=holdout.plan_fingerprint,
         schedule_content_sha256=holdout.schedule_content_sha256,

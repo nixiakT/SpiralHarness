@@ -221,6 +221,7 @@ class BfclV4PublicV2EvaluationUnlock(ImmutableModel):
     )
     barrier_evidence: BfclV4PublicV2DecisionBarrierEvidence
     barrier_evidence_fingerprint: Sha256
+    verified_barrier_receipt_fingerprint: Sha256
     authority_key_id: Sha256
     authentication_tag_hmac_sha256: Sha256
     candidate_visible: Literal[False] = False

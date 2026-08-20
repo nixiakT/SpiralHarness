@@ -182,14 +182,12 @@ class BfclV4CampaignExecutionCheckpoint(ImmutableModel):
         count = len(self.completed_replicates)
         if (
             self.campaign_ref.media_type != BFCL_V4_CAMPAIGN_REGISTRATION_MEDIA_TYPE
-            or self.live_execution_config_ref.media_type
-            != BFCL_V4_CAMPAIGN_LIVE_CONFIG_MEDIA_TYPE
+            or self.live_execution_config_ref.media_type != BFCL_V4_CAMPAIGN_LIVE_CONFIG_MEDIA_TYPE
         ):
             raise ValueError("checkpoint campaign or live-config reference has the wrong type")
         if (
             self.campaign_ref.sha256 != self.campaign_fingerprint
-            or self.live_execution_config_ref.sha256
-            != self.live_execution_config_fingerprint
+            or self.live_execution_config_ref.sha256 != self.live_execution_config_fingerprint
         ):
             raise ValueError("checkpoint campaign or live-config CAS fingerprint changed")
         if tuple(item.ordinal for item in self.completed_replicates) != tuple(range(count)):
@@ -281,8 +279,7 @@ class BfclV4CampaignExecutionFailure(ImmutableModel):
         if has_unverified and (
             self.stage is not BfclV4CampaignFailureStage.REPLICATE_VERIFICATION
             or self.unverified_run_result_ref.media_type != BFCL_V4_RUNNER_RESULT_MEDIA_TYPE
-            or self.unverified_run_result_ref.sha256
-            != self.unverified_run_result_fingerprint
+            or self.unverified_run_result_ref.sha256 != self.unverified_run_result_fingerprint
         ):
             raise ValueError("unverified result is only valid at the verification stage")
         return self
@@ -331,14 +328,12 @@ class BfclV4PublicCampaignExecutionResult(ImmutableModel):
         count = len(self.completed_replicates)
         if (
             self.campaign_ref.media_type != BFCL_V4_CAMPAIGN_REGISTRATION_MEDIA_TYPE
-            or self.live_execution_config_ref.media_type
-            != BFCL_V4_CAMPAIGN_LIVE_CONFIG_MEDIA_TYPE
+            or self.live_execution_config_ref.media_type != BFCL_V4_CAMPAIGN_LIVE_CONFIG_MEDIA_TYPE
         ):
             raise ValueError("execution result campaign or config reference has the wrong type")
         if (
             self.campaign_ref.sha256 != self.campaign_fingerprint
-            or self.live_execution_config_ref.sha256
-            != self.live_execution_config_fingerprint
+            or self.live_execution_config_ref.sha256 != self.live_execution_config_fingerprint
         ):
             raise ValueError("execution result campaign or config CAS fingerprint changed")
         if tuple(item.ordinal for item in self.completed_replicates) != tuple(range(count)):
@@ -346,8 +341,7 @@ class BfclV4PublicCampaignExecutionResult(ImmutableModel):
         if self.verified_closed_model_calls != count * 100:
             raise ValueError("verified call count differs from completed replicate refs")
         if any(
-            ref.media_type != BFCL_V4_CAMPAIGN_CHECKPOINT_MEDIA_TYPE
-            for ref in self.checkpoint_refs
+            ref.media_type != BFCL_V4_CAMPAIGN_CHECKPOINT_MEDIA_TYPE for ref in self.checkpoint_refs
         ):
             raise ValueError("execution result contains an untyped checkpoint reference")
         if len({ref.sha256 for ref in self.checkpoint_refs}) != len(self.checkpoint_refs):

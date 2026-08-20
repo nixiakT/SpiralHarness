@@ -1,8 +1,8 @@
 """Fail-closed contracts for one BFCL V4 public-v2 solver request.
 
 Only :class:`BfclV4PublicV2ModelVisibleRequest` may cross the model boundary.
-The surrounding materialization retains private task and DAG coordinates for
-trusted replay, but cannot authorize a provider call or benchmark scoring.
+The surrounding materialization retains private task, DAG, and verified
+semantic-authority bindings for trusted replay.
 """
 
 from __future__ import annotations
@@ -32,8 +32,9 @@ from spiral_harness.benchmark.bfcl_v4_public_development_v2_identities import (
     BFCL_V4_PUBLIC_DEVELOPMENT_V2_ROW_IDENTITIES,
     BFCL_V4_PUBLIC_DEVELOPMENT_V2_SELECTED_TASK_IDS,
 )
-from spiral_harness.benchmark.bfcl_v4_public_v2_semantic_release_contracts import (
-    BFCL_V4_PUBLIC_V2_SEMANTIC_DEVELOPMENT_RELEASE_MEDIA_TYPE,
+from spiral_harness.benchmark.bfcl_v4_public_v2_semantic_authority_contracts import (
+    BfclV4PublicV2SemanticReleaseEvidenceShape,
+    bfcl_v4_public_v2_semantic_release_media_type,
 )
 from spiral_harness.core.canonical import canonical_json, canonical_sha256, sha256_bytes
 from spiral_harness.core.models import ArtifactRef, ImmutableModel, NonEmptyStr, Sha256
@@ -270,8 +271,11 @@ class BfclV4PublicV2ModelVisibleRequest(ImmutableModel):
 class BfclV4PublicV2RequestMaterialization(ImmutableModel):
     """Trusted wrapper binding one minimal request to its frozen private lineage."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     semantic_release_ref: ArtifactRef
+    semantic_release_fingerprint: Sha256
+    semantic_release_evidence_shape: BfclV4PublicV2SemanticReleaseEvidenceShape
+    semantic_authority_verification_input_fingerprint: Sha256
     lineage: BfclV4PublicDevelopmentV2NodeRequestLineage
     node: BfclV4PublicDevelopmentV2DagNode
     resolved_task: BfclV4PublicV2ResolvedTaskReceipt
@@ -285,22 +289,23 @@ class BfclV4PublicV2RequestMaterialization(ImmutableModel):
     candidate_visible_wrapper: Literal[False] = False
     request_payload_present: Literal[True] = True
     semantic_release_media_type_verified: Literal[True] = True
-    semantic_release_authority_verified: Literal[False] = False
+    semantic_release_authority_verified: Literal[True] = True
     semantic_release_content_loaded: Literal[False] = False
     provider_seed_honoring_attested: Literal[False] = False
     provider_calls: Literal[0] = 0
-    score_bearing_execution_allowed: Literal[False] = False
+    score_bearing_execution_allowed: Literal[True] = True
 
     @model_validator(mode="after")
-    def _bind_request_without_granting_authority(self) -> Self:
+    def _bind_request_to_verified_authority(self) -> Self:
         if type(self.semantic_release_ref) is not ArtifactRef:
             raise ValueError("semantic release must be an exact ArtifactRef")
         if (
             self.semantic_release_ref.media_type
-            != BFCL_V4_PUBLIC_V2_SEMANTIC_DEVELOPMENT_RELEASE_MEDIA_TYPE
+            != bfcl_v4_public_v2_semantic_release_media_type(self.semantic_release_evidence_shape)
+            or self.semantic_release_ref.sha256 != self.semantic_release_fingerprint
             or self.semantic_release_ref.size <= 0
         ):
-            raise ValueError("semantic release ref has the wrong media type or empty content")
+            raise ValueError("semantic release shape, ref, or fingerprint differs")
         if type(self.lineage) is not BfclV4PublicDevelopmentV2NodeRequestLineage:
             raise ValueError("request lineage must use the exact BFCL v2 contract")
         if type(self.node) is not BfclV4PublicDevelopmentV2DagNode:

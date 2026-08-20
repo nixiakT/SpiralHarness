@@ -18,10 +18,25 @@ from spiral_harness.benchmark.bfcl_v4_public_v2_pure_at_b_trusted_grader_contrac
     build_bfcl_v4_public_v2_pure_at_b_batch_grade_request,
 )
 from spiral_harness.benchmark.bfcl_v4_public_v2_trusted_grader_contracts import (
-    BfclV4PublicV2DecisionBarrierEvidence,
     BfclV4PublicV2EvaluationUnlock,
 )
 from spiral_harness.core.canonical import canonical_sha256
+from spiral_harness.experiments.bfcl_v4_public_v2_dispatch import (
+    BfclV4PublicV2DispatchError,
+    bind_bfcl_v4_public_v2_dispatch,
+    build_bfcl_v4_public_v2_dispatch_context,
+    execute_bfcl_v4_public_v2_dispatch,
+    project_bfcl_v4_public_v2_dispatch_control,
+    recover_bfcl_v4_public_v2_dispatch_state,
+)
+from spiral_harness.experiments.bfcl_v4_public_v2_dispatch_contracts import (
+    BfclV4PublicV2DispatchContext,
+    BfclV4PublicV2DispatchReceipt,
+)
+from spiral_harness.experiments.bfcl_v4_public_v2_executor_authority import (
+    BfclV4PublicV2TrustedBinaryGrader,
+    authorize_bfcl_v4_public_v2_evaluation,
+)
 from spiral_harness.experiments.bfcl_v4_public_v2_executor_contracts import (
     BfclV4PublicV2AttemptDisposition,
     BfclV4PublicV2CallReservation,
@@ -62,16 +77,19 @@ class BfclV4PublicV2ProviderTransport(Protocol):
         self,
         request: BfclV4PublicV2ProviderRequest,
         node: BfclV4PublicDevelopmentV2DagNode,
+        dispatch: BfclV4PublicV2DispatchReceipt,
     ) -> BfclV4PublicV2ProviderAttempt: ...
 
 
 class BfclV4PublicV2RequestBinder(Protocol):
-    """Bind actual request bytes without exposing them to the journal core."""
+    """Materialize one request from the exact replayed journal prefix."""
 
-    def request_payload_sha256(
+    def bind(
         self,
+        *,
         node: BfclV4PublicDevelopmentV2DagNode,
-    ) -> str: ...
+        context: BfclV4PublicV2DispatchContext,
+    ) -> BfclV4PublicV2DispatchReceipt: ...
 
 
 class BfclV4PublicV2CheckpointSink(Protocol):
@@ -92,25 +110,6 @@ class BfclV4PublicV2PureAtBBatchGrader(Protocol):
         self,
         request: BfclV4PublicV2PureAtBBatchGradeRequest,
     ) -> BfclV4PublicV2PureAtBBatchGradeProjection: ...
-
-
-class BfclV4PublicV2TrustedBinaryGrader(Protocol):
-    """Answer-side adapter exposing only opaque authority and grade projections."""
-
-    def issue_evaluation_unlock(
-        self,
-        evidence: BfclV4PublicV2DecisionBarrierEvidence,
-    ) -> BfclV4PublicV2EvaluationUnlock: ...
-
-    def grade(
-        self,
-        node: BfclV4PublicDevelopmentV2DagNode,
-        canonical_response: str,
-        *,
-        request_payload_sha256: str,
-        provider_response_fingerprint: str,
-        evaluation_unlock_fingerprint: str | None,
-    ) -> BfclV4PublicV2TrustedGradeProjection: ...
 
 
 _GRADABLE_KINDS = frozenset(
@@ -171,6 +170,12 @@ class BfclV4PublicV2AppendOnlyJournal:
             pending = checked.pending_call_reservation
             checkpoint_fingerprint = checked.fingerprint
         self._events = events
+        self._dispatch_controls, self._proposal_batch_set_fingerprint = (
+            recover_bfcl_v4_public_v2_dispatch_state(
+                campaign=self._campaign,
+                events=events,
+            )
+        )
         self._pending_call_reservation = pending
         self._checkpoint_sink = checkpoint_sink
         self._checkpoint_fingerprint = checkpoint_fingerprint
@@ -223,6 +228,7 @@ class BfclV4PublicV2AppendOnlyJournal:
         *,
         node: BfclV4PublicDevelopmentV2DagNode,
         request: BfclV4PublicV2ProviderRequest,
+        dispatch: BfclV4PublicV2DispatchReceipt,
     ) -> BfclV4PublicV2CallReservation:
         """Durably reserve the exact next call before crossing the provider boundary."""
 
@@ -239,9 +245,14 @@ class BfclV4PublicV2AppendOnlyJournal:
                 node_reference_sha256=canonical_sha256(node),
                 request=request,
                 request_fingerprint=request.fingerprint,
+                dispatch_fingerprint=dispatch.fingerprint,
+                journal_prefix_fingerprint=dispatch.journal_prefix_fingerprint,
+                request_materialization_fingerprint=(dispatch.request_materialization_fingerprint),
+                native_request_fingerprint=dispatch.native_request_fingerprint,
+                proposal_batch_set_fingerprint=dispatch.proposal_batch_set_fingerprint,
             )
-            prospective = self._snapshot(self._events, reservation)
-            self._checkpoint(prospective)
+            if self._checkpoint_sink is not None:
+                self._checkpoint(self._snapshot(self._events, reservation))
             self._pending_call_reservation = reservation
             return reservation
 
@@ -283,82 +294,37 @@ class BfclV4PublicV2AppendOnlyJournal:
                     "durable call event lacks a pre-call reservation"
                 )
             prospective_events = (*self._events, checked)
-            prospective = self._snapshot(prospective_events, None)
-            self._checkpoint(prospective)
+            if self._checkpoint_sink is not None:
+                self._checkpoint(self._snapshot(prospective_events, None))
             self._events = prospective_events
             self._pending_call_reservation = None
+            control = project_bfcl_v4_public_v2_dispatch_control(
+                campaign=self._campaign,
+                event=checked,
+            )
+            if control is not None:
+                self._dispatch_controls = (*self._dispatch_controls, control)
             return checked.fingerprint
 
     def snapshot(self) -> BfclV4PublicV2JournalSnapshot:
         with self._lock:
             return self._snapshot(self._events, self._pending_call_reservation)
 
+    def dispatch_context(self) -> BfclV4PublicV2DispatchContext:
+        """Return an O(1), response-free view of the exact current prefix."""
 
-def _provider_attempt(
-    *,
-    provider: BfclV4PublicV2ProviderTransport,
-    request: BfclV4PublicV2ProviderRequest,
-    node: BfclV4PublicDevelopmentV2DagNode,
-) -> BfclV4PublicV2ProviderAttempt:
-    try:
-        raw_attempt = provider.execute(request, node)
-        return BfclV4PublicV2ProviderAttempt.model_validate(raw_attempt, strict=True)
-    except Exception:
-        return BfclV4PublicV2ProviderAttempt(
-            disposition=BfclV4PublicV2AttemptDisposition.PROVIDER_FAILURE,
-            proposal_disposition=(
-                BfclV4PublicV2ProposalDisposition.PROVIDER_FAILURE
-                if node.kind is BfclV4PublicDevelopmentV2NodeKind.PROPOSAL
-                else None
-            ),
-        )
-
-
-def _decision_barrier_evidence(
-    *,
-    campaign: BfclV4PublicDevelopmentV2CampaignPlan,
-    events: tuple[BfclV4PublicV2JournalEvent, ...],
-    semantic_release_fingerprint: str,
-) -> BfclV4PublicV2DecisionBarrierEvidence:
-    decision_nodes = tuple(
-        node
-        for node in campaign.nodes
-        if node.kind is BfclV4PublicDevelopmentV2NodeKind.GATE_DECISION
-    )
-    by_node = {event.node_id: event for event in events}
-    try:
-        decision_events = tuple(by_node[node.node_id] for node in decision_nodes)
-    except KeyError as exc:
-        raise BfclV4PublicV2ExecutorError(
-            "evaluation authorization precedes the complete decision barrier"
-        ) from exc
-    if len(decision_nodes) != 6 or any(
-        event.event_kind is not BfclV4PublicV2EventKind.DECISION for event in decision_events
-    ):
-        raise BfclV4PublicV2ExecutorError("evaluation authorization lacks six decisions")
-    return BfclV4PublicV2DecisionBarrierEvidence(
-        semantic_release_fingerprint=semantic_release_fingerprint,
-        decision_node_references=tuple(canonical_sha256(node) for node in decision_nodes),
-        decision_event_fingerprints=tuple(event.fingerprint for event in decision_events),
-        final_decision_event_fingerprint=decision_events[-1].fingerprint,
-    )
-
-
-def _authorize_evaluation(
-    *,
-    grader: BfclV4PublicV2TrustedBinaryGrader,
-    evidence: BfclV4PublicV2DecisionBarrierEvidence,
-) -> BfclV4PublicV2EvaluationUnlock:
-    try:
-        unlock = BfclV4PublicV2EvaluationUnlock.model_validate(
-            grader.issue_evaluation_unlock(evidence),
-            strict=True,
-        )
-    except Exception as exc:
-        raise BfclV4PublicV2ExecutorError("trusted evaluation authorization failed") from exc
-    if unlock.barrier_evidence != evidence:
-        raise BfclV4PublicV2ExecutorError("evaluation unlock binds another decision barrier")
-    return unlock
+        with self._lock:
+            tail = self._events[-1].fingerprint if self._events else None
+            return build_bfcl_v4_public_v2_dispatch_context(
+                campaign_plan_fingerprint=BFCL_V4_PUBLIC_DEVELOPMENT_V2_CAMPAIGN_FINGERPRINT,
+                node_schedule_content_sha256=self._campaign.node_schedule_content_sha256,
+                runtime_fingerprint=self._runtime_fingerprint,
+                semantic_release_fingerprint=self._semantic_release_fingerprint,
+                event_count=len(self._events),
+                tail_event_sha256=tail,
+                controls=self._dispatch_controls,
+                proposal_batch_set_fingerprint=self._proposal_batch_set_fingerprint,
+            )
 
 
 def _trusted_grade(
@@ -448,10 +414,18 @@ def _call_event(
     node: BfclV4PublicDevelopmentV2DagNode,
     request: BfclV4PublicV2ProviderRequest,
     attempt: BfclV4PublicV2ProviderAttempt,
+    dispatch: BfclV4PublicV2DispatchReceipt | BfclV4PublicV2CallReservation,
     grade: BfclV4PublicV2TrustedGradeProjection | None,
     runtime_fingerprint: str,
     semantic_release_fingerprint: str,
 ) -> BfclV4PublicV2JournalEvent:
+    expected_dispatch_fingerprint = (
+        dispatch.dispatch_fingerprint
+        if isinstance(dispatch, BfclV4PublicV2CallReservation)
+        else dispatch.fingerprint
+    )
+    if attempt.dispatch_fingerprint != expected_dispatch_fingerprint:
+        raise BfclV4PublicV2ExecutorError("provider attempt changed its dispatch lineage")
     proposal_disposition = attempt.proposal_disposition
     if node.kind is BfclV4PublicDevelopmentV2NodeKind.PROPOSAL:
         proposal_disposition = (
@@ -473,6 +447,11 @@ def _call_event(
         event_kind=BfclV4PublicV2EventKind.CALL,
         request_fingerprint=request.fingerprint,
         request_payload_sha256=request.request_payload_sha256,
+        dispatch_fingerprint=expected_dispatch_fingerprint,
+        journal_prefix_fingerprint=dispatch.journal_prefix_fingerprint,
+        request_materialization_fingerprint=(dispatch.request_materialization_fingerprint),
+        native_request_fingerprint=dispatch.native_request_fingerprint,
+        proposal_batch_set_fingerprint=dispatch.proposal_batch_set_fingerprint,
         provider_attempt_disposition=attempt.disposition,
         provider_attempts_consumed=attempt.provider_attempts_consumed,
         executed_harness_variant=_expected_executed_variant(campaign, prefix, node),
@@ -522,14 +501,12 @@ def execute_bfcl_v4_public_v2_rehearsal(
         prefix = journal.events
         if node.consumes_model_call:
             if node.kind in _EVALUATION_KINDS and evaluation_authority is None:
-                evidence = _decision_barrier_evidence(
-                    campaign=checked_campaign,
-                    events=prefix,
-                    semantic_release_fingerprint=semantic_release_fingerprint,
-                )
-                evaluation_authority = _authorize_evaluation(
+                evaluation_authority = authorize_bfcl_v4_public_v2_evaluation(
                     grader=grader,
-                    evidence=evidence,
+                    snapshot=journal.snapshot(),
+                    campaign=checked_campaign,
+                    runtime_fingerprint=runtime_fingerprint,
+                    semantic_release_fingerprint=semantic_release_fingerprint,
                 )
             pending = journal.pending_call_reservation
             if pending is not None:
@@ -537,6 +514,7 @@ def execute_bfcl_v4_public_v2_rehearsal(
                     raise BfclV4PublicV2ReplayError("pending call is not the next DAG node")
                 request = pending.request
                 attempt = BfclV4PublicV2ProviderAttempt(
+                    dispatch_fingerprint=pending.dispatch_fingerprint,
                     disposition=BfclV4PublicV2AttemptDisposition.CRASH_RECOVERY_BURN,
                     proposal_disposition=(
                         BfclV4PublicV2ProposalDisposition.PROVIDER_FAILURE
@@ -545,14 +523,24 @@ def execute_bfcl_v4_public_v2_rehearsal(
                     ),
                     provider_attempts_consumed=0,
                 )
+                dispatch_lineage = pending
             else:
-                payload_hash = request_binder.request_payload_sha256(node)
+                dispatch_context = journal.dispatch_context()
+                try:
+                    dispatch = bind_bfcl_v4_public_v2_dispatch(
+                        campaign=checked_campaign,
+                        node=node,
+                        context=dispatch_context,
+                        binder=request_binder,
+                    )
+                except BfclV4PublicV2DispatchError as error:
+                    raise BfclV4PublicV2ExecutorError(str(error)) from error
                 request = _request(
                     checked_campaign,
                     node,
                     runtime_fingerprint=runtime_fingerprint,
                     semantic_release_fingerprint=semantic_release_fingerprint,
-                    request_payload_sha256=payload_hash,
+                    request_payload_sha256=dispatch.request_payload_sha256,
                     decision_barrier_evidence_fingerprint=(
                         None
                         if evaluation_authority is None
@@ -562,8 +550,14 @@ def execute_bfcl_v4_public_v2_rehearsal(
                         None if evaluation_authority is None else evaluation_authority.fingerprint
                     ),
                 )
-                journal.reserve_call(node=node, request=request)
-                attempt = _provider_attempt(provider=provider, request=request, node=node)
+                journal.reserve_call(node=node, request=request, dispatch=dispatch)
+                attempt = execute_bfcl_v4_public_v2_dispatch(
+                    provider=provider,
+                    request=request,
+                    node=node,
+                    dispatch=dispatch,
+                )
+                dispatch_lineage = dispatch
             if node.kind in _EVALUATION_KINDS and (
                 evaluation_authority is None
                 or request.decision_barrier_evidence_fingerprint
@@ -590,6 +584,7 @@ def execute_bfcl_v4_public_v2_rehearsal(
                 node=node,
                 request=request,
                 attempt=attempt,
+                dispatch=dispatch_lineage,
                 grade=grade,
                 runtime_fingerprint=runtime_fingerprint,
                 semantic_release_fingerprint=semantic_release_fingerprint,
@@ -613,12 +608,13 @@ def execute_bfcl_v4_public_v2_rehearsal(
     batch_grade = None
     if pure_at_b_batch_grader is not None:
         if evaluation_authority is None:
-            evidence = _decision_barrier_evidence(
+            evaluation_authority = authorize_bfcl_v4_public_v2_evaluation(
+                grader=grader,
+                snapshot=journal.snapshot(),
                 campaign=checked_campaign,
-                events=snapshot.events,
+                runtime_fingerprint=runtime_fingerprint,
                 semantic_release_fingerprint=semantic_release_fingerprint,
             )
-            evaluation_authority = _authorize_evaluation(grader=grader, evidence=evidence)
         batch_request = build_bfcl_v4_public_v2_pure_at_b_batch_grade_request(
             campaign=checked_campaign,
             events=snapshot.events,

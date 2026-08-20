@@ -16,6 +16,10 @@ from spiral_harness.benchmark.bfcl_v4_public_development_v2_call_plan_contracts 
 from spiral_harness.benchmark.bfcl_v4_public_development_v2_campaign_contracts import (
     BfclV4PublicDevelopmentV2CampaignPlan,
 )
+from spiral_harness.benchmark.bfcl_v4_public_v2_barrier_capability import (
+    BfclV4PublicV2VerifiedDecisionBarrierReceipt,
+    _mint_bfcl_v4_public_v2_verified_decision_barrier,
+)
 from spiral_harness.benchmark.bfcl_v4_public_v2_pure_at_b_trusted_grader import (
     grade_bfcl_v4_public_v2_pure_at_b_batch,
 )
@@ -34,6 +38,11 @@ from spiral_harness.benchmark.bfcl_v4_public_v2_trusted_grader_contracts import 
     BfclV4PublicV2EvaluationUnlock,
 )
 from spiral_harness.core.canonical import canonical_sha256
+from spiral_harness.experiments.bfcl_v4_public_v2_dispatch_contracts import (
+    BFCL_V4_PUBLIC_V2_EMPTY_PROPOSAL_BATCH_SET_FINGERPRINT,
+    BfclV4PublicV2DispatchReceipt,
+    bfcl_v4_public_v2_journal_prefix_fingerprint,
+)
 from spiral_harness.experiments.bfcl_v4_public_v2_executor_contracts import (
     BfclV4PublicV2AttemptDisposition,
     BfclV4PublicV2EventKind,
@@ -50,6 +59,43 @@ _KNOWN_HOLDOUT_00_RESPONSE = (
     '[{"arguments":{"patient_id":"546382","status":"concluded"},'
     '"function_name":"patient.get_mri_report"}]'
 )
+
+
+def _dispatch_receipt(
+    campaign: BfclV4PublicDevelopmentV2CampaignPlan,
+    node,
+    *,
+    request_payload_sha256: str,
+    previous_event_sha256: str | None,
+) -> BfclV4PublicV2DispatchReceipt:
+    return BfclV4PublicV2DispatchReceipt(
+        node=node,
+        node_reference_sha256=canonical_sha256(node),
+        journal_prefix_fingerprint=bfcl_v4_public_v2_journal_prefix_fingerprint(
+            campaign_plan_fingerprint=campaign.fingerprint,
+            node_schedule_content_sha256=campaign.node_schedule_content_sha256,
+            runtime_fingerprint=_RUNTIME_FINGERPRINT,
+            semantic_release_fingerprint=_SEMANTIC_RELEASE,
+            event_count=node.node_slot,
+            tail_event_sha256=previous_event_sha256,
+        ),
+        journal_prefix_event_count=node.node_slot,
+        journal_prefix_tail_event_sha256=previous_event_sha256,
+        campaign_plan_fingerprint=campaign.fingerprint,
+        node_schedule_content_sha256=campaign.node_schedule_content_sha256,
+        runtime_fingerprint=_RUNTIME_FINGERPRINT,
+        semantic_release_fingerprint=_SEMANTIC_RELEASE,
+        request_materialization_fingerprint=canonical_sha256(
+            {
+                "domain": "bfcl-v2-test-materialization/v1",
+                "node_id": node.node_id,
+                "payload": request_payload_sha256,
+            }
+        ),
+        native_request_fingerprint=request_payload_sha256,
+        request_payload_sha256=request_payload_sha256,
+        proposal_batch_set_fingerprint=BFCL_V4_PUBLIC_V2_EMPTY_PROPOSAL_BATCH_SET_FINGERPRINT,
+    )
 
 
 @pytest.fixture(scope="module")
@@ -78,7 +124,19 @@ def unlock(grader: BfclV4PublicV2TrustedGrader) -> BfclV4PublicV2EvaluationUnloc
         decision_event_fingerprints=decision_events,
         final_decision_event_fingerprint=decision_events[-1],
     )
-    return grader.issue_evaluation_unlock(evidence)
+    # Test-only mint: this grader unit does not own the durable executor journal.
+    verified_receipt = BfclV4PublicV2VerifiedDecisionBarrierReceipt(
+        evidence=evidence,
+        evidence_fingerprint=evidence.fingerprint,
+        journal_snapshot_fingerprint=canonical_sha256("test-only-journal-snapshot"),
+        journal_prefix_event_count=1_000,
+        journal_tail_event_fingerprint=evidence.final_decision_event_fingerprint,
+        runtime_fingerprint=_RUNTIME_FINGERPRINT,
+        semantic_release_fingerprint=_SEMANTIC_RELEASE,
+        replay_state_fingerprint=canonical_sha256("test-only-independent-replay"),
+    )
+    capability = _mint_bfcl_v4_public_v2_verified_decision_barrier(verified_receipt)
+    return grader.issue_evaluation_unlock(capability)
 
 
 def _source_events(
@@ -115,10 +173,19 @@ def _source_events(
             decision_barrier_evidence_fingerprint=unlock.barrier_evidence_fingerprint,
             evaluation_unlock_fingerprint=unlock.fingerprint,
         )
+        previous_event_sha256 = canonical_sha256(
+            {"domain": "bfcl-v2-test-prefix-tail/v1", "node_slot": node.node_slot}
+        )
+        dispatch = _dispatch_receipt(
+            campaign,
+            node,
+            request_payload_sha256=payload_sha256,
+            previous_event_sha256=previous_event_sha256,
+        )
         events.append(
             BfclV4PublicV2JournalEvent(
                 sequence=node.node_slot,
-                previous_event_sha256=None,
+                previous_event_sha256=previous_event_sha256,
                 campaign_plan_fingerprint=campaign_fingerprint,
                 node_schedule_content_sha256=campaign.node_schedule_content_sha256,
                 mutation_catalog_fingerprint=campaign.mutation_catalog_fingerprint,
@@ -130,6 +197,11 @@ def _source_events(
                 event_kind=BfclV4PublicV2EventKind.CALL,
                 request_fingerprint=provider_request.fingerprint,
                 request_payload_sha256=payload_sha256,
+                dispatch_fingerprint=dispatch.fingerprint,
+                journal_prefix_fingerprint=dispatch.journal_prefix_fingerprint,
+                request_materialization_fingerprint=dispatch.request_materialization_fingerprint,
+                native_request_fingerprint=dispatch.native_request_fingerprint,
+                proposal_batch_set_fingerprint=dispatch.proposal_batch_set_fingerprint,
                 provider_attempt_disposition=(
                     BfclV4PublicV2AttemptDisposition.PROVIDER_FAILURE
                     if response is None

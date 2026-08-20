@@ -36,6 +36,11 @@ from spiral_harness.benchmark.bfcl_v4_public_development_v2_contracts import (
     BfclV4PublicDevelopmentV2Split,
     BfclV4PublicDevelopmentV2Task,
 )
+from spiral_harness.benchmark.bfcl_v4_public_v2_barrier_capability import (
+    BfclV4PublicV2VerifiedBarrierError,
+    BfclV4PublicV2VerifiedDecisionBarrierCapability,
+    validate_bfcl_v4_public_v2_verified_decision_barrier,
+)
 from spiral_harness.benchmark.bfcl_v4_public_v2_trusted_grader_contracts import (
     BFCL_V4_PUBLIC_V2_CHECKER_SOURCE_BUNDLE_SHA256,
     BFCL_V4_PUBLIC_V2_EVALUATION_AUTHORITY_KEY_DOMAIN,
@@ -170,6 +175,7 @@ def _authority_key_id(secret: bytes) -> str:
 def _unlock_authentication_content(
     *,
     barrier: BfclV4PublicV2DecisionBarrierEvidence,
+    verified_barrier_receipt_fingerprint: str,
     authority_key_id: str,
 ) -> dict[str, Any]:
     return {
@@ -177,6 +183,7 @@ def _unlock_authentication_content(
         "barrier_evidence": barrier,
         "barrier_evidence_fingerprint": barrier.fingerprint,
         "domain": BFCL_V4_PUBLIC_V2_EVALUATION_UNLOCK_HMAC_DOMAIN,
+        "verified_barrier_receipt_fingerprint": verified_barrier_receipt_fingerprint,
     }
 
 
@@ -184,6 +191,7 @@ def _unlock_tag(
     secret: bytes,
     *,
     barrier: BfclV4PublicV2DecisionBarrierEvidence,
+    verified_barrier_receipt_fingerprint: str,
     authority_key_id: str,
 ) -> str:
     return hmac.new(
@@ -191,6 +199,7 @@ def _unlock_tag(
         canonical_json_bytes(
             _unlock_authentication_content(
                 barrier=barrier,
+                verified_barrier_receipt_fingerprint=(verified_barrier_receipt_fingerprint),
                 authority_key_id=authority_key_id,
             )
         ),
@@ -347,9 +356,9 @@ class BfclV4PublicV2TrustedGrader:
 
     def issue_evaluation_unlock(
         self,
-        evidence: BfclV4PublicV2DecisionBarrierEvidence,
+        capability: BfclV4PublicV2VerifiedDecisionBarrierCapability,
     ) -> BfclV4PublicV2EvaluationUnlock:
-        """Authenticate replayed global-barrier evidence inside the trusted plane."""
+        """Authenticate an independently replayed global barrier inside the trusted plane."""
 
         if (
             self._evaluation_authority_secret is None
@@ -359,7 +368,17 @@ class BfclV4PublicV2TrustedGrader:
             raise BfclV4PublicV2EvaluationAuthorizationError(
                 "HOLDOUT evaluation authority is not configured"
             )
-        checked = _checked(evidence, BfclV4PublicV2DecisionBarrierEvidence)
+        try:
+            checked_capability = validate_bfcl_v4_public_v2_verified_decision_barrier(capability)
+        except BfclV4PublicV2VerifiedBarrierError as error:
+            raise BfclV4PublicV2EvaluationAuthorizationError(
+                "evaluation authority requires a process-local verified replay capability"
+            ) from error
+        verified_receipt = checked_capability.receipt
+        checked = _checked(
+            verified_receipt.evidence,
+            BfclV4PublicV2DecisionBarrierEvidence,
+        )
         if (
             checked.campaign_plan_fingerprint != self._campaign.fingerprint
             or checked.node_schedule_content_sha256 != self._campaign.node_schedule_content_sha256
@@ -372,10 +391,12 @@ class BfclV4PublicV2TrustedGrader:
         return BfclV4PublicV2EvaluationUnlock(
             barrier_evidence=checked,
             barrier_evidence_fingerprint=checked.fingerprint,
+            verified_barrier_receipt_fingerprint=verified_receipt.fingerprint,
             authority_key_id=self._authority_key_id,
             authentication_tag_hmac_sha256=_unlock_tag(
                 self._evaluation_authority_secret,
                 barrier=checked,
+                verified_barrier_receipt_fingerprint=verified_receipt.fingerprint,
                 authority_key_id=self._authority_key_id,
             ),
         )
@@ -420,6 +441,7 @@ class BfclV4PublicV2TrustedGrader:
         expected_tag = _unlock_tag(
             self._evaluation_authority_secret,
             barrier=barrier,
+            verified_barrier_receipt_fingerprint=(checked.verified_barrier_receipt_fingerprint),
             authority_key_id=self._authority_key_id,
         )
         if (

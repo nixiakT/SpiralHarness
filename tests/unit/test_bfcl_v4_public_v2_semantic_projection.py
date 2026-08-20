@@ -734,7 +734,7 @@ def test_projection_modules_obey_architecture_size_and_import_rules() -> None:
     )
 
     for module_path in module_paths:
-        source = module_path.read_text()
+        source = module_path.read_text(encoding="utf-8")
         assert len(source.splitlines()) <= 700
         assert "import importlib" not in source
         assert "importlib.import_module" not in source

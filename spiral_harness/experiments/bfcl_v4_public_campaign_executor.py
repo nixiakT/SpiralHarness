@@ -265,9 +265,7 @@ def _derive_analysis_input(
                 joint_selection_fingerprint=decision.fingerprint,
                 descriptive_metrics=metrics,
                 descriptive_metrics_fingerprint=metrics.fingerprint,
-                provider_identity_observation_count=(
-                    result.provider_identity_observation_count
-                ),
+                provider_identity_observation_count=(result.provider_identity_observation_count),
                 provider_declared_identity_consistent=(
                     result.provider_declared_identity_consistent
                 ),
@@ -343,9 +341,7 @@ class BfclV4PublicCampaignExecutor:
                     backend=self.backend,
                     attempt_budget=self.config.attempt_budget,
                     outer_seed_u64=replicate.outer_seed_u64,
-                    attempt_ledger_id=(
-                        f"{self.campaign.campaign_id}/{replicate.replicate_id}"
-                    ),
+                    attempt_ledger_id=(f"{self.campaign.campaign_id}/{replicate.replicate_id}"),
                 )
                 unverified_ref = record.result_ref
                 unverified_fingerprint = record.result.fingerprint

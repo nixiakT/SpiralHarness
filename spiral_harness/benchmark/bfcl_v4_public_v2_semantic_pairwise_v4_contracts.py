@@ -68,6 +68,7 @@ class BfclV4PublicV2PairwiseV4Error(RuntimeError):
 
 class BfclV4PublicV2PairwiseV4ReviewerRole(StrEnum):
     """Independent reviewer role in the v4 release protocol."""
+
     PRIMARY_ONE = "primary-one"
     PRIMARY_TWO = "primary-two"
     ADJUDICATOR = "adjudicator"
@@ -75,6 +76,7 @@ class BfclV4PublicV2PairwiseV4ReviewerRole(StrEnum):
 
 class BfclV4PublicV2PairwiseV4PredecessorLineage(StrEnum):
     """The three exhausted full-packet lineages superseded by v4."""
+
     SEMANTIC_V1 = "semantic-v1"
     SEMANTIC_V2 = "semantic-v2"
     SEMANTIC_V3 = "semantic-v3"
@@ -292,9 +294,7 @@ class BfclV4PublicV2PairwiseV4Plan(ImmutableModel):
     reviewer_packet_ref: ArtifactRef
     lineage_ref: ArtifactRef
     seed_root_sha256: Sha256
-    blocks: Annotated[
-        tuple[BfclV4PublicV2PairwiseV4Block, ...], Field(min_length=5, max_length=5)
-    ]
+    blocks: Annotated[tuple[BfclV4PublicV2PairwiseV4Block, ...], Field(min_length=5, max_length=5)]
     calls: Annotated[
         tuple[BfclV4PublicV2PairwiseV4CallSpec, ...], Field(min_length=15, max_length=15)
     ]

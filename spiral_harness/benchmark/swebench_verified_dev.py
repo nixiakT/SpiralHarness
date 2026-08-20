@@ -90,16 +90,24 @@ def _datasets_dataset_type() -> Any:
 
 def _load_cached_verified_dataset() -> Any:
     dataset_type = _datasets_dataset_type()
-    path = Path.home() / ".cache" / "huggingface" / "datasets" / (
-        "princeton-nlp___swe-bench_verified/default/0.0.0/"
-        "c104f840cc67f8b6eec6f759ebc8b2693d585d4a/swe-bench_verified-test.arrow"
+    path = (
+        Path.home()
+        / ".cache"
+        / "huggingface"
+        / "datasets"
+        / (
+            "princeton-nlp___swe-bench_verified/default/0.0.0/"
+            "c104f840cc67f8b6eec6f759ebc8b2693d585d4a/swe-bench_verified-test.arrow"
+        )
     )
     if path.is_file():
         return dataset_type.from_file(str(path))
     try:
         from datasets import load_dataset
     except ImportError as exc:  # pragma: no cover
-        raise SwebenchVerifiedDevError("datasets package unavailable and no cached arrow found") from exc
+        raise SwebenchVerifiedDevError(
+            "datasets package unavailable and no cached arrow found"
+        ) from exc
     try:
         return load_dataset("princeton-nlp/SWE-bench_Verified", split="test")
     except Exception as exc:  # pragma: no cover - network dependent
@@ -111,7 +119,9 @@ def load_verified_task(instance_id: str) -> SwebenchVerifiedTask:
     try:
         row = next(row for row in dataset if row["instance_id"] == instance_id)
     except StopIteration as exc:
-        raise SwebenchVerifiedDevError(f"unknown SWE-bench Verified instance: {instance_id}") from exc
+        raise SwebenchVerifiedDevError(
+            f"unknown SWE-bench Verified instance: {instance_id}"
+        ) from exc
     fail_to_pass = tuple(json.loads(row["FAIL_TO_PASS"]))
     pass_to_pass = tuple(json.loads(row["PASS_TO_PASS"]))
     return SwebenchVerifiedTask(
@@ -231,7 +241,9 @@ def _prepare_env(repo_dir: Path, output: Path, profile: _RepoProfile) -> Path:
     env_dir = output / "envs" / repo_dir.name
     python_path = Path(profile.python_path)
     if not python_path.exists():
-        raise SwebenchVerifiedDevError(f"missing Python interpreter for local profile: {python_path}")
+        raise SwebenchVerifiedDevError(
+            f"missing Python interpreter for local profile: {python_path}"
+        )
     if env_dir.exists():
         shutil.rmtree(env_dir)
     _run([uv, "venv", "--python", str(python_path), str(env_dir)])
@@ -293,7 +305,9 @@ def _excerpt_windows(line_numbers: list[int], total_lines: int) -> tuple[tuple[i
     return tuple(windows)
 
 
-def _path_priority(path_text: str, line_numbers: list[int], keywords: tuple[str, ...]) -> tuple[int, int, int, str]:
+def _path_priority(
+    path_text: str, line_numbers: list[int], keywords: tuple[str, ...]
+) -> tuple[int, int, int, str]:
     lower_path = path_text.lower()
     keyword_hits = sum(1 for keyword in keywords if keyword.lower() in lower_path)
     return (-keyword_hits, -len(set(line_numbers)), len(path_text), path_text)
@@ -353,10 +367,12 @@ def _patch_plan_prompt(task: SwebenchVerifiedTask, excerpts: tuple[dict[str, obj
     return (
         "You are fixing a SWE-bench Verified instance.\n"
         "Return exactly one JSON object with keys file_path, before, after, explanation.\n"
-        "The before snippet must be copied exactly from one provided excerpt, and the after snippet "
+        "The before snippet must be copied exactly from one provided excerpt, and the after "
+        "snippet "
         "must be the replacement text. Prefer the smallest self-contained replacement inside a "
         "function body. Do not replace a partial function signature, unmatched parentheses, or any "
-        "truncated block. If an existing validation block and following assignment are present, edit "
+        "truncated block. If an existing validation block and following assignment are "
+        "present, edit "
         "that local block instead. Do not output a unified diff. Do not use markdown fences.\n\n"
         f"Issue:\n{task.problem_statement}\n\nHints:\n{task.hints_text or '(none)'}\n\n"
         f"Relevant repository excerpts:\n{rendered_excerpts}\n"

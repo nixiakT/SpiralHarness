@@ -1,7 +1,8 @@
 # BFCL V4 public-v2 single-task request materializer
 
 Status: provider-free control-plane implementation. It does not call a model,
-read benchmark files, inspect possible answers, or authorize scoring.
+read benchmark files, or inspect possible answers. It materializes a
+score-bearing request only after semantic authority was fully reverified.
 
 ## Boundary
 
@@ -13,10 +14,11 @@ ID, split, ordinal, function names, and content hashes.
 
 `materialize_bfcl_v4_public_v2_request` additionally requires the exact
 campaign plan, a deterministically derived node lineage, an exact frozen arm
-treatment, and a media-typed semantic-development release `ArtifactRef`. It
-revalidates the 1,098-node plan, reconstructs the lineage, and binds the node
-hash, call slot, provider seed, task ref, arm, harness variant, question,
-schemas, and prompt before returning.
+treatment, and a non-serializable process-local verified semantic capability.
+The capability may represent either legacy single-packet v1 evidence or
+chunked pairwise composite v4 evidence. It revalidates the 1,098-node plan,
+reconstructs the lineage, and binds the node hash, call slot, provider seed,
+task ref, arm, harness variant, question, schemas, and prompt before returning.
 
 Only `model_visible_request` may be dispatched. Its complete schema is:
 
@@ -39,17 +41,18 @@ variants accept either the exact candidate prompt or an explicit exact-parent
 fallback. Revert and negative-control nodes accept only their corresponding
 frozen runtime roles. Arm or harness-variant substitution fails closed.
 
-## Semantic-release limitation
+## Semantic authority
 
-This batch binds only an opaque `ArtifactRef` with the exact semantic release
-media type, a valid SHA-256 shape, and non-empty size. It does not load the
-release, verify its HMAC or issuing authority, or invent an unlock protocol.
-Consequently every materialization fixes:
+A plain release object or `ArtifactRef` is rejected. The only accepted input is
+minted in the current process after the appropriate verifier recomputes the
+complete release: legacy v1 rechecks packet, mapping, review sessions and HMAC;
+composite v4 additionally replays every 15-call relation before checking its
+release HMAC. The capability binds evidence shape, release ref, release
+fingerprint, and a fingerprint of every non-secret evidence input.
 
-- `semantic_release_authority_verified=false`;
-- `semantic_release_content_loaded=false`;
-- `provider_calls=0`;
-- `score_bearing_execution_allowed=false`.
-
-A later integration boundary must verify the release authority and issue a
-separate execution grant before any provider or grader can be reached.
+The capability cannot be normally constructed, mutated, copied, pickled, or
+JSON-serialized. It is registered and sealed in its issuing process. Neither
+the projection/release HMAC secret nor the complete review evidence is retained
+inside it. The durable materialization records only the public binding and
+therefore fixes `semantic_release_authority_verified=true`,
+`score_bearing_execution_allowed=true`, and `provider_calls=0`.

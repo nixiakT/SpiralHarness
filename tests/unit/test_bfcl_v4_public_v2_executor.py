@@ -18,9 +18,13 @@ from spiral_harness.benchmark.bfcl_v4_public_v2_trusted_grader_contracts import 
     BfclV4PublicV2EvaluationUnlock,
 )
 from spiral_harness.core.canonical import canonical_sha256
+from spiral_harness.experiments.bfcl_v4_public_v2_dispatch_contracts import (
+    BfclV4PublicV2DispatchReceipt,
+)
 from spiral_harness.experiments.bfcl_v4_public_v2_executor import (
     BfclV4PublicV2AppendOnlyJournal,
     BfclV4PublicV2CheckpointError,
+    BfclV4PublicV2ExecutorError,
     BfclV4PublicV2ReplayError,
     BfclV4PublicV2StaleTailError,
     execute_bfcl_v4_public_v2_rehearsal,
@@ -48,14 +52,36 @@ SEMANTIC_RELEASE = "b" * 64
 class _RequestBinder:
     calls: int = 0
 
-    def request_payload_sha256(self, node: BfclV4PublicDevelopmentV2DagNode) -> str:
+    def bind(
+        self,
+        *,
+        node: BfclV4PublicDevelopmentV2DagNode,
+        context,
+    ) -> BfclV4PublicV2DispatchReceipt:
         self.calls += 1
-        return canonical_sha256(
+        request = canonical_sha256(
             {
                 "domain": "bfcl-v2-test-request/v1",
                 "node_id": node.node_id,
                 "provider_seed_u63": node.provider_seed_u63,
             }
+        )
+        return BfclV4PublicV2DispatchReceipt(
+            node=node,
+            node_reference_sha256=canonical_sha256(node),
+            journal_prefix_fingerprint=context.journal_prefix_fingerprint,
+            journal_prefix_event_count=context.journal_prefix_event_count,
+            journal_prefix_tail_event_sha256=context.journal_prefix_tail_event_sha256,
+            campaign_plan_fingerprint=context.campaign_plan_fingerprint,
+            node_schedule_content_sha256=context.node_schedule_content_sha256,
+            runtime_fingerprint=context.runtime_fingerprint,
+            semantic_release_fingerprint=context.semantic_release_fingerprint,
+            request_materialization_fingerprint=canonical_sha256(
+                {"domain": "bfcl-v2-test-materialization/v1", "request": request}
+            ),
+            native_request_fingerprint=request,
+            request_payload_sha256=request,
+            proposal_batch_set_fingerprint=context.proposal_batch_set_fingerprint,
         )
 
 
@@ -63,18 +89,22 @@ class _RequestBinder:
 class _Provider:
     calls: int = 0
 
-    def execute(self, request, node: BfclV4PublicDevelopmentV2DagNode):
+    def execute(self, request, node: BfclV4PublicDevelopmentV2DagNode, dispatch):
         self.calls += 1
+        assert dispatch.node == node
+        assert dispatch.request_payload_sha256 == request.request_payload_sha256
         if (
             node.kind is BfclV4PublicDevelopmentV2NodeKind.PURE_AT_B_SAMPLE
             and node.sample_index == 6
         ):
             return BfclV4PublicV2ProviderAttempt(
-                disposition=BfclV4PublicV2AttemptDisposition.PROVIDER_FAILURE
+                dispatch_fingerprint=dispatch.fingerprint,
+                disposition=BfclV4PublicV2AttemptDisposition.PROVIDER_FAILURE,
             )
         if node.kind is BfclV4PublicDevelopmentV2NodeKind.PROPOSAL:
             response = f"typed-proposal-{node.candidate_index}"
             return BfclV4PublicV2ProviderAttempt(
+                dispatch_fingerprint=dispatch.fingerprint,
                 disposition=BfclV4PublicV2AttemptDisposition.SUCCEEDED,
                 canonical_response=response,
                 provider_response_fingerprint=canonical_sha256(
@@ -102,6 +132,7 @@ class _Provider:
         else:
             response = f"response:{node.node_id}"
         return BfclV4PublicV2ProviderAttempt(
+            dispatch_fingerprint=dispatch.fingerprint,
             disposition=BfclV4PublicV2AttemptDisposition.SUCCEEDED,
             canonical_response=response,
             provider_response_fingerprint=canonical_sha256(
@@ -115,11 +146,13 @@ class _Grader:
     calls: int = 0
     authorizations: int = 0
 
-    def issue_evaluation_unlock(self, evidence):
+    def issue_evaluation_unlock(self, capability):
         self.authorizations += 1
+        evidence = capability.receipt.evidence
         return BfclV4PublicV2EvaluationUnlock(
             barrier_evidence=evidence,
             barrier_evidence_fingerprint=evidence.fingerprint,
+            verified_barrier_receipt_fingerprint=capability.receipt.fingerprint,
             authority_key_id="f" * 64,
             authentication_tag_hmac_sha256="e" * 64,
         )
@@ -222,7 +255,7 @@ class _CheckpointSink:
 class _ExplodingBinder:
     calls: int = 0
 
-    def request_payload_sha256(self, node: BfclV4PublicDevelopmentV2DagNode) -> str:
+    def bind(self, *, node, context):
         self.calls += 1
         raise RuntimeError(f"stop after recovered node: {node.node_id}")
 
@@ -496,7 +529,10 @@ def test_resume_burns_pending_slot_without_repeating_provider_attempt() -> None:
     assert resume_snapshot.pending_call_reservation is not None
 
     binder = _ExplodingBinder()
-    with pytest.raises(RuntimeError, match="stop after recovered node"):
+    with pytest.raises(
+        BfclV4PublicV2ExecutorError,
+        match="request binder failed exact materialization dispatch",
+    ):
         execute_bfcl_v4_public_v2_rehearsal(
             provider=provider,
             request_binder=binder,

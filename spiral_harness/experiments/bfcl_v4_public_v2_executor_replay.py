@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import spiral_harness.experiments.bfcl_v4_public_v2_dispatch_replay as dispatch_replay
+import spiral_harness.experiments.bfcl_v4_public_v2_executor_control as control
 from spiral_harness.benchmark.bfcl_v4_public_development_v2_call_plan import (
     build_bfcl_v4_public_development_v2_campaign_plan,
 )
@@ -124,23 +126,6 @@ def _decision_event(
         raise BfclV4PublicV2ReplayError("adaptive HOLDOUT precedes its GATE decision") from exc
 
 
-def _candidate_from_control(value: BfclV4PublicV2ControlValue) -> int | None:
-    return {
-        BfclV4PublicV2ControlValue.PARENT_FALLBACK: None,
-        BfclV4PublicV2ControlValue.CANDIDATE_0: 0,
-        BfclV4PublicV2ControlValue.CANDIDATE_1: 1,
-        BfclV4PublicV2ControlValue.CANDIDATE_2: 2,
-    }.get(value)
-
-
-def _candidate_valid(event: BfclV4PublicV2JournalEvent) -> bool:
-    return (
-        event.provider_attempt_disposition is BfclV4PublicV2AttemptDisposition.SUCCEEDED
-        and event.proposal_disposition is BfclV4PublicV2ProposalDisposition.VALID
-        and event.candidate_artifact_sha256 is not None
-    )
-
-
 def _expected_nomination(
     campaign: BfclV4PublicDevelopmentV2CampaignPlan,
     events: tuple[BfclV4PublicV2JournalEvent, ...],
@@ -150,7 +135,7 @@ def _expected_nomination(
     ranked: list[tuple[int, int]] = []
     for candidate_index in range(3):
         proposal = _proposal_event(campaign, events, node, candidate_index)
-        if not _candidate_valid(proposal):
+        if not control.candidate_event_is_valid(proposal):
             continue
         fit_nodes = tuple(
             candidate
@@ -179,11 +164,11 @@ def _expected_promotion(
     nomination = _nomination_event(campaign, events, node)
     if nomination.control_value is None:
         raise BfclV4PublicV2ReplayError("nomination control value is absent")
-    candidate_index = _candidate_from_control(nomination.control_value)
+    candidate_index = control.candidate_index_from_control(nomination.control_value)
     if candidate_index is None:
         return BfclV4PublicV2ControlValue.PARENT_FALLBACK
     proposal = _proposal_event(campaign, events, node, candidate_index)
-    if not _candidate_valid(proposal):
+    if not control.candidate_event_is_valid(proposal):
         return BfclV4PublicV2ControlValue.PARENT_FALLBACK
 
     parent_fit_nodes = tuple(
@@ -281,13 +266,17 @@ def _expected_executed_variant(
     if node.kind is BfclV4PublicDevelopmentV2NodeKind.CANDIDATE_FIT:
         assert node.candidate_index is not None
         proposal = _proposal_event(campaign, events, node, node.candidate_index)
-        return f"typed-candidate-{node.candidate_index}" if _candidate_valid(proposal) else "parent"
+        return (
+            f"typed-candidate-{node.candidate_index}"
+            if control.candidate_event_is_valid(proposal)
+            else "parent"
+        )
     if node.kind is BfclV4PublicDevelopmentV2NodeKind.GATE:
         if node.gate_variant is BfclV4PublicDevelopmentV2GateVariant.NOMINATED_CANDIDATE:
             nomination = _nomination_event(campaign, events, node)
             if nomination.control_value is None:
                 raise BfclV4PublicV2ReplayError("GATE nomination value is absent")
-            candidate_index = _candidate_from_control(nomination.control_value)
+            candidate_index = control.candidate_index_from_control(nomination.control_value)
             return "parent" if candidate_index is None else f"typed-candidate-{candidate_index}"
         assert node.gate_variant is not None
         return node.gate_variant.value
@@ -301,7 +290,7 @@ def _expected_executed_variant(
             nomination = _nomination_event(campaign, events, node)
             if nomination.control_value is None:
                 raise BfclV4PublicV2ReplayError("promoted HOLDOUT nomination value is absent")
-            candidate_index = _candidate_from_control(nomination.control_value)
+            candidate_index = control.candidate_index_from_control(nomination.control_value)
             if candidate_index is None:
                 raise BfclV4PublicV2ReplayError("promotion cannot select parent nomination")
             return f"typed-candidate-{candidate_index}"
@@ -424,6 +413,12 @@ def _validate_call_event(
 ) -> None:
     if event.event_kind is not BfclV4PublicV2EventKind.CALL:
         raise BfclV4PublicV2ReplayError("model-call node requires a call event")
+    if not dispatch_replay.validate_bfcl_v4_public_v2_persisted_dispatch(
+        node=node, prefix=events, event=event
+    ):
+        raise BfclV4PublicV2ReplayError(
+            "call event dispatch differs from its materialization or journal prefix"
+        )
     expected_variant = _expected_executed_variant(campaign, events, node)
     if event.executed_harness_variant != expected_variant:
         raise BfclV4PublicV2ReplayError("executed harness variant violates frozen fallback policy")

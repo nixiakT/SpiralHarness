@@ -505,8 +505,7 @@ def verify_bfcl_v4_public_runner_evidence_lineage(
         resolutions=resolutions,
     )
     adapters = {
-        task_id: adapt_bfcl_v4_public_pilot_task(task)
-        for task_id, task in tasks_by_id.items()
+        task_id: adapt_bfcl_v4_public_pilot_task(task) for task_id, task in tasks_by_id.items()
     }
     _verify_holdout(
         repository,
@@ -517,4 +516,6 @@ def verify_bfcl_v4_public_runner_evidence_lineage(
         holdout=holdout,
         metrics=metrics,
     )
+
+
 __all__ = ["verify_bfcl_v4_public_runner_evidence_lineage"]

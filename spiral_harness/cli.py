@@ -15,19 +15,16 @@ from spiral_harness.benchmark.datasets import (
     GSM8K_PROVENANCE,
     materialize_dataset,
 )
+from spiral_harness.benchmark.gaia_validation_dev import run_gaia_validation_dev
 from spiral_harness.benchmark.gsm8k import GSM8KBenchmarkAdapter
 from spiral_harness.benchmark.gsm8k_smoke import default_smoke_output_dir, run_gsm8k_smoke
-from spiral_harness.benchmark.gaia_validation_dev import run_gaia_validation_dev
 from spiral_harness.benchmark.meta_harness_law import run_law_evaluation
 from spiral_harness.benchmark.meta_harness_symptom import run_symptom_evaluation
-from spiral_harness.benchmark.penguin_public import (
-    run_public_self_evolution,
-    verify_penguin_source,
-)
 from spiral_harness.benchmark.skillsbench_smoke import run_dialogue_parser_smoke
 from spiral_harness.benchmark.swebench_verified_dev import run_swebench_verified_dev
 from spiral_harness.cli_bfcl_v4_public_live import bfcl_v4_public_live
 from spiral_harness.cli_development_four_arm import dev_four_arm
+from spiral_harness.cli_penguin_public import penguin_public
 from spiral_harness.core.canonical import canonical_sha256
 from spiral_harness.core.experiment import ProtocolPartition
 from spiral_harness.evolution.controlled_demo import run_controlled_demo
@@ -48,6 +45,7 @@ benchmark_app = typer.Typer(
 app.add_typer(benchmark_app, name="benchmark")
 benchmark_app.command("bfcl-v4-public-live")(bfcl_v4_public_live)
 benchmark_app.command("dev-four-arm")(dev_four_arm)
+benchmark_app.command("penguin-public")(penguin_public)
 
 
 def _version_callback(value: bool) -> None:
@@ -474,9 +472,7 @@ def swebench_verified_dev(
     instance_id: Annotated[str, typer.Option("--instance-id")] = "pallets__flask-5014",
     source: Annotated[str, typer.Option("--source")] = "gold",
     model: Annotated[str | None, typer.Option("--model")] = None,
-    output: Annotated[Path, typer.Option("--output", "-o")] = Path(
-        "runs/swebench-verified-dev"
-    ),
+    output: Annotated[Path, typer.Option("--output", "-o")] = Path("runs/swebench-verified-dev"),
     timeout_seconds: Annotated[float, typer.Option("--timeout-seconds")] = 240.0,
     max_output_tokens: Annotated[int, typer.Option("--max-output-tokens")] = 2048,
     base_url_env: Annotated[str, typer.Option("--base-url-env")] = "LITELLM_BASE_URL",
@@ -515,9 +511,9 @@ def swebench_verified_dev(
                 "baseline_pass_to_pass_sample_passed": payload["baseline"]["pass_to_pass_sample"][
                     "passed"
                 ],
-                "candidate_pass_to_pass_sample_passed": payload["candidate"][
-                    "pass_to_pass_sample"
-                ]["passed"],
+                "candidate_pass_to_pass_sample_passed": payload["candidate"]["pass_to_pass_sample"][
+                    "passed"
+                ],
             },
             indent=2,
             sort_keys=True,
@@ -628,90 +624,6 @@ def meta_harness_symptom(
         )
     }
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))
-
-
-@benchmark_app.command("penguin-public")
-def penguin_public(
-    model: Annotated[str, typer.Option("--model")] = "dashscope/qwen3-coder-flash",
-    output: Annotated[Path, typer.Option("--output", "-o")] = Path(
-        "runs/penguin-public/qwen3-coder-flash"
-    ),
-    penguin_source: Annotated[
-        Path | None,
-        typer.Option(
-            "--penguin-source",
-            help="Optional pinned self-evolve-recursive.ts path to verify before the run.",
-        ),
-    ] = None,
-    runs_per_generation: Annotated[
-        int,
-        typer.Option(
-            "--runs-per-generation",
-            help=(
-                "Runs in each generation; 5 is the canonical 17-call public schedule, while "
-                "1-4 are reduced noncanonical exploratory variants."
-            ),
-        ),
-    ] = 5,
-    max_output_tokens: Annotated[int, typer.Option("--max-output-tokens")] = 32_000,
-    timeout_seconds: Annotated[float, typer.Option("--timeout-seconds")] = 120.0,
-    base_url_env: Annotated[str, typer.Option("--base-url-env")] = "LITELLM_BASE_URL",
-    api_key_env: Annotated[str, typer.Option("--api-key-env")] = "LITELLM_API_KEY",
-) -> None:
-    """Run Penguin's public recursive demo via Spiral's text-state middleware."""
-
-    base_url, api_key = os.environ.get(base_url_env), os.environ.get(api_key_env)
-    if not base_url or not api_key:
-        raise typer.BadParameter("missing LiteLLM endpoint or API key environment variable")
-    if penguin_source is not None:
-        try:
-            verify_penguin_source(penguin_source)
-        except (OSError, ValueError) as exc:
-            raise typer.BadParameter(str(exc)) from exc
-    backend = OpenAICompatibleChatBackend.from_endpoint(base_url=base_url, api_key=api_key)
-    result = run_public_self_evolution(
-        output=output,
-        backend=backend,
-        model=model,
-        runs_per_generation=runs_per_generation,
-        max_output_tokens=max_output_tokens,
-        timeout_seconds=timeout_seconds,
-    )
-    generations = [
-        {
-            key: generation[key]
-            for key in (
-                "label",
-                "scores",
-                "mean",
-            )
-        }
-        for generation in result.payload["generations"]
-    ]
-    typer.echo(
-        json.dumps(
-            {
-                "benchmark": result.payload["benchmark"],
-                "model": model,
-                "kind": result.payload["kind"],
-                "protocol_sha256": result.payload["protocol_sha256"],
-                "protocol_class": result.payload["protocol_class"],
-                "reportable_as_canonical": result.payload["reportable_as_canonical"],
-                "runs_per_generation": result.payload["runs_per_generation"],
-                "call_schedule": result.payload["call_schedule"],
-                "worker_harness_ref": result.payload["worker_harness_ref"],
-                "reflection_harness_ref": result.payload["reflection_harness_ref"],
-                "generations": generations,
-                "rounds": result.payload["rounds"],
-                "total_tokens": result.payload["total_tokens"],
-                "artifact_sha256": result.artifact_ref.sha256,
-                "output": str(output.resolve()),
-                "disclaimer": result.payload["disclaimer"],
-            },
-            indent=2,
-            sort_keys=True,
-        )
-    )
 
 
 if __name__ == "__main__":  # pragma: no cover
